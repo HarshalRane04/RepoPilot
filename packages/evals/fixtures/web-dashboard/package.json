@@ -1,0 +1,9 @@
+{
+  "name": "repopilot-web-dashboard-fixture",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test": "node apps/web/app/operator-console.test.js"
+  }
+}
+

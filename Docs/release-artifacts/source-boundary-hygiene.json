@@ -1,0 +1,44 @@
+{
+  "failed": true,
+  "failed_count": 1,
+  "findings": [
+    {
+      "check": "generated_artifact",
+      "detail": "Allowed Docker mount point; stop the web service before final source-boundary packaging if physical absence is required.",
+      "path": "apps/web/node_modules",
+      "status": "warning"
+    },
+    {
+      "check": "generated_artifact",
+      "detail": "Allowed Docker mount point; stop the web service before final source-boundary packaging if physical absence is required.",
+      "path": "apps/web/.next",
+      "status": "warning"
+    },
+    {
+      "check": "secret_content",
+      "detail": "Secret-like content matched pattern private_key_block; value intentionally omitted.",
+      "path": "apps/api/tests/test_phase5_to_8_services.py",
+      "status": "warning"
+    },
+    {
+      "check": "secret_content",
+      "detail": "Secret-like content matched pattern private_key_block; value intentionally omitted.",
+      "path": "apps/api/tests/test_api_routes.py",
+      "status": "warning"
+    },
+    {
+      "check": "git_boundary",
+      "detail": "No baseline commit exists yet.",
+      "path": null,
+      "status": "failed"
+    },
+    {
+      "check": "git_boundary",
+      "detail": "Working tree has uncommitted or untracked changes; release source boundary is not frozen.",
+      "path": null,
+      "status": "warning"
+    }
+  ],
+  "root": "/Users/harshalrane/Documents/RepoPilot",
+  "warning_count": 5
+}

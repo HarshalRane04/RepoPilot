@@ -1,0 +1,15 @@
+[project]
+name = "repopilot-github-client"
+version = "0.1.0"
+description = "Reusable RepoPilot GitHub permission helpers and future GitHub App client code."
+requires-python = ">=3.12"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["repopilot_github_client*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

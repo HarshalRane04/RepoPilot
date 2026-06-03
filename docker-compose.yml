@@ -1,0 +1,181 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: repopilot
+      POSTGRES_USER: repopilot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U repopilot -d repopilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?set REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://repopilot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/repopilot
+      ALEMBIC_DATABASE_URL: postgresql+psycopg://repopilot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/repopilot
+      PYTHONPATH: /app/apps/api:/app/packages/shared_contracts:/app/packages/evals:/app/packages/policy_engine:/app/packages/llm_client:/app/packages/github_client
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/2
+      ENABLE_QUEUE_DISPATCH: "true"
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?set GITHUB_WEBHOOK_SECRET}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_PRIVATE_KEY: ${GITHUB_PRIVATE_KEY:-}
+      GITHUB_PRIVATE_KEY_PATH: ${GITHUB_PRIVATE_KEY_PATH:-}
+      GITHUB_APP_VERIFIED_AT: ${GITHUB_APP_VERIFIED_AT:-}
+      GITHUB_APP_VERIFIED_INSTALLATION_ID: ${GITHUB_APP_VERIFIED_INSTALLATION_ID:-}
+      GITHUB_WRITE_SMOKE_VERIFIED_AT: ${GITHUB_WRITE_SMOKE_VERIFIED_AT:-}
+      GITHUB_OAUTH_CALLBACK_URL: ${GITHUB_OAUTH_CALLBACK_URL:-http://localhost:8000/auth/github/callback}
+      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3001}
+      GITHUB_API_BASE_URL: ${GITHUB_API_BASE_URL:-https://api.github.com}
+      GITHUB_WEB_BASE_URL: ${GITHUB_WEB_BASE_URL:-https://github.com}
+      GITHUB_WRITES_ENABLED: ${GITHUB_WRITES_ENABLED:-false}
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?set SESSION_SECRET_KEY}
+      DEV_HEADER_AUTH_ENABLED: ${DEV_HEADER_AUTH_ENABLED:-false}
+      REPOPILOT_REPOSITORY_WORKSPACE_ROOT: ${REPOPILOT_REPOSITORY_WORKSPACE_ROOT:-/tmp/repopilot-repositories}
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-mock}
+      MODEL_NAME: ${MODEL_NAME:-mock-planner}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+      MODEL_BASE_URL: ${MODEL_BASE_URL:-}
+      MODEL_REASONING_LEVEL: ${MODEL_REASONING_LEVEL:-}
+      MODEL_PROVIDER_VERIFIED_AT: ${MODEL_PROVIDER_VERIFIED_AT:-}
+      MODEL_PROVIDER_VERIFIED_MODEL: ${MODEL_PROVIDER_VERIFIED_MODEL:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      SEMGREP_ENABLED: ${SEMGREP_ENABLED:-false}
+      CODEQL_ENABLED: ${CODEQL_ENABLED:-false}
+      DEPENDENCY_AUDIT_ENABLED: ${DEPENDENCY_AUDIT_ENABLED:-false}
+      WORKSPACE_CLEANUP_MAX_AGE_SECONDS: ${WORKSPACE_CLEANUP_MAX_AGE_SECONDS:-86400}
+      WORKSPACE_CLEANUP_INTERVAL_SECONDS: ${WORKSPACE_CLEANUP_INTERVAL_SECONDS:-3600}
+      REPOPILOT_ARTIFACT_STORE_ROOT: ${REPOPILOT_ARTIFACT_STORE_ROOT:-/tmp/repopilot-artifacts}
+      REPOPILOT_ARTIFACT_INLINE_MAX_BYTES: ${REPOPILOT_ARTIFACT_INLINE_MAX_BYTES:-12000}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/api:/app/apps/api
+      - ./packages:/app/packages
+      - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - agent_artifacts:/tmp/repopilot-artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://repopilot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/repopilot
+      PYTHONPATH: /app/apps/api:/app/packages/shared_contracts:/app/packages/evals:/app/packages/policy_engine:/app/packages/llm_client:/app/packages/github_client
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/2
+      ENABLE_QUEUE_DISPATCH: "true"
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?set GITHUB_WEBHOOK_SECRET}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_PRIVATE_KEY: ${GITHUB_PRIVATE_KEY:-}
+      GITHUB_PRIVATE_KEY_PATH: ${GITHUB_PRIVATE_KEY_PATH:-}
+      GITHUB_APP_VERIFIED_AT: ${GITHUB_APP_VERIFIED_AT:-}
+      GITHUB_APP_VERIFIED_INSTALLATION_ID: ${GITHUB_APP_VERIFIED_INSTALLATION_ID:-}
+      GITHUB_WRITE_SMOKE_VERIFIED_AT: ${GITHUB_WRITE_SMOKE_VERIFIED_AT:-}
+      GITHUB_WRITES_ENABLED: ${GITHUB_WRITES_ENABLED:-false}
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-mock}
+      MODEL_NAME: ${MODEL_NAME:-mock-planner}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+      MODEL_BASE_URL: ${MODEL_BASE_URL:-}
+      MODEL_REASONING_LEVEL: ${MODEL_REASONING_LEVEL:-}
+      MODEL_PROVIDER_VERIFIED_AT: ${MODEL_PROVIDER_VERIFIED_AT:-}
+      MODEL_PROVIDER_VERIFIED_MODEL: ${MODEL_PROVIDER_VERIFIED_MODEL:-}
+      WORKSPACE_CLEANUP_MAX_AGE_SECONDS: ${WORKSPACE_CLEANUP_MAX_AGE_SECONDS:-86400}
+      WORKSPACE_CLEANUP_INTERVAL_SECONDS: ${WORKSPACE_CLEANUP_INTERVAL_SECONDS:-3600}
+      REPOPILOT_ARTIFACT_STORE_ROOT: ${REPOPILOT_ARTIFACT_STORE_ROOT:-/tmp/repopilot-artifacts}
+      REPOPILOT_ARTIFACT_INLINE_MAX_BYTES: ${REPOPILOT_ARTIFACT_INLINE_MAX_BYTES:-12000}
+    volumes:
+      - ./apps/api:/app/apps/api
+      - ./packages:/app/packages
+      - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - agent_artifacts:/tmp/repopilot-artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.worker.celery_app worker --loglevel=INFO
+
+  beat:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      PYTHONPATH: /app/apps/api:/app/packages/shared_contracts:/app/packages/evals:/app/packages/policy_engine:/app/packages/llm_client:/app/packages/github_client
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/2
+      WORKSPACE_CLEANUP_MAX_AGE_SECONDS: ${WORKSPACE_CLEANUP_MAX_AGE_SECONDS:-86400}
+      WORKSPACE_CLEANUP_INTERVAL_SECONDS: ${WORKSPACE_CLEANUP_INTERVAL_SECONDS:-3600}
+      REPOPILOT_ARTIFACT_STORE_ROOT: ${REPOPILOT_ARTIFACT_STORE_ROOT:-/tmp/repopilot-artifacts}
+    volumes:
+      - ./apps/api:/app/apps/api
+      - ./packages:/app/packages
+      - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - agent_artifacts:/tmp/repopilot-artifacts
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: celery -A app.worker.celery_app beat --loglevel=INFO
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./apps/web:/app/apps/web
+      - web_node_modules:/app/apps/web/node_modules
+      - web_next:/app/apps/web/.next
+    depends_on:
+      - api
+    command: npm run dev -- --hostname 0.0.0.0 --webpack
+
+  sandbox-image:
+    build:
+      context: .
+      dockerfile: services/sandbox_runner/Dockerfile
+    image: repopilot-sandbox:local
+    profiles:
+      - tools
+    command: python --version
+
+volumes:
+  postgres_data:
+  web_node_modules:
+  web_next:
+  agent_workspaces:
+  agent_artifacts:

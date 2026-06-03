@@ -1,0 +1,23 @@
+[project]
+name = "repopilot-evals"
+version = "0.1.0"
+description = "RepoPilot benchmark fixture definitions and local fixture verification helpers."
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2.7,<3.0",
+  "repopilot-contracts==0.1.0",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+repopilot-evals-report = "repopilot_evals.report:main"
+repopilot-provider-planning-eval = "repopilot_evals.provider_harness:main"
+
+[tool.setuptools.packages.find]
+include = ["repopilot_evals*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check generated artifacts and secret stores
+        run: |
+          set -euo pipefail
+          forbidden="$(find . \
+            \( -path './.git' -o -path './apps/web/node_modules' \) -prune -o \
+            \( -name '.DS_Store' -o -name '.secrets' -o -name '__pycache__' -o -name '*.pyc' -o -name '*.egg-info' -o -name '.next' -o -name 'tsconfig.tsbuildinfo' \) \
+            -print)"
+          if [ -n "$forbidden" ]; then
+            echo "$forbidden"
+            exit 1
+          fi
+      - name: Run release hygiene scanner
+        run: PYTHONDONTWRITEBYTECODE=1 python scripts/release_hygiene.py --allow-warnings
+      - name: Validate deployment documentation and topology
+        run: PYTHONDONTWRITEBYTECODE=1 python scripts/deployment_validate.py
+
+  api-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: repopilot
+          POSTGRES_USER: repopilot
+          POSTGRES_PASSWORD: repopilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U repopilot -d repopilot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    env:
+      DATABASE_URL: postgresql+asyncpg://repopilot:repopilot@localhost:5432/repopilot
+      ALEMBIC_DATABASE_URL: postgresql+psycopg://repopilot:repopilot@localhost:5432/repopilot
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_BROKER_URL: redis://localhost:6379/1
+      CELERY_RESULT_BACKEND: redis://localhost:6379/2
+      REPOPILOT_ENV: local
+      GITHUB_WEBHOOK_SECRET: ci-webhook-secret
+      SESSION_SECRET_KEY: ci-session-secret-ci-session-secret
+      DEV_HEADER_AUTH_ENABLED: "true"
+      MODEL_PROVIDER: mock
+      MODEL_NAME: mock-planner
+      ENABLE_OTEL: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install API dependencies
+        run: pip install -r apps/api/requirements.txt
+      - name: Import API app
+        run: python -c "from app.main import app; print(app.title)"
+        working-directory: apps/api
+      - name: Verify migrations from fresh database
+        run: python -m app.db.migration_verifier
+        working-directory: apps/api
+      - name: Run migrations
+        run: alembic upgrade head
+        working-directory: apps/api
+      - name: Run API tests
+        run: pytest apps/api/tests -q
+
+  package-boundaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package check dependencies
+        run: python -m pip install "pydantic>=2.7,<3.0"
+      - name: Build and install extracted packages
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/repopilot-package-check
+          python -m pip install --no-deps --no-build-isolation \
+            --target /tmp/repopilot-package-check \
+            packages/shared_contracts \
+            packages/evals \
+            packages/policy_engine \
+            packages/llm_client \
+            packages/github_client
+          find packages -maxdepth 2 -name '*.egg-info' -type d -prune -exec rm -rf {} +
+      - name: Verify extracted package imports
+        env:
+          PYTHONPATH: /tmp/repopilot-package-check
+        run: |
+          python - <<'PY'
+          from repopilot_contracts import ArtifactReference, CodeQLAlertFetchRequest, CodeQLSarifIngestionRequest, ImplementationPlan
+          from repopilot_evals import FixtureVerifier
+          from repopilot_policy_engine import PolicyEngine
+          from repopilot_llm_client import provider_catalog
+          from repopilot_github_client import command_permission_decision
+
+          assert ImplementationPlan(plan_id="p", issue_id="i", rollback_plan="r").requires_human_approval
+          assert ArtifactReference(uri="local://artifacts/demo/log.json", artifact_type="validation.log", sha256="0" * 64, byte_size=0).storage_backend == "local"
+          assert CodeQLSarifIngestionRequest(sarif={"runs": []}).source == "codeql-sarif"
+          assert CodeQLAlertFetchRequest().tool_name == "CodeQL"
+          assert FixtureVerifier.__name__ == "FixtureVerifier"
+          assert PolicyEngine().config.max_files_changed_without_approval > 0
+          assert provider_catalog()
+          assert command_permission_decision(command="approve", github_permission="write").allowed
+          print("package boundary imports ok")
+          PY
+
+  web-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: apps/web
+      - name: Typecheck web
+        run: npm run typecheck
+        working-directory: apps/web
+
+  sandbox-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sandbox image
+        run: docker build -t repopilot-sandbox:local -f services/sandbox_runner/Dockerfile .

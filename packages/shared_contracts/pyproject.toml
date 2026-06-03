@@ -1,0 +1,15 @@
+[project]
+name = "repopilot-contracts"
+version = "0.1.0"
+description = "Shared Pydantic contracts for RepoPilot AI services."
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2.7,<3.0"
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["repopilot_contracts*"]

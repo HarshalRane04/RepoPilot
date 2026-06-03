@@ -1,0 +1,128 @@
+{
+  "blockers": [],
+  "codeql_workflow_present": true,
+  "dependency_manifests": [
+    "apps/api/requirements.txt",
+    "apps/web/package-lock.json",
+    "packages/evals/fixtures/python-service/pyproject.toml",
+    "packages/evals/pyproject.toml",
+    "packages/github_client/pyproject.toml",
+    "packages/llm_client/pyproject.toml",
+    "packages/policy_engine/pyproject.toml",
+    "packages/shared_contracts/pyproject.toml"
+  ],
+  "environment": {
+    "CODEQL_ENABLED": false,
+    "DEPENDENCY_AUDIT_ENABLED": false,
+    "SEMGREP_ENABLED": false
+  },
+  "generated_at": "2026-06-03T04:55:09.551490+00:00",
+  "release_scanner_proof_ready": false,
+  "root": "/Users/harshalrane/Documents/RepoPilot",
+  "scanners": [
+    {
+      "detail": "Deterministic prompt-injection and secret-pattern guards are implemented in the local control plane.",
+      "enabled": true,
+      "env_key": null,
+      "name": "built_in_prompt_and_secret_guards",
+      "next_step": null,
+      "required_for_release": true,
+      "status": "ready",
+      "tools": []
+    },
+    {
+      "detail": "Source-boundary hygiene scanning is available through make release-hygiene.",
+      "enabled": true,
+      "env_key": null,
+      "name": "release_hygiene_secret_scan",
+      "next_step": null,
+      "required_for_release": true,
+      "status": "ready",
+      "tools": []
+    },
+    {
+      "detail": "SEMGREP_ENABLED is false; Semgrep evidence remains local-placeholder only.",
+      "enabled": false,
+      "env_key": "SEMGREP_ENABLED",
+      "name": "semgrep",
+      "next_step": "Install Semgrep and set SEMGREP_ENABLED=true for release scanner proof.",
+      "required_for_release": true,
+      "status": "disabled",
+      "tools": [
+        "semgrep"
+      ]
+    },
+    {
+      "detail": "DEPENDENCY_AUDIT_ENABLED is false; npm/pip audit evidence is not production-proven.",
+      "enabled": false,
+      "env_key": "DEPENDENCY_AUDIT_ENABLED",
+      "name": "dependency_audit",
+      "next_step": "Install audit tools and set DEPENDENCY_AUDIT_ENABLED=true for release scanner proof.",
+      "required_for_release": true,
+      "status": "disabled",
+      "tools": [
+        "npm",
+        "pip-audit"
+      ]
+    },
+    {
+      "detail": "CODEQL_ENABLED is false; CodeQL workflow is present, but SARIF/alert evidence remains credential-blocked.",
+      "enabled": false,
+      "env_key": "CODEQL_ENABLED",
+      "name": "codeql",
+      "next_step": "Set CODEQL_ENABLED=true after GitHub credentials and code-scanning access are verified.",
+      "required_for_release": true,
+      "status": "disabled",
+      "tools": [
+        "codeql"
+      ]
+    }
+  ],
+  "tool_versions": [
+    {
+      "available": false,
+      "command": [
+        "semgrep",
+        "--version"
+      ],
+      "detail": "semgrep executable was not found.",
+      "name": "semgrep",
+      "version": null
+    },
+    {
+      "available": true,
+      "command": [
+        "npm",
+        "--version"
+      ],
+      "detail": null,
+      "name": "npm",
+      "version": "10.9.4"
+    },
+    {
+      "available": false,
+      "command": [
+        "pip-audit",
+        "--version"
+      ],
+      "detail": "pip-audit executable was not found.",
+      "name": "pip-audit",
+      "version": null
+    },
+    {
+      "available": false,
+      "command": [
+        "codeql",
+        "--version"
+      ],
+      "detail": "codeql executable was not found.",
+      "name": "codeql",
+      "version": null
+    }
+  ],
+  "warnings": [
+    "SEMGREP_ENABLED is false; Semgrep evidence remains local-placeholder only.",
+    "DEPENDENCY_AUDIT_ENABLED is false; npm/pip audit evidence is not production-proven.",
+    "CODEQL_ENABLED is false; CodeQL workflow is present, but SARIF/alert evidence remains credential-blocked."
+  ]
+}

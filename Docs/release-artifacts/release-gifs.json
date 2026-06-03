@@ -1,0 +1,31 @@
+{
+  "artifacts": [
+    {
+      "inputs": [
+        "Docs/release-artifacts/operator-console-plan-review-2026-06-01.png",
+        "Docs/release-artifacts/operator-console-agent-runs-2026-06-01.png",
+        "Docs/release-artifacts/operator-console-run-trace-2026-06-01.png",
+        "Docs/release-artifacts/operator-console-pull-requests-2026-06-01.png"
+      ],
+      "name": "operator-console-plan-to-pr-flow",
+      "output": "Docs/release-artifacts/operator-console-plan-to-pr-flow-2026-06-03.gif",
+      "proof": "Local operator journey through plan review, agent runs, run trace, and draft PR evidence surfaces.",
+      "title": "Plan To PR Evidence Flow"
+    },
+    {
+      "inputs": [
+        "Docs/release-artifacts/operator-console-security-2026-06-01.png",
+        "Docs/release-artifacts/operator-console-evaluations-2026-06-01.png",
+        "Docs/release-artifacts/operator-console-settings-2026-06-01.png",
+        "Docs/release-artifacts/operator-console-desktop-2026-06-01.png"
+      ],
+      "name": "operator-console-governance-flow",
+      "output": "Docs/release-artifacts/operator-console-governance-flow-2026-06-03.gif",
+      "proof": "Local operator journey through security findings, evaluation metrics, readiness settings, and dashboard overview.",
+      "title": "Governance Evidence Flow"
+    }
+  ],
+  "scope": "local operator-console visual-flow evidence only",
+  "stamp": "2026-06-03",
+  "status": "generated"
+}

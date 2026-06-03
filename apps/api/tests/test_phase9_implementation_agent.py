@@ -1,0 +1,215 @@
+from __future__ import annotations
+
+import asyncio
+import shutil
+from pathlib import Path
+from uuid import uuid4
+
+from repopilot_contracts import AgentRunState, ImplementationPlan, PlanApprovalStatus
+
+from app.core.config import settings
+from app.db.models import AgentRun, ArtifactRecord, Issue, Plan
+from app.services.implementation_agent import (
+    ImplementationAgent,
+    ImplementationToolPlan,
+    ProposedImplementationToolCall,
+)
+from app.services.security_envelope import stable_json_hash
+from app.services.tools.registry import WORKSPACE_ROOT
+
+
+class FakeGateway:
+    async def complete_json(self, *_args, **_kwargs):
+        return ImplementationToolPlan(
+            summary="Rename repository issue count field and add a regression test.",
+            tool_calls=[
+                ProposedImplementationToolCall(
+                    tool_name="workspace.replace_text",
+                    arguments={
+                        "path": "app/api/routes/repos.py",
+                        "old_text": "return {'issue_count': 1}",
+                        "new_text": "return {'open_issue_count': 1}",
+                    },
+                ),
+                ProposedImplementationToolCall(
+                    tool_name="workspace.write_file",
+                    arguments={
+                        "path": "tests/test_repositories.py",
+                        "content": (
+                            "from app.api.routes.repos import list_repositories\n\n\n"
+                            "def test_repository_count_field_is_open_issue_count():\n"
+                            "    assert list_repositories()['open_issue_count'] == 1\n"
+                        ),
+                    },
+                ),
+            ],
+        )
+
+
+class FakeDb:
+    def __init__(self, *, run: AgentRun, plan: Plan, issue: Issue) -> None:
+        self.run = run
+        self.plan = plan
+        self.issue = issue
+        self.added: list[object] = []
+        self.commits = 0
+
+    async def get(self, model, item_id):
+        if model is AgentRun and self.run.id == item_id:
+            return self.run
+        if model is Plan and self.plan.id == item_id:
+            return self.plan
+        if model is Issue and self.issue.id == item_id:
+            return self.issue
+        return None
+
+    def add(self, item: object) -> None:
+        self.added.append(item)
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+
+def _approved_plan_payload(plan: ImplementationPlan) -> dict[str, object]:
+    payload = plan.model_dump(mode="json")
+    payload["approved_plan_hash"] = stable_json_hash(plan.model_dump(mode="json", exclude={"plan_hash"}))
+    payload["plan_hash"] = payload["approved_plan_hash"]
+    return payload
+
+
+def test_implementation_agent_uses_tool_executor_for_source_and_test_patch(monkeypatch, tmp_path: Path) -> None:
+    repository_root = tmp_path / "repositories"
+    source = repository_root / "demo"
+    route = source / "app" / "api" / "routes" / "repos.py"
+    route.parent.mkdir(parents=True)
+    route.write_text("def list_repositories():\n    return {'issue_count': 1}\n", encoding="utf-8")
+    (source / "tests").mkdir()
+
+    monkeypatch.setattr(settings, "repository_workspace_root", str(repository_root))
+    monkeypatch.setattr(settings, "sandbox_backend", "local")
+    monkeypatch.setattr(settings, "environment", "local")
+    monkeypatch.setattr(settings, "artifact_store_root", str(tmp_path / "artifacts"))
+
+    plan_id = uuid4()
+    issue_id = uuid4()
+    run = AgentRun(id=uuid4(), issue_id=issue_id, plan_id=plan_id, state=AgentRunState.WAIT_FOR_APPROVAL.value)
+    issue = Issue(id=issue_id, repository_id=uuid4(), number=22, title="Fix repository issue count display")
+    implementation_plan = ImplementationPlan(
+        plan_id=str(plan_id),
+        issue_id=str(issue_id),
+        files_to_inspect=["apps/api/app/api/routes/repos.py"],
+        files_to_modify=["apps/api/app/api/routes/repos.py"],
+        tests_to_add=["apps/api/tests/"],
+        commands_to_run=["python3 -m pytest tests/test_repositories.py"],
+        rollback_plan="Close the generated branch.",
+    )
+    plan = Plan(
+        id=plan_id,
+        issue_id=issue_id,
+        approval_status=PlanApprovalStatus.APPROVED.value,
+        plan_json=_approved_plan_payload(implementation_plan),
+    )
+    db = FakeDb(run=run, plan=plan, issue=issue)
+    workspace = WORKSPACE_ROOT / str(run.id)
+    shutil.rmtree(workspace, ignore_errors=True)
+
+    try:
+        result = asyncio.run(
+            ImplementationAgent(model_gateway=FakeGateway()).execute(
+                db,
+                run_id=run.id,
+                request=type(
+                    "Request",
+                    (),
+                    {
+                        "workspace_path": str(source),
+                        "validation_command": "python3 -m pytest tests/test_repositories.py",
+                        "timeout_seconds": 60,
+                        "max_changed_files": 4,
+                    },
+                )(),
+            )
+        )
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+    assert result.status == "passed"
+    assert result.patch is not None
+    assert result.patch.diff_uri and result.patch.diff_uri.startswith(f"local://artifacts/{run.id}/")
+    assert result.patch.diff_artifact is not None
+    assert {change.path for change in result.patch.changed_files} == {
+        "app/api/routes/repos.py",
+        "tests/test_repositories.py",
+    }
+    assert "open_issue_count" in result.patch.diff
+    assert any(isinstance(item, ArtifactRecord) and item.artifact_type == "patch.diff" for item in db.added)
+    assert "issue_count" in route.read_text(encoding="utf-8")
+    assert run.state == AgentRunState.RUN_LOCAL_VALIDATION.value
+
+
+def test_implementation_agent_blocks_when_model_returns_no_tool_calls(monkeypatch, tmp_path: Path) -> None:
+    class EmptyGateway:
+        async def complete_json(self, *_args, **_kwargs):
+            return ImplementationToolPlan(
+                summary="No patch.",
+                tool_calls=[],
+                stop_reason="No safe implementation path.",
+            )
+
+    repository_root = tmp_path / "repositories"
+    source = repository_root / "demo"
+    (source / "app").mkdir(parents=True)
+    (source / "app" / "demo.py").write_text("VALUE = 1\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "repository_workspace_root", str(repository_root))
+
+    plan_id = uuid4()
+    issue_id = uuid4()
+    run = AgentRun(id=uuid4(), issue_id=issue_id, plan_id=plan_id, state=AgentRunState.WAIT_FOR_APPROVAL.value)
+    issue = Issue(id=issue_id, repository_id=uuid4(), number=23, title="Update demo")
+    implementation_plan = ImplementationPlan(
+        plan_id=str(plan_id),
+        issue_id=str(issue_id),
+        files_to_modify=["app/demo.py"],
+        commands_to_run=["python -m pytest"],
+        rollback_plan="Close the generated branch.",
+    )
+    plan = Plan(
+        id=plan_id,
+        issue_id=issue_id,
+        approval_status=PlanApprovalStatus.APPROVED.value,
+        plan_json=_approved_plan_payload(implementation_plan),
+    )
+
+    workspace = WORKSPACE_ROOT / str(run.id)
+    shutil.rmtree(workspace, ignore_errors=True)
+    try:
+        result = asyncio.run(
+            ImplementationAgent(model_gateway=EmptyGateway()).execute(
+                FakeDb(run=run, plan=plan, issue=issue),
+                run_id=run.id,
+                request=type(
+                    "Request",
+                    (),
+                    {
+                        "workspace_path": str(source),
+                        "validation_command": None,
+                        "timeout_seconds": 60,
+                        "max_changed_files": 4,
+                    },
+                )(),
+            )
+        )
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+    assert result.status == "blocked"
+    assert result.blocked_reason == "No safe implementation path."
+
+
+def test_phase9_normalizes_pytest_validation_command() -> None:
+    agent = ImplementationAgent(model_gateway=FakeGateway())
+
+    assert agent._normalize_validation_command("pytest") == "python -m pytest"
+    assert agent._normalize_validation_command("pytest tests") == "python -m pytest tests"
+    assert agent._normalize_validation_command("python3 -m pytest tests") == "python -m pytest tests"
+    assert agent._normalize_validation_command("npm test") == "npm test"

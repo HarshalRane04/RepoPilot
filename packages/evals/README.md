@@ -1,0 +1,51 @@
+# Evals Package
+
+Status: fixture dataset, executable fixture repositories, reusable fixture verification package, and local Markdown/JSON report builder. `apps/api/app/services/eval_runner.py` now delegates repository/file/command checks to `repopilot_evals.FixtureVerifier` instead of carrying duplicate API-local verifier logic.
+
+Phase 9 is implemented by the local evaluation runner in `apps/api/app/services/eval_runner.py` with package-owned fixture verification in `repopilot_evals`.
+
+Current scope:
+
+- `benchmark_tasks.json` defines 31 tasks across docs, tests, bug fixes, small features, refactors, and security cases.
+- `fixtures/python-service` is a runnable Python benchmark repository with route/service modules and pytest coverage for the task paths.
+- `fixtures/web-dashboard` is a runnable JavaScript/TypeScript benchmark repository with dashboard files and an `npm test` smoke.
+- `repopilot_evals.FixtureVerifier` verifies fixture repositories, expected files, expected command targets, and executable repository markers for API and future CLI runners.
+- `repopilot_evals.BenchmarkReportBuilder` writes local JSON and Markdown eval evidence reports from fixture checks plus optional observed plan, patch, and provider comparison evidence.
+- `repopilot_evals.ProviderPlanningEvalRunner` can call an OpenAI-compatible chat provider for planning-only observed evidence without writing patches or mutating fixture repositories.
+- `POST /evals/run` validates task schemas, delegates fixture checks to this package, scores per-task outcomes, records quality-gate results, and stores benchmark-versioned reports in `eval_runs`.
+- `GET /evals/reports` returns historical reports and task outcomes inside report metrics.
+- Metrics include task pass rate, fixture schema pass rate, fixture repository pass rate, fixture file coverage, category pass rates, plan approval rate, patch success rate, CI pass signal, security block rate, ready-for-review count, cost per run, and latency placeholders.
+
+Generate a local report without touching the API:
+
+```bash
+PYTHONPATH=packages/evals:packages/shared_contracts python -m repopilot_evals.report \
+  --out-dir Docs/eval-reports \
+  --report-name v1-local-latest \
+  --allow-failed-gates
+```
+
+Add optional model/provider evidence with:
+
+```bash
+PYTHONPATH=packages/evals:packages/shared_contracts python -m repopilot_evals.report \
+  --observed-evidence /path/to/observed-evidence.json \
+  --out-dir Docs/eval-reports \
+  --report-name v1-provider-comparison
+```
+
+Run a provider-backed planning eval by supplying the provider key through the environment, not the command line:
+
+```bash
+PYTHONPATH=packages/evals:packages/shared_contracts OPENROUTER_API_KEY=... python -m repopilot_evals.provider_harness \
+  --provider openrouter \
+  --model gemma-4-31b-it:free \
+  --task-count 5 \
+  --out-dir Docs/eval-reports \
+  --report-name v1-openrouter-planning \
+  --allow-failed-gates
+```
+
+The same command is available as `make provider-planning-eval` after `OPENROUTER_API_KEY` is set in the shell.
+
+The benchmark task list and fixture repositories in this package are the portfolio/demo seed set. Future work can run model-by-model patch assertions and CI-backed checks against cloned copies of these fixtures.

@@ -1,0 +1,15 @@
+[project]
+name = "repopilot-llm-client"
+version = "0.1.0"
+description = "Provider-agnostic RepoPilot LLM catalog and future gateway helpers."
+requires-python = ">=3.12"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["repopilot_llm_client*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

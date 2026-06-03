@@ -1,0 +1,24 @@
+name: Release Images
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set image tag
+        id: meta
+        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+      - name: Build API image
+        run: docker build -t repopilot-api:${{ steps.meta.outputs.tag }} -f apps/api/Dockerfile .
+      - name: Build web image
+        run: docker build -t repopilot-web:${{ steps.meta.outputs.tag }} -f apps/web/Dockerfile .
+      - name: Build sandbox image
+        run: docker build -t repopilot-sandbox:${{ steps.meta.outputs.tag }} -f services/sandbox_runner/Dockerfile .

@@ -1,0 +1,18 @@
+[project]
+name = "repopilot-policy-engine"
+version = "0.1.0"
+description = "Reusable RepoPilot policy rules and decision helpers."
+requires-python = ">=3.12"
+dependencies = [
+  "repopilot-contracts==0.1.0",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["repopilot_policy_engine*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
