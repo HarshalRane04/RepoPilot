@@ -57,7 +57,6 @@ jobs:
       REPOPILOT_ENV: local
       GITHUB_WEBHOOK_SECRET: ci-webhook-secret
       SESSION_SECRET_KEY: ci-session-secret-ci-session-secret
-      DEV_HEADER_AUTH_ENABLED: "true"
       MODEL_PROVIDER: mock
       MODEL_NAME: mock-planner
       ENABLE_OTEL: "false"
