@@ -61,7 +61,7 @@ jobs:
       MODEL_PROVIDER: mock
       MODEL_NAME: mock-planner
       ENABLE_OTEL: "false"
-      PYTHONPATH: ${{ github.workspace }}/apps/api:${{ github.workspace }}/packages/shared_contracts:${{ github.workspace }}/packages/evals:${{ github.workspace }}/packages/policy_engine:${{ github.workspace }}/packages/llm_client:${{ github.workspace }}/packages/github_client
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/apps/api:${{ github.workspace }}/packages/shared_contracts:${{ github.workspace }}/packages/evals:${{ github.workspace }}/packages/policy_engine:${{ github.workspace }}/packages/llm_client:${{ github.workspace }}/packages/github_client
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
