@@ -115,10 +115,10 @@
       "sha256": "4b9a728d8ccc4dbeab73b286c9b25285ea0af0d99cac852454f5625acca7eec7"
     },
     {
-      "bytes": 127664,
+      "bytes": 127950,
       "kind": "file",
       "path": "Docs/IMPROVEMENT_PLAN.md",
-      "sha256": "ec83e47215cd723a6e4fff4e349159735ed312dbc8a49593ff27cb56574fe1de"
+      "sha256": "efef5844720208c6b7009d3a875bd09e7f8165e296c13c03c4357b6987d767af"
     },
     {
       "bytes": 6885,
@@ -763,10 +763,10 @@
       "sha256": "af64b088b8f191f188afe1d8d54ee4b69f8f967ef1a7fce639a7ab67f691ac7e"
     },
     {
-      "bytes": 20554,
+      "bytes": 26013,
       "kind": "file",
       "path": "apps/api/app/services/github_app.py",
-      "sha256": "558335d4a423516e386e4ca735546a70ed7a9ce3e238bc286118e962e22828b0"
+      "sha256": "2265700caca25e9098d9f9bf4aaaefbc13b65093486b549223425dadc8e05c41"
     },
     {
       "bytes": 19084,
@@ -1021,10 +1021,10 @@
       "sha256": "4f877f300fed80bea4c7c7e0f69b68f2cb127f435c4bee44dbdfb18d48c736ac"
     },
     {
-      "bytes": 9532,
+      "bytes": 10639,
       "kind": "file",
       "path": "apps/api/tests/test_phase7_github.py",
-      "sha256": "83a15b165f95fe46bb2400e2be63a97d7cb1696baf5061f080d25242ff6b1a13"
+      "sha256": "16839d604a065782063f60ae26011985d050231e0e312a626fd860d6f50f78de"
     },
     {
       "bytes": 4367,
@@ -1920,10 +1920,10 @@
     "Docs/release-artifacts/source-boundary-manifest.md"
   ],
   "file_count": 319,
-  "generated_at": "2026-06-03T14:04:37.635368+00:00",
-  "head_sha": "7decb4b86d36da6c8e48edd163351c17576312c9",
-  "manifest_sha256": "0d04791145920b07a7e2d8d2bdb84cd045759bf908f7d0f757e9b0d8ed3e677b",
+  "generated_at": "2026-06-03T14:16:57.436186+00:00",
+  "head_sha": "d521a4a64414064f75180102ad9d9a0666dc0495",
+  "manifest_sha256": "e48cf601b40a356a85c30406d6a23050ef8e56d7e6232006382ad1b9501e938f",
   "root": "/Users/harshalrane/Documents/RepoPilot",
-  "status_count": 6,
-  "total_bytes": 33681920
+  "status_count": 3,
+  "total_bytes": 33688772
 }

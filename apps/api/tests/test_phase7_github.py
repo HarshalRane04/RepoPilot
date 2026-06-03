@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
+import zipfile
 from uuid import uuid4
 
 from repopilot_github_client import command_permission_decision, role_for_github_permission as package_role_for_github_permission
@@ -236,7 +238,11 @@ def test_github_client_fetches_workflow_logs_as_safe_metadata(monkeypatch) -> No
     from app.services import github_app
 
     secret = "sk-live-secret-value-1234567890"
-    body = f"Run tests\nERROR failed with TOKEN={secret}".encode()
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w") as archive:
+        archive.writestr("pytest/1_run.txt", f"Run tests\nERROR failed with TOKEN={secret}")
+        archive.writestr("lint/1_run.txt", "Run lint\nAll good")
+    body = buffer.getvalue()
 
     class FakeResponse:
         status_code = 200
@@ -278,8 +284,28 @@ def test_github_client_fetches_workflow_logs_as_safe_metadata(monkeypatch) -> No
     assert result["byte_size"] == len(body)
     assert result["content_type"] == "application/zip"
     assert len(result["sha256"]) == 64
+    assert result["log_summary"]["archive_format"] == "zip"
+    assert result["log_summary"]["file_count"] == 2
+    assert result["log_summary"]["processed_file_count"] == 1
+    assert result["log_summary"]["files"][0]["name"] == "pytest/1_run.txt"
     assert "TOKEN=[REDACTED_SECRET]" in result["redacted_text_excerpt"]
+    assert "TOKEN=[REDACTED_SECRET]" in json.dumps(result["log_summary"])
     assert secret not in json.dumps(result)
     assert "/repos/octo/demo/actions/runs/987/logs" in FakeAsyncClient.last_url
     assert FakeAsyncClient.last_follow_redirects is True
     assert "Authorization" in FakeAsyncClient.last_headers
+
+
+def test_github_client_summarizes_plain_workflow_log_fallback() -> None:
+    secret = "sk-live-secret-value-1234567890"
+    body = f"Run tests\nTraceback\nException TOKEN={secret}".encode()
+
+    result = GitHubApiClient(token_provider=FakeTokenProvider()).summarize_workflow_log_archive(
+        body,
+        content_type="text/plain",
+    )
+
+    assert result["archive_format"] == "text"
+    assert result["processed_file_count"] == 1
+    assert "TOKEN=[REDACTED_SECRET]" in result["combined_failure_excerpt"]
+    assert secret not in json.dumps(result)

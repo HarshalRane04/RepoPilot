@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import time
+import zipfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -15,6 +17,9 @@ from app.services.security_envelope import redact_text
 MAX_CHECK_RUN_SUMMARIES = 20
 MAX_CHECK_ANNOTATION_SUMMARIES = 20
 MAX_CHECK_OUTPUT_CHARS = 1200
+MAX_WORKFLOW_LOG_FILES = 12
+MAX_WORKFLOW_LOG_FAILURE_LINES = 20
+MAX_WORKFLOW_LOG_FILE_BYTES = 64_000
 
 
 class GitHubIntegrationError(RuntimeError):
@@ -339,12 +344,15 @@ class GitHubApiClient:
         if response.status_code >= 400:
             raise GitHubIntegrationError(f"GitHub workflow logs request failed: {response.status_code} {response.text[:300]}")
         content = response.content or b""
+        content_type = response.headers.get("content-type", "application/octet-stream")
+        log_summary = self.summarize_workflow_log_archive(content, content_type=content_type)
         return {
             "run_id": run_id,
             "byte_size": len(content),
             "sha256": hashlib.sha256(content).hexdigest(),
-            "content_type": response.headers.get("content-type", "application/octet-stream"),
-            "redacted_text_excerpt": self._bounded_redacted(content.decode("utf-8", errors="ignore"), max_chars=MAX_CHECK_OUTPUT_CHARS),
+            "content_type": content_type,
+            "redacted_text_excerpt": log_summary.get("combined_failure_excerpt") or self._bounded_redacted(content.decode("utf-8", errors="ignore"), max_chars=MAX_CHECK_OUTPUT_CHARS),
+            "log_summary": log_summary,
         }
 
     async def fetch_check_run_annotations(
@@ -436,6 +444,123 @@ class GitHubApiClient:
                 }
             )
         return summaries
+
+    def summarize_workflow_log_archive(
+        self,
+        content: bytes,
+        *,
+        content_type: str,
+        max_files: int = MAX_WORKFLOW_LOG_FILES,
+        max_failure_lines: int = MAX_WORKFLOW_LOG_FAILURE_LINES,
+        max_file_bytes: int = MAX_WORKFLOW_LOG_FILE_BYTES,
+        max_text_chars: int = MAX_CHECK_OUTPUT_CHARS,
+    ) -> dict[str, Any]:
+        if self._looks_like_zip(content=content, content_type=content_type):
+            return self._summarize_zip_workflow_logs(
+                content,
+                max_files=max_files,
+                max_failure_lines=max_failure_lines,
+                max_file_bytes=max_file_bytes,
+                max_text_chars=max_text_chars,
+            )
+        text = content.decode("utf-8", errors="ignore")
+        failure_lines = self._workflow_failure_lines(text, max_lines=max_failure_lines, max_text_chars=max_text_chars)
+        excerpt = "\n".join(failure_lines) or self._bounded_redacted(text, max_chars=max_text_chars)
+        return {
+            "archive_format": "text",
+            "file_count": 1 if text else 0,
+            "processed_file_count": 1 if text else 0,
+            "truncated": False,
+            "files": [
+                {
+                    "name": "workflow.log",
+                    "byte_size": len(content),
+                    "failure_lines": failure_lines,
+                    "excerpt": excerpt,
+                }
+            ]
+            if text
+            else [],
+            "combined_failure_excerpt": excerpt,
+        }
+
+    def _summarize_zip_workflow_logs(
+        self,
+        content: bytes,
+        *,
+        max_files: int,
+        max_failure_lines: int,
+        max_file_bytes: int,
+        max_text_chars: int,
+    ) -> dict[str, Any]:
+        files: list[dict[str, Any]] = []
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                candidates = [item for item in archive.infolist() if not item.is_dir()]
+                for item in candidates[: max(max_files, 0)]:
+                    with archive.open(item) as file:
+                        text = file.read(max_file_bytes + 1).decode("utf-8", errors="ignore")
+                    was_truncated = len(text.encode("utf-8")) > max_file_bytes or item.file_size > max_file_bytes
+                    failure_lines = self._workflow_failure_lines(text, max_lines=max_failure_lines, max_text_chars=max_text_chars)
+                    if not failure_lines and not was_truncated:
+                        continue
+                    excerpt = "\n".join(failure_lines) or self._bounded_redacted(text, max_chars=max_text_chars)
+                    files.append(
+                        {
+                            "name": self._bounded_redacted(item.filename, max_chars=500),
+                            "byte_size": item.file_size,
+                            "truncated": was_truncated,
+                            "failure_lines": failure_lines,
+                            "excerpt": excerpt,
+                        }
+                    )
+        except zipfile.BadZipFile:
+            return self.summarize_workflow_log_archive(
+                content,
+                content_type="text/plain",
+                max_files=max_files,
+                max_failure_lines=max_failure_lines,
+                max_file_bytes=max_file_bytes,
+                max_text_chars=max_text_chars,
+            )
+
+        combined_lines: list[str] = []
+        for item in files:
+            for line in item.get("failure_lines", []):
+                if isinstance(line, str):
+                    combined_lines.append(f"{item.get('name')}: {line}")
+                if len(combined_lines) >= max_failure_lines:
+                    break
+            if len(combined_lines) >= max_failure_lines:
+                break
+        combined = self._bounded_redacted("\n".join(combined_lines), max_chars=max_text_chars)
+        return {
+            "archive_format": "zip",
+            "file_count": len(candidates) if "candidates" in locals() else 0,
+            "processed_file_count": len(files),
+            "truncated": bool("candidates" in locals() and len(candidates) > max_files),
+            "files": files,
+            "combined_failure_excerpt": combined,
+        }
+
+    def _looks_like_zip(self, *, content: bytes, content_type: str) -> bool:
+        if "zip" in content_type.lower():
+            return True
+        return content.startswith(b"PK\x03\x04")
+
+    def _workflow_failure_lines(self, text: str, *, max_lines: int, max_text_chars: int) -> list[str]:
+        markers = ("::error", "##[error]", " error", "failed", "failure", "traceback", "exception", "exit code")
+        lines: list[str] = []
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            lowered = f" {line.lower()}"
+            if any(marker in lowered for marker in markers):
+                lines.append(self._bounded_redacted(line, max_chars=max_text_chars))
+            if len(lines) >= max(max_lines, 0):
+                break
+        return lines
 
     async def get_collaborator_permission(
         self,
