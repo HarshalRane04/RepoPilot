@@ -1,12 +1,12 @@
 # RepoPilot Source-Boundary Manifest
 
 - Root: `/Users/harshalrane/Documents/RepoPilot`
-- Generated at: `2026-06-03T14:16:57.436186+00:00`
-- Git HEAD: `d521a4a64414064f75180102ad9d9a0666dc0495`
-- Git status entries: `3`
-- Source candidate files: `319`
-- Total bytes: `33688772`
-- Manifest SHA-256: `e48cf601b40a356a85c30406d6a23050ef8e56d7e6232006382ad1b9501e938f`
+- Generated at: `2026-06-03T14:30:42.830766+00:00`
+- Git HEAD: `4892bc2d5ff063b193a5a73e4f72cdc651370e71`
+- Git status entries: `11`
+- Source candidate files: `320`
+- Total bytes: `33697664`
+- Manifest SHA-256: `833f8e6b5d009bfaa7d5eb8073d02f18cd99314d0a2d9ad079f13f715cfcdba7`
 - Excluded self-output files: `Docs/release-artifacts/source-boundary-manifest.json, Docs/release-artifacts/source-boundary-manifest.md`
 
 | Path | Type | Bytes | SHA-256 |
@@ -28,9 +28,9 @@
 | `Docs/CREDENTIAL_HANDOFF.md` | file | 4726 | `c473b55ae0b917cd66a79bcb6f426bdc4e9d51b2db41df9cfec763f9439cfda9` |
 | `Docs/DEMO_SCRIPT.md` | file | 4287 | `43867dbab1812c8ed8564ecbcf1f314f97b590f9f0172c6638afabd9a2d32f21` |
 | `Docs/DEPLOYMENT_GUIDE.md` | file | 4780 | `018f8c98ac70a382d01187c3ee14f0d0bcc0fc1ba1257eceba4a362fcf9a81fe` |
-| `Docs/EVALS.md` | file | 5329 | `f2b3d07e049d158fa089bc728f5f7191dff00ef1dce4b41abfedcb27dd2cd2cf` |
+| `Docs/EVALS.md` | file | 5553 | `db02a11c0a0f9cbafc83ce5dd48309d86189c7edf4c34eb39d8667eacb3e8a12` |
 | `Docs/GITHUB_APP_SETUP.md` | file | 5877 | `4b9a728d8ccc4dbeab73b286c9b25285ea0af0d99cac852454f5625acca7eec7` |
-| `Docs/IMPROVEMENT_PLAN.md` | file | 127950 | `efef5844720208c6b7009d3a875bd09e7f8165e296c13c03c4357b6987d767af` |
+| `Docs/IMPROVEMENT_PLAN.md` | file | 128185 | `4fb7bb9e1623471997034ebb736f837d267a1c3459029ae0db4ab03e5c3071a5` |
 | `Docs/RELEASE_CHECKLIST.md` | file | 6885 | `4f0430c13eb04ca0dd091ea6f2659e5f2a7bb39d009f8f4df150177b2f925b96` |
 | `Docs/RELEASE_NOTES.md` | file | 9457 | `9a463a7cacdae4f5142f6fd2591ce0c98d28af8e2cd2bb60e781af726df28418` |
 | `Docs/RUNBOOK.md` | file | 12069 | `415ca6f755420ed6e2fc15ab3041c271e15fc72ca60e3b34611299d3ad25246a` |
@@ -90,6 +90,6 @@
 | `Images/ChatGPT Image May 20, 2026, 08_41_32 PM.png` | file | 1206285 | `6473af8a196c64bdd1d4ed5d731cfa3630b4ea974d2f95df7a0ef202db364cf5` |
 | `Images/f3de6791-d799-4411-a9ed-8654f875614a.png` | file | 1326483 | `802ed20fae4e5a7cb932d6196c5af0cca2298d5593e723b79c809e59ab4c826d` |
 | `LICENSE` | file | 1082 | `4727b30466869637c1d083d09d232cb459481e28bc4a07693f155ab9a4f651af` |
-| `Makefile` | file | 2438 | `76030c1eca4d6b2fc79b12bbb27d39cb3f8a7efa5addc1d4e33c97ffd1f4cbae` |
+| `Makefile` | file | 2558 | `0ed8cafbeaa58411af83f29d2860a7435952344354603e6f46aae028a2d825ed` |
 
-_JSON manifest contains 239 additional file entries._
+_JSON manifest contains 240 additional file entries._

@@ -10,6 +10,7 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel, ValidationError
 from repopilot_contracts import EmbeddingResponse, LLMCallMode, LLMResponse, TokenUsage
+from repopilot_llm_client import build_completion_request, extract_completion_content, extract_completion_usage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -338,10 +339,8 @@ class ModelGateway:
 
         payload = response.json()
         content = _extract_provider_completion_content(provider_id=provider_id, payload=payload)
-        usage = payload.get("usage") if isinstance(payload, dict) else None
-        if provider_id == "google" and isinstance(payload, dict):
-            usage = payload.get("usageMetadata")
-        tokens = _usage_from_payload(usage)
+        usage = extract_completion_usage(provider_id=provider_id, payload=payload)
+        tokens = TokenUsage(prompt=usage["prompt"], completion=usage["completion"], total=usage["total"])
         return LLMResponse(
             content=content,
             model=model,
@@ -494,56 +493,17 @@ def _completion_request(
     temperature: float,
     max_tokens: int,
 ) -> dict[str, Any]:
-    clean_base_url = base_url.rstrip("/")
-    if provider_id == "anthropic":
-        url = f"{clean_base_url}/messages" if clean_base_url.endswith("/v1") else f"{clean_base_url}/v1/messages"
-        return {
-            "url": url,
-            "headers": {
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "anthropic-version": "2023-06-01",
-                "x-api-key": api_key,
-            },
-            "json_payload": {
-                "model": model,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "system": system_prompt,
-                "messages": [{"role": "user", "content": [{"type": "text", "text": user_prompt}]}],
-            },
-        }
-    if provider_id == "google":
-        api_root = clean_base_url if clean_base_url.endswith(("/v1", "/v1beta")) else f"{clean_base_url}/v1beta"
-        model_path = model if model.startswith("models/") else f"models/{model}"
-        payload: dict[str, Any] = {
-            "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-            "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
-        }
-        if system_prompt:
-            payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
-        return {
-            "url": f"{api_root}/{model_path}:generateContent",
-            "headers": {
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "x-goog-api-key": api_key,
-            },
-            "json_payload": payload,
-        }
-    return {
-        "url": f"{clean_base_url}/chat/completions",
-        "headers": {"Authorization": f"Bearer {api_key}", "Accept": "application/json", "Content-Type": "application/json"},
-        "json_payload": {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        },
-    }
+    request = build_completion_request(
+        provider_id=provider_id,
+        model=model,
+        api_key=api_key,
+        base_url=base_url,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    return {"url": request.url, "headers": request.headers, "json_payload": request.json_payload}
 
 
 def _normalize_embedding(value: Any, *, dimensions: int) -> list[float]:
@@ -559,67 +519,8 @@ def _normalize_embedding(value: Any, *, dimensions: int) -> list[float]:
 
 
 def _extract_openai_compatible_content(payload: Any) -> str:
-    if not isinstance(payload, dict):
-        return ""
-    choices = payload.get("choices")
-    if not isinstance(choices, list) or not choices:
-        return ""
-    first = choices[0]
-    if not isinstance(first, dict):
-        return ""
-    message = first.get("message")
-    if isinstance(message, dict):
-        content = message.get("content")
-        if isinstance(content, str):
-            return content
-    text = first.get("text")
-    return text if isinstance(text, str) else ""
+    return extract_completion_content(provider_id="openai", payload=payload)
 
 
 def _extract_provider_completion_content(*, provider_id: str, payload: Any) -> str:
-    if provider_id == "anthropic":
-        return _extract_anthropic_content(payload)
-    if provider_id == "google":
-        return _extract_google_content(payload)
-    return _extract_openai_compatible_content(payload)
-
-
-def _extract_anthropic_content(payload: Any) -> str:
-    if not isinstance(payload, dict):
-        return ""
-    content = payload.get("content")
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-    parts: list[str] = []
-    for block in content:
-        if isinstance(block, dict):
-            text = block.get("text")
-            if isinstance(text, str):
-                parts.append(text)
-        elif isinstance(block, str):
-            parts.append(block)
-    return "".join(parts)
-
-
-def _extract_google_content(payload: Any) -> str:
-    if not isinstance(payload, dict):
-        return ""
-    candidates = payload.get("candidates")
-    if not isinstance(candidates, list) or not candidates:
-        return ""
-    first = candidates[0]
-    if not isinstance(first, dict):
-        return ""
-    content = first.get("content")
-    if not isinstance(content, dict):
-        return ""
-    parts = content.get("parts")
-    if not isinstance(parts, list):
-        return ""
-    output: list[str] = []
-    for part in parts:
-        if isinstance(part, dict) and isinstance(part.get("text"), str):
-            output.append(part["text"])
-    return "".join(output)
+    return extract_completion_content(provider_id=provider_id, payload=payload)

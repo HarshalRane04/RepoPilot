@@ -32,7 +32,7 @@ Executable fixture repositories:
 - `packages/evals/repopilot_evals.PatchQualityScorer`: package-owned observed patch scorer for changed files, disallowed changes, summary intent, validation commands, validation status, and security result.
 - `packages/evals/repopilot_evals.ProviderComparisonScorer`: package-owned provider/model scorer for blended plan quality, patch quality, context precision, inverse human edit distance, cost, and latency ranking.
 - `packages/evals/repopilot_evals.BenchmarkReportBuilder`: package-owned Markdown/JSON report generator for local fixture proof plus optional observed model/provider evidence.
-- `packages/evals/repopilot_evals.ProviderPlanningEvalRunner`: package-owned planning-only provider harness that reads the API key from an environment variable, calls an OpenAI-compatible provider, and writes observed plan/provider evidence without writing patches.
+- `packages/evals/repopilot_evals.ProviderPlanningEvalRunner`: package-owned planning-only provider harness that reads the API key from an environment variable, calls OpenAI-compatible providers, Anthropic Messages, or Gemini GenerateContent through the shared provider adapter layer, and writes observed plan/provider evidence without writing patches.
 
 Metrics to track:
 
@@ -70,6 +70,6 @@ Implemented local report artifact:
 - `Docs/eval-reports/v1-local-latest.md`: human-readable local fixture report.
 - `Docs/eval-reports/v1-local-latest.json`: machine-readable local fixture report.
 - `make eval-report`: regenerates both files with failed release gates allowed, so the report remains honest about missing observed plan/patch/provider evidence.
-- `make provider-planning-eval`: runs the planning-only live-provider harness after `OPENROUTER_API_KEY` is set in the shell. It defaults to `MODEL=gemma-4-31b-it:free` and writes `Docs/eval-reports/v1-provider-planning.*`.
+- `make provider-planning-eval`: runs the planning-only live-provider harness after the selected provider key is set in the shell. It defaults to `PROVIDER=openrouter`, `MODEL=gemma-4-31b-it:free`, and `OPENROUTER_API_KEY`; Anthropic uses `ANTHROPIC_API_KEY`, and Gemini uses `GEMINI_API_KEY`. Reports are written to `Docs/eval-reports/v1-provider-planning.*`.
 
 Current reports are deterministic local fixture scores, optional observed plan/patch-quality scores, optional human edit distance, optional provider comparisons through `model_config.provider_eval_results`, and observed platform evidence from the database. Future credentialed model comparison can clone these fixture repositories, run model-specific issue-to-plan-to-patch attempts, submit observed plan evidence through `model_config.observed_plan_results`, submit observed patch evidence through `model_config.observed_task_results`, submit provider/model summaries through `model_config.provider_eval_results`, and compare output against expected files, disallowed changes, validation results, security results, context citations, human reference diffs, CI/mock-CI outcomes, cost, and latency without changing the API contract.

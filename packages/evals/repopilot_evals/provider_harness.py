@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from repopilot_contracts import EvalTaskFixture
+from repopilot_llm_client import build_completion_request, extract_completion_content, provider_by_id
 
 from .report import BenchmarkReport, BenchmarkReportBuilder
 
@@ -21,28 +22,32 @@ class ChatCompletionClient(Protocol):
         ...
 
 
-class OpenAICompatibleChatClient:
+class ProviderChatClient:
     def __init__(self, *, base_url: str, api_key: str, provider: str) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
-        self.provider = provider
+        self.provider = provider.strip().lower()
 
     def complete_json(self, *, model: str, messages: list[dict[str, str]], timeout_seconds: int) -> dict[str, Any]:
+        system_prompt, user_prompt = split_chat_messages(messages)
+        request_config = build_completion_request(
+            provider_id=self.provider,
+            model=model,
+            api_key=self.api_key,
+            base_url=self.base_url,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=0.1,
+            max_tokens=2048,
+            json_mode=True,
+        )
+        headers = dict(request_config.headers)
+        if self.provider not in {"anthropic", "google"}:
+            headers["X-Title"] = "RepoPilot Eval Harness"
         request = urllib.request.Request(
-            url=f"{self.base_url}/chat/completions",
-            data=json.dumps(
-                {
-                    "model": model,
-                    "messages": messages,
-                    "temperature": 0.1,
-                    "response_format": {"type": "json_object"},
-                }
-            ).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-                "X-Title": "RepoPilot Eval Harness",
-            },
+            url=request_config.url,
+            data=json.dumps(request_config.json_payload).encode("utf-8"),
+            headers=headers,
             method="POST",
         )
         try:
@@ -53,10 +58,13 @@ class OpenAICompatibleChatClient:
             raise RuntimeError(f"{self.provider} returned HTTP {exc.code}: {body[:500]}") from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"{self.provider} request failed: {exc.reason}") from exc
-        content = payload.get("choices", [{}])[0].get("message", {}).get("content")
-        if not isinstance(content, str):
+        content = extract_completion_content(provider_id=self.provider, payload=payload)
+        if not content:
             raise RuntimeError(f"{self.provider} response did not include a message content string.")
         return parse_json_object(content)
+
+
+OpenAICompatibleChatClient = ProviderChatClient
 
 
 @dataclass(frozen=True)
@@ -227,12 +235,42 @@ def parse_json_object(content: str) -> dict[str, Any]:
     return payload
 
 
+def split_chat_messages(messages: list[dict[str, str]]) -> tuple[str, str]:
+    system_parts: list[str] = []
+    user_parts: list[str] = []
+    for message in messages:
+        content = str(message.get("content") or "")
+        if message.get("role") == "system":
+            system_parts.append(content)
+        else:
+            user_parts.append(content)
+    return "\n\n".join(system_parts), "\n\n".join(user_parts)
+
+
+def default_provider_base_url(provider: str) -> str:
+    provider_option = provider_by_id(provider)
+    if provider_option:
+        return provider_option.default_base_url
+    return "https://openrouter.ai/api/v1"
+
+
+def default_provider_api_key_env(provider: str) -> str:
+    normalized = provider.strip().lower()
+    if normalized == "anthropic":
+        return "ANTHROPIC_API_KEY"
+    if normalized == "google":
+        return "GEMINI_API_KEY"
+    if normalized == "openrouter":
+        return "OPENROUTER_API_KEY"
+    return "MODEL_API_KEY"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run provider-backed RepoPilot planning evals.")
     parser.add_argument("--provider", default="openrouter")
     parser.add_argument("--model", required=True)
-    parser.add_argument("--api-key-env", default="OPENROUTER_API_KEY")
-    parser.add_argument("--base-url", default="https://openrouter.ai/api/v1")
+    parser.add_argument("--api-key-env")
+    parser.add_argument("--base-url")
     parser.add_argument("--benchmark", type=Path, default=Path(__file__).resolve().parents[1] / "benchmark_tasks.json")
     parser.add_argument("--out-dir", type=Path, default=Path("Docs/eval-reports"))
     parser.add_argument("--report-name", default="v1-provider-planning")
@@ -244,13 +282,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    api_key = os.environ.get(args.api_key_env)
+    api_key_env = args.api_key_env or default_provider_api_key_env(args.provider)
+    api_key = os.environ.get(api_key_env)
     if not api_key:
-        print(f"Missing provider API key. Set {args.api_key_env} in the environment.")
+        print(f"Missing provider API key. Set {api_key_env} in the environment.")
         return 2
     runner = ProviderPlanningEvalRunner(
         benchmark_path=args.benchmark,
-        client=OpenAICompatibleChatClient(base_url=args.base_url, api_key=api_key, provider=args.provider),
+        client=ProviderChatClient(
+            base_url=args.base_url or default_provider_base_url(args.provider),
+            api_key=api_key,
+            provider=args.provider,
+        ),
     )
     try:
         result = runner.run(

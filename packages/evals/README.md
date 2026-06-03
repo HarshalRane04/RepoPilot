@@ -11,7 +11,7 @@ Current scope:
 - `fixtures/web-dashboard` is a runnable JavaScript/TypeScript benchmark repository with dashboard files and an `npm test` smoke.
 - `repopilot_evals.FixtureVerifier` verifies fixture repositories, expected files, expected command targets, and executable repository markers for API and future CLI runners.
 - `repopilot_evals.BenchmarkReportBuilder` writes local JSON and Markdown eval evidence reports from fixture checks plus optional observed plan, patch, and provider comparison evidence.
-- `repopilot_evals.ProviderPlanningEvalRunner` can call an OpenAI-compatible chat provider for planning-only observed evidence without writing patches or mutating fixture repositories.
+- `repopilot_evals.ProviderPlanningEvalRunner` can call OpenAI-compatible providers, Anthropic Messages, or Gemini GenerateContent for planning-only observed evidence without writing patches or mutating fixture repositories.
 - `POST /evals/run` validates task schemas, delegates fixture checks to this package, scores per-task outcomes, records quality-gate results, and stores benchmark-versioned reports in `eval_runs`.
 - `GET /evals/reports` returns historical reports and task outcomes inside report metrics.
 - Metrics include task pass rate, fixture schema pass rate, fixture repository pass rate, fixture file coverage, category pass rates, plan approval rate, patch success rate, CI pass signal, security block rate, ready-for-review count, cost per run, and latency placeholders.
@@ -47,5 +47,12 @@ PYTHONPATH=packages/evals:packages/shared_contracts OPENROUTER_API_KEY=... pytho
 ```
 
 The same command is available as `make provider-planning-eval` after `OPENROUTER_API_KEY` is set in the shell.
+
+Anthropic and Gemini can use the same harness without changing the report contract:
+
+```bash
+ANTHROPIC_API_KEY=... make provider-planning-eval PROVIDER=anthropic MODEL=claude-sonnet-4-6
+GEMINI_API_KEY=... make provider-planning-eval PROVIDER=google MODEL=gemini-2.5-pro
+```
 
 The benchmark task list and fixture repositories in this package are the portfolio/demo seed set. Future work can run model-by-model patch assertions and CI-backed checks against cloned copies of these fixtures.

@@ -9,11 +9,12 @@ def __getattr__(name: str):
         from .report import BenchmarkReport, BenchmarkReportBuilder
 
         return {"BenchmarkReport": BenchmarkReport, "BenchmarkReportBuilder": BenchmarkReportBuilder}[name]
-    if name in {"ProviderPlanningEvalRunner", "OpenAICompatibleChatClient"}:
-        from .provider_harness import OpenAICompatibleChatClient, ProviderPlanningEvalRunner
+    if name in {"ProviderPlanningEvalRunner", "OpenAICompatibleChatClient", "ProviderChatClient"}:
+        from .provider_harness import OpenAICompatibleChatClient, ProviderChatClient, ProviderPlanningEvalRunner
 
         return {
             "OpenAICompatibleChatClient": OpenAICompatibleChatClient,
+            "ProviderChatClient": ProviderChatClient,
             "ProviderPlanningEvalRunner": ProviderPlanningEvalRunner,
         }[name]
     raise AttributeError(name)
@@ -33,5 +34,6 @@ __all__ = [
     "BenchmarkReport",
     "BenchmarkReportBuilder",
     "OpenAICompatibleChatClient",
+    "ProviderChatClient",
     "ProviderPlanningEvalRunner",
 ]

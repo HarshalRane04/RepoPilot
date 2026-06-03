@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 import sys
 
@@ -15,8 +16,10 @@ from repopilot_evals import (
     PlanQualityScorer,
     ProviderComparisonScorer,
     ProviderEvalEvidence,
+    ProviderChatClient,
     ProviderPlanningEvalRunner,
 )
+from repopilot_evals.provider_harness import default_provider_api_key_env, default_provider_base_url
 
 
 class FakeDb:
@@ -420,6 +423,99 @@ def test_provider_planning_eval_runner_writes_observed_evidence_without_network(
     assert "observed_plan_results" in observed_payload
     assert "provider_eval_results" in observed_payload
     assert "mock-planner" in report_markdown
+
+
+class FakeUrlopenResponse:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
+
+
+def test_provider_chat_client_uses_anthropic_messages_adapter(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(
+            {
+                "url": request.full_url,
+                "headers": {key.lower(): value for key, value in request.header_items()},
+                "body": json.loads(request.data.decode("utf-8")),
+                "timeout": timeout,
+            }
+        )
+        return FakeUrlopenResponse({"content": [{"type": "text", "text": '{"summary":"claude ok"}'}]})
+
+    monkeypatch.setattr("repopilot_evals.provider_harness.urllib.request.urlopen", fake_urlopen)
+
+    payload = ProviderChatClient(
+        provider="anthropic",
+        base_url="https://api.anthropic.com",
+        api_key="anthropic-test",
+    ).complete_json(
+        model="claude-sonnet-4-6",
+        messages=[{"role": "system", "content": "Return JSON."}, {"role": "user", "content": "Plan."}],
+        timeout_seconds=7,
+    )
+
+    assert payload == {"summary": "claude ok"}
+    assert calls[0]["url"] == "https://api.anthropic.com/v1/messages"
+    assert calls[0]["headers"]["x-api-key"] == "anthropic-test"
+    assert calls[0]["headers"]["anthropic-version"] == "2023-06-01"
+    assert calls[0]["body"]["system"] == "Return JSON."
+    assert calls[0]["body"]["messages"][0]["content"][0]["text"] == "Plan."
+    assert calls[0]["timeout"] == 7
+
+
+def test_provider_chat_client_uses_gemini_generate_content_adapter(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(
+            {
+                "url": request.full_url,
+                "headers": {key.lower(): value for key, value in request.header_items()},
+                "body": json.loads(request.data.decode("utf-8")),
+                "timeout": timeout,
+            }
+        )
+        return FakeUrlopenResponse(
+            {"candidates": [{"content": {"parts": [{"text": '{"summary":"gemini ok"}'}]}}]}
+        )
+
+    monkeypatch.setattr("repopilot_evals.provider_harness.urllib.request.urlopen", fake_urlopen)
+
+    payload = ProviderChatClient(
+        provider="google",
+        base_url="https://generativelanguage.googleapis.com",
+        api_key="gemini-test",
+    ).complete_json(
+        model="gemini-2.5-pro",
+        messages=[{"role": "system", "content": "Return JSON."}, {"role": "user", "content": "Plan."}],
+        timeout_seconds=9,
+    )
+
+    assert payload == {"summary": "gemini ok"}
+    assert calls[0]["url"] == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent"
+    assert calls[0]["headers"]["x-goog-api-key"] == "gemini-test"
+    assert calls[0]["body"]["systemInstruction"] == {"parts": [{"text": "Return JSON."}]}
+    assert calls[0]["body"]["contents"][0]["parts"][0]["text"] == "Plan."
+    assert calls[0]["body"]["generationConfig"]["responseMimeType"] == "application/json"
+    assert calls[0]["timeout"] == 9
+
+
+def test_provider_harness_defaults_provider_key_env_and_base_url() -> None:
+    assert default_provider_api_key_env("openrouter") == "OPENROUTER_API_KEY"
+    assert default_provider_api_key_env("anthropic") == "ANTHROPIC_API_KEY"
+    assert default_provider_api_key_env("google") == "GEMINI_API_KEY"
+    assert default_provider_base_url("google") == "https://generativelanguage.googleapis.com"
 
 
 def test_eval_fixture_repositories_are_executable() -> None:

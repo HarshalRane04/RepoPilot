@@ -103,10 +103,10 @@
       "sha256": "018f8c98ac70a382d01187c3ee14f0d0bcc0fc1ba1257eceba4a362fcf9a81fe"
     },
     {
-      "bytes": 5329,
+      "bytes": 5553,
       "kind": "file",
       "path": "Docs/EVALS.md",
-      "sha256": "f2b3d07e049d158fa089bc728f5f7191dff00ef1dce4b41abfedcb27dd2cd2cf"
+      "sha256": "db02a11c0a0f9cbafc83ce5dd48309d86189c7edf4c34eb39d8667eacb3e8a12"
     },
     {
       "bytes": 5877,
@@ -115,10 +115,10 @@
       "sha256": "4b9a728d8ccc4dbeab73b286c9b25285ea0af0d99cac852454f5625acca7eec7"
     },
     {
-      "bytes": 127950,
+      "bytes": 128185,
       "kind": "file",
       "path": "Docs/IMPROVEMENT_PLAN.md",
-      "sha256": "efef5844720208c6b7009d3a875bd09e7f8165e296c13c03c4357b6987d767af"
+      "sha256": "4fb7bb9e1623471997034ebb736f837d267a1c3459029ae0db4ab03e5c3071a5"
     },
     {
       "bytes": 6885,
@@ -475,10 +475,10 @@
       "sha256": "4727b30466869637c1d083d09d232cb459481e28bc4a07693f155ab9a4f651af"
     },
     {
-      "bytes": 2438,
+      "bytes": 2558,
       "kind": "file",
       "path": "Makefile",
-      "sha256": "76030c1eca4d6b2fc79b12bbb27d39cb3f8a7efa5addc1d4e33c97ffd1f4cbae"
+      "sha256": "0ed8cafbeaa58411af83f29d2860a7435952344354603e6f46aae028a2d825ed"
     },
     {
       "bytes": 9022,
@@ -811,10 +811,10 @@
       "sha256": "ce5a492b212eff141a6d52a25f6a144b3bed8b8753d1dc21591bb97fc6291ac1"
     },
     {
-      "bytes": 23962,
+      "bytes": 20495,
       "kind": "file",
       "path": "apps/api/app/services/model_gateway.py",
-      "sha256": "bde6c40e40a352a588c966964e72eff510848096376e617eb42a1dc467801ef4"
+      "sha256": "49392366e9046ebdadec45048a515b30ae03917cd66c49b7bc66867ca4eeb213"
     },
     {
       "bytes": 3716,
@@ -1033,10 +1033,10 @@
       "sha256": "c7f887bab638bbbd9c55ba949e89c0be7b7dcc0319d10c3726a09fb00219f9cc"
     },
     {
-      "bytes": 21103,
+      "bytes": 24927,
       "kind": "file",
       "path": "apps/api/tests/test_phase9_evals.py",
-      "sha256": "654adc8221c8092ae0bed32909f9f499ee80d3f539c752250a90fc5754d1a000"
+      "sha256": "df3e8249b538301aee0ec0d8b9e6b29db5b34d73966eba1a4f6ce73e79d11ce2"
     },
     {
       "bytes": 8438,
@@ -1327,10 +1327,10 @@
       "sha256": "e0c27ec405743af1a77707b154786b437e89524e0b4c013803cfa593fc0e3185"
     },
     {
-      "bytes": 3259,
+      "bytes": 3574,
       "kind": "file",
       "path": "packages/evals/README.md",
-      "sha256": "0a0a41ed915145706471641b10af30a7f63d435d2baf3c6f7905d4e1ef62b471"
+      "sha256": "f5f1a0eeffc5f3d02627cb90b177daa665211aae4bd9c3f36a6efcb6216bedc5"
     },
     {
       "bytes": 22225,
@@ -1699,10 +1699,10 @@
       "sha256": "5a34023a3bc921ccc6e6b89b8d12540af3bd5990f83a20746126647c6931f995"
     },
     {
-      "bytes": 1416,
+      "bytes": 1538,
       "kind": "file",
       "path": "packages/evals/repopilot_evals/__init__.py",
-      "sha256": "4f32ac547105c97041cdd39cbd98ba8832c283c2af20179a9acfc79419fd36a9"
+      "sha256": "85e22ec5adb82003daa783ba3482581c2433bd8beb1521d35eecaab6c65704d0"
     },
     {
       "bytes": 4310,
@@ -1729,10 +1729,10 @@
       "sha256": "a65ef35826102995a6dfac1280ca763f64e8df0338d3fd9c2a57c00aaa14bd11"
     },
     {
-      "bytes": 11541,
+      "bytes": 12938,
       "kind": "file",
       "path": "packages/evals/repopilot_evals/provider_harness.py",
-      "sha256": "4aa22c85c73ee5c45d84626b3b979b86914dd3ae718023c519aaa7e1452aea0c"
+      "sha256": "26dfe20888e973b67890272a2f42e92ebfbce63217ec263aa9859f552f7683ac"
     },
     {
       "bytes": 21781,
@@ -1765,10 +1765,10 @@
       "sha256": "d3b4748413b5ce6d91eba1cfaeb99bd98b694bd8204918b01266a2ccb148e068"
     },
     {
-      "bytes": 1342,
+      "bytes": 1331,
       "kind": "file",
       "path": "packages/llm_client/README.md",
-      "sha256": "21b37563ffabd352907dad12dcf0389b3396def42be141a3134acef6bb9dcce2"
+      "sha256": "a9f275ebc7c4f5e5f06f511bbd74ce14d71cddd56c245ffcc287df33cc46ab45"
     },
     {
       "bytes": 370,
@@ -1777,16 +1777,22 @@
       "sha256": "edf043cfe363ac10e90d6f017d6f98fc7effbaf860a67ccb2b7e61853c1eaea9"
     },
     {
-      "bytes": 360,
+      "bytes": 649,
       "kind": "file",
       "path": "packages/llm_client/repopilot_llm_client/__init__.py",
-      "sha256": "22732a8f2058f9fa6ec39c66c258bc8367d580d16303d7071fafe8a335de1201"
+      "sha256": "23b5e8aaabe7c5aaad4b15152dca320ddb508d9a49518deb488bf04c70d4bd1f"
     },
     {
       "bytes": 11207,
       "kind": "file",
       "path": "packages/llm_client/repopilot_llm_client/model_catalog.py",
       "sha256": "0e6ef0319ab611c492f224bd65cae1591c4ab1e04e31202d21e9aab3caa1ce94"
+    },
+    {
+      "bytes": 5844,
+      "kind": "file",
+      "path": "packages/llm_client/repopilot_llm_client/provider_adapters.py",
+      "sha256": "3611eb8e0fc824a8b3134789441f80c0c449f7ab2d80feff294fa16556681731"
     },
     {
       "bytes": 874,
@@ -1919,11 +1925,11 @@
     "Docs/release-artifacts/source-boundary-manifest.json",
     "Docs/release-artifacts/source-boundary-manifest.md"
   ],
-  "file_count": 319,
-  "generated_at": "2026-06-03T14:16:57.436186+00:00",
-  "head_sha": "d521a4a64414064f75180102ad9d9a0666dc0495",
-  "manifest_sha256": "e48cf601b40a356a85c30406d6a23050ef8e56d7e6232006382ad1b9501e938f",
+  "file_count": 320,
+  "generated_at": "2026-06-03T14:30:42.830766+00:00",
+  "head_sha": "4892bc2d5ff063b193a5a73e4f72cdc651370e71",
+  "manifest_sha256": "833f8e6b5d009bfaa7d5eb8073d02f18cd99314d0a2d9ad079f13f715cfcdba7",
   "root": "/Users/harshalrane/Documents/RepoPilot",
-  "status_count": 3,
-  "total_bytes": 33688772
+  "status_count": 11,
+  "total_bytes": 33697664
 }
