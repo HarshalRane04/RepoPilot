@@ -33,7 +33,7 @@ RepoPilot v1.0 is release-ready only when local controls, credentialed GitHub pr
 - `/repopilot status` and `/repopilot approve` enforce collaborator permissions.
 - A disposable demo issue produces a real branch, commit, and draft PR.
 - `GITHUB_WRITES_ENABLED=false` blocks the same write path.
-- CodeQL alert fetch is proven against a repository with code-scanning enabled.
+- CodeQL alert fetch is proven against a repository with code-scanning enabled. For private repositories, enable GitHub Advanced Security/code scanning and set the repository variable `CODEQL_ENABLED=true` before expecting the CodeQL workflow to upload results.
 - Live model provider verification succeeds without storing raw secrets.
 - Provider-backed triage/planning/retrieval/patch eval metrics are recorded, including observed plan-quality pass rate, context precision, observed patch-quality pass rate, human edit distance, provider/model ranking, cost, and latency. The planning-only provider harness can be run with `make provider-planning-eval`, but patch/retrieval/live-CI proof still needs separate evidence.
 

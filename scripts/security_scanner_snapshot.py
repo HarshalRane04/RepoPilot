@@ -288,10 +288,10 @@ def collect_snapshot(
     else:
         if codeql_workflow_present:
             detail = "CODEQL_ENABLED is false; CodeQL workflow is present, but SARIF/alert evidence remains credential-blocked."
-            next_step = "Set CODEQL_ENABLED=true after GitHub credentials and code-scanning access are verified."
+            next_step = "Set CODEQL_ENABLED=true after GitHub credentials and code-scanning/Advanced Security access are verified."
         else:
             detail = "CODEQL_ENABLED is false; CodeQL SARIF/alert evidence remains credential-blocked."
-            next_step = "Add/enable CodeQL workflow proof and set CODEQL_ENABLED=true after GitHub credentials are verified."
+            next_step = "Add/enable CodeQL workflow proof and set CODEQL_ENABLED=true after GitHub credentials and code-scanning/Advanced Security access are verified."
         warnings.append(detail)
         scanners.append(
             ScannerStatus(

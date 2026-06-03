@@ -20,7 +20,7 @@ RepoPilot AI is security-sensitive because it can eventually create branches, co
 - Security scans detect secret-like text, prompt-injection phrases, and high-risk generated patch paths before draft PR creation.
 - `security.semgrep` runs `semgrep --config auto --json --quiet .` against isolated workspaces when `SEMGREP_ENABLED=true`; if Semgrep is enabled but unavailable or fails, the adapter records a high-severity finding instead of silently passing.
 - `security.dependency_audit` runs `npm audit --audit-level=moderate --json` for `package-lock.json` and `pip-audit --format json` for Python manifests when `DEPENDENCY_AUDIT_ENABLED=true`; unavailable tools or failed audit commands fail closed with persisted findings.
-- `.github/workflows/codeql.yml` runs CodeQL analysis for Python and JavaScript/TypeScript using the current major CodeQL Action tag.
+- `.github/workflows/codeql.yml` runs CodeQL analysis for Python and JavaScript/TypeScript using the current major CodeQL Action tag on public repositories, or on private repositories when GitHub code scanning is available and the repository variable `CODEQL_ENABLED=true` is set.
 - Stale isolated workspaces are cleaned on API startup and by a scheduled Celery Beat task over the shared `agent_workspaces` Docker volume.
 - Security findings support `open`, `acknowledged`, `fixed`, and `false_positive` lifecycle states, with review reasons required for acknowledgement and false-positive decisions.
 - Draft PR creation is blocked when high or critical security findings are open.
@@ -35,7 +35,7 @@ RepoPilot AI is security-sensitive because it can eventually create branches, co
 ## Required Later Controls
 
 - Treat comments, commit messages, and third-party CI logs as untrusted input.
-- CodeQL SARIF ingestion and GitHub code-scanning alert fetch hooks are available behind `CODEQL_ENABLED`; credentialed CodeQL alert evidence and provider-backed secret scanning remain release gates.
+- CodeQL SARIF ingestion and GitHub code-scanning alert fetch hooks are available behind `CODEQL_ENABLED`; private repositories also require GitHub code scanning/Advanced Security before CodeQL upload proof can pass. Credentialed CodeQL alert evidence and provider-backed secret scanning remain release gates.
 - Move from lexical retrieval to provider-backed embedding retrieval with prompt-injection filtering on retrieved context.
 - Expand provider-backed embeddings and live LLM adapter tests.
 - Add a credentialed GitHub demo-repository smoke test before claiming real write-mode production readiness.

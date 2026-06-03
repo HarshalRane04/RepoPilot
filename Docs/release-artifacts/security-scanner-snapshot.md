@@ -1,6 +1,6 @@
 # RepoPilot Security Scanner Snapshot
 
-- Generated at: `2026-06-03T04:55:09.551490+00:00`
+- Generated at: `2026-06-03T06:11:18.382151+00:00`
 - Root: `/Users/harshalrane/Documents/RepoPilot`
 - Release scanner proof ready: `False`
 - CodeQL workflow present: `True`
@@ -14,7 +14,7 @@
 | release_hygiene_secret_scan |  | True | ready | True | Source-boundary hygiene scanning is available through make release-hygiene. |  |
 | semgrep | SEMGREP_ENABLED | False | disabled | True | SEMGREP_ENABLED is false; Semgrep evidence remains local-placeholder only. | Install Semgrep and set SEMGREP_ENABLED=true for release scanner proof. |
 | dependency_audit | DEPENDENCY_AUDIT_ENABLED | False | disabled | True | DEPENDENCY_AUDIT_ENABLED is false; npm/pip audit evidence is not production-proven. | Install audit tools and set DEPENDENCY_AUDIT_ENABLED=true for release scanner proof. |
-| codeql | CODEQL_ENABLED | False | disabled | True | CODEQL_ENABLED is false; CodeQL workflow is present, but SARIF/alert evidence remains credential-blocked. | Set CODEQL_ENABLED=true after GitHub credentials and code-scanning access are verified. |
+| codeql | CODEQL_ENABLED | False | disabled | True | CODEQL_ENABLED is false; CodeQL workflow is present, but SARIF/alert evidence remains credential-blocked. | Set CODEQL_ENABLED=true after GitHub credentials and code-scanning/Advanced Security access are verified. |
 
 ## Tool Availability
 

@@ -41,6 +41,7 @@ Provide these through the dashboard Settings screen or runtime secret store, not
 | `SEMGREP_ENABLED=true` | Enables command-backed Semgrep scans when Semgrep is available in the sandbox/runtime image. |
 | `DEPENDENCY_AUDIT_ENABLED=true` | Enables npm/pip dependency audit adapters when tools are available. |
 | `CODEQL_ENABLED=true` | Enables credential-gated CodeQL alert fetch and SARIF ingestion flows. |
+| GitHub repository variable `CODEQL_ENABLED=true` | Allows `.github/workflows/codeql.yml` to run on private repositories after GitHub code scanning/Advanced Security is enabled. Public repositories run the workflow automatically. |
 
 ## Smoke-Test Order
 

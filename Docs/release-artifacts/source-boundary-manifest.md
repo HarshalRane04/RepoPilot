@@ -1,12 +1,12 @@
 # RepoPilot Source-Boundary Manifest
 
 - Root: `/Users/harshalrane/Documents/RepoPilot`
-- Generated at: `2026-06-03T04:56:06.371068+00:00`
-- Git HEAD: `none`
-- Git status entries: `322`
+- Generated at: `2026-06-03T06:46:01.148162+00:00`
+- Git HEAD: `69a3ddc7feafb931fd3a23f85682c812b1801168`
+- Git status entries: `11`
 - Source candidate files: `319`
-- Total bytes: `33670218`
-- Manifest SHA-256: `a57abe4c1244ce62887b013e6e01cfde97c2b285753cf47bb97812ac8090250d`
+- Total bytes: `33671536`
+- Manifest SHA-256: `dc51c2f147a3147950d89872064daf736669ddd1ad60c20b294245fd1be1a101`
 - Excluded self-output files: `Docs/release-artifacts/source-boundary-manifest.json, Docs/release-artifacts/source-boundary-manifest.md`
 
 | Path | Type | Bytes | SHA-256 |
@@ -15,8 +15,8 @@
 | `.env.example` | file | 2948 | `0fc261aa936bcd26a30347f1c2de53acb096d022d54fa2763860edab8370a7dc` |
 | `.github/ISSUE_TEMPLATE/agent_task.md` | file | 272 | `8766a5eeb23d9a2d18e49a4d5cbeb72259367bf2f8b4b495bd4815e196865376` |
 | `.github/pull_request_template.md` | file | 157 | `76ae90a6220a8bf0b70510353781359128da69bfc786ef809a82b9bb77d4b982` |
-| `.github/workflows/ci.yml` | file | 5514 | `64cbde0ce923ec83bc19606d13819269dbcb5af3b3f54e83301e1ec20900ba65` |
-| `.github/workflows/codeql.yml` | file | 897 | `0aa11ccca3cf1cd90d8793ceda25cf0b9be574357e97e0d983c9262990c25e3a` |
+| `.github/workflows/ci.yml` | file | 5809 | `56f958b9d4fd9ac099927f4eac2d63cf504b3a9a6f2f64e6a4ce412f888a483e` |
+| `.github/workflows/codeql.yml` | file | 986 | `695e605f6353722430b733a7bfc7a7ac52d53e39749ab6e4c4b6388fc8292fb6` |
 | `.github/workflows/release.yml` | file | 731 | `bf3bd3e6368d0a64f2ee658948e9aa4e5eec1be24d3b5537ab8a0dca3d768075` |
 | `.gitignore` | file | 321 | `e285835ef45b47bc51bdb4b29c7584d7602fa2031dc01218939cb4f2f0426e96` |
 | `.pre-commit-config.yaml` | file | 307 | `7c51fb92b268808d8a751a5c253323b8c12178832b9472343a5096ba9722b7e6` |
@@ -25,19 +25,19 @@
 | `Docs/ADRs/0001-local-platform-stack.md` | file | 620 | `d7a84259c8d26a290798390325f5bb1fdefa324c66f8fad539556bf2d20a50a2` |
 | `Docs/ARCHITECTURE.md` | file | 7121 | `48487272d64ae4a0a7b71c383bf548a3c71d034589f72d1382840a9c99292df5` |
 | `Docs/CASE_STUDY.md` | file | 2080 | `7a5b56267e85f9561a46febd63b7b8f7b93f6b452121fcaedf547aaed50b94a6` |
-| `Docs/CREDENTIAL_HANDOFF.md` | file | 4493 | `051503727e0ef4dd9a371c094e76586917530f4e7efdb1e2cf0cbd4e95a705a3` |
+| `Docs/CREDENTIAL_HANDOFF.md` | file | 4726 | `c473b55ae0b917cd66a79bcb6f426bdc4e9d51b2db41df9cfec763f9439cfda9` |
 | `Docs/DEMO_SCRIPT.md` | file | 4287 | `43867dbab1812c8ed8564ecbcf1f314f97b590f9f0172c6638afabd9a2d32f21` |
 | `Docs/DEPLOYMENT_GUIDE.md` | file | 4780 | `018f8c98ac70a382d01187c3ee14f0d0bcc0fc1ba1257eceba4a362fcf9a81fe` |
 | `Docs/EVALS.md` | file | 5329 | `f2b3d07e049d158fa089bc728f5f7191dff00ef1dce4b41abfedcb27dd2cd2cf` |
 | `Docs/GITHUB_APP_SETUP.md` | file | 5877 | `4b9a728d8ccc4dbeab73b286c9b25285ea0af0d99cac852454f5625acca7eec7` |
-| `Docs/IMPROVEMENT_PLAN.md` | file | 126964 | `206046f869bb3179d751cf7255533979b840a65eedf57a48d97fd851797a021b` |
-| `Docs/RELEASE_CHECKLIST.md` | file | 6703 | `9e623f7e0e20b0aadd9548668adac97a8dcedc808f6c13902a016329f203debe` |
+| `Docs/IMPROVEMENT_PLAN.md` | file | 127265 | `a614479971ed54c43b5fd8eedc695dd5c13f0ba731b768d588d5766199be214f` |
+| `Docs/RELEASE_CHECKLIST.md` | file | 6885 | `4f0430c13eb04ca0dd091ea6f2659e5f2a7bb39d009f8f4df150177b2f925b96` |
 | `Docs/RELEASE_NOTES.md` | file | 9457 | `9a463a7cacdae4f5142f6fd2591ce0c98d28af8e2cd2bb60e781af726df28418` |
 | `Docs/RUNBOOK.md` | file | 12069 | `415ca6f755420ed6e2fc15ab3041c271e15fc72ca60e3b34611299d3ad25246a` |
 | `Docs/RepoPilot_AI_Production_Architecture_Blueprint.docx` | file | 84406 | `11be4a3c173daabe9e0cbbbbb658b23af00f525d49b1bb8c3cc4e35594b59ed6` |
 | `Docs/RepoPilot_AI_Production_Architecture_Blueprint_v2_Visual_Diagrams.docx` | file | 3043023 | `446190ea5bb3c44cf89d7d86707f59c27d420ee28bfaf4a0688d99eb047e1451` |
 | `Docs/RepoPilot_AI_Project_Blueprint.docx` | file | 184327 | `21126afc8c50dc43d8671969834b8f007b91c44e24145c0d07a8d25fd88fe1f9` |
-| `Docs/SECURITY.md` | file | 4372 | `9c0dd53c423e1147658bf866101781293413bedef0445d733dea3f10c7632a0b` |
+| `Docs/SECURITY.md` | file | 4629 | `6729490e1912e0ab9f56562754886af0a3a2da057b58066d89555716f1bbe71c` |
 | `Docs/SECURITY_REMEDIATION_REPORT_2026-05-26.md` | file | 15022 | `d78b1ffb06d284296d2cd328c5fba9f78c9848d2c4e2d44f581366fd3757c73a` |
 | `Docs/SOURCE_BOUNDARY_DECISIONS.md` | file | 1130 | `22c2605262c944555c5ab409cc871ff1d53d973111d360e720ee01c84e06ec02` |
 | `Docs/eval-reports/v1-local-latest.json` | file | 12063 | `856c15a64e979ead0bbfd2acb0b94f1df06481475a574d7f3217cd67ff8573a5` |
@@ -63,10 +63,10 @@
 | `Docs/release-artifacts/operator-console-settings-2026-06-01.png` | file | 108416 | `a45f48ffac0eebfc0970f6d65c762d3970122154c5d03cba16b40f3fc023c424` |
 | `Docs/release-artifacts/release-gifs.json` | file | 1441 | `b825941c3fbf4bb8b30873011aabb4d39a8f8e6019cc0a5994771842ff39ba17` |
 | `Docs/release-artifacts/release-gifs.md` | file | 1170 | `75e504b3a672a6752370550b7e6047c2037a16b3384c4aa7e08924d06cbfc872` |
-| `Docs/release-artifacts/security-scanner-snapshot.json` | file | 3759 | `f9adce5d155a13dbf43fe10410fbe9c50fd68d87a290cb41693f5c0d49869e1b` |
-| `Docs/release-artifacts/security-scanner-snapshot.md` | file | 2313 | `7b3a6beef589be7656da364cf4f9e16ade35b7d29ddcc128259889be572130e7` |
-| `Docs/release-artifacts/source-boundary-hygiene.json` | file | 1439 | `66c8ad452a0e1b26fef067215c3d1183e3d820545aa92e539bb13c897adaec6a` |
-| `Docs/release-artifacts/source-boundary-hygiene.md` | file | 1027 | `a196d82f7db90ca5826960553a64fbf656147b0f04583b3fd5b76d4afe9eb4dc` |
+| `Docs/release-artifacts/security-scanner-snapshot.json` | file | 3777 | `1269f6683aa4fdbfc7c5e342ac07c1d7ce1f3cc0e0f966dd855d506056c487c5` |
+| `Docs/release-artifacts/security-scanner-snapshot.md` | file | 2331 | `9fe1009e29173a41ce55599f4209ed22bf75c937ced09a0d697616ae66755da1` |
+| `Docs/release-artifacts/source-boundary-hygiene.json` | file | 1301 | `24323d982e94f10dcb4f400f3077f65f88a1d768d2ffdae55948b10b9b61129e` |
+| `Docs/release-artifacts/source-boundary-hygiene.md` | file | 965 | `da672a8aed9a36b97c31a91c91e10c9b526fb35f1dd448eb58f061adeadcee16` |
 | `Efficiency_Improvement_proposal.md` | file | 48012 | `422b3235685a7655d6a092ecddeffb63795d0d7495bf461f879d206122ae3c8b` |
 | `Images/ChatGPT Image May 20, 2026, 08_37_18 PM.png` | file | 1354320 | `0bb150ba351d0beba9618424d8e8c67de89e50a54149f76e08439d9a5f2cefd0` |
 | `Images/ChatGPT Image May 20, 2026, 08_38_47 PM.png` | file | 1200058 | `ce329b0606b762b5fe47e1f0c5963b4daa47ca56aa0b3ff94690752e9303f9ee` |

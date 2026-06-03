@@ -17,6 +17,7 @@ permissions:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
+    if: ${{ github.event.repository.private == false || vars.CODEQL_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:

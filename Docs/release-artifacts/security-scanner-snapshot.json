@@ -16,7 +16,7 @@
     "DEPENDENCY_AUDIT_ENABLED": false,
     "SEMGREP_ENABLED": false
   },
-  "generated_at": "2026-06-03T04:55:09.551490+00:00",
+  "generated_at": "2026-06-03T06:11:18.382151+00:00",
   "release_scanner_proof_ready": false,
   "root": "/Users/harshalrane/Documents/RepoPilot",
   "scanners": [
@@ -70,7 +70,7 @@
       "enabled": false,
       "env_key": "CODEQL_ENABLED",
       "name": "codeql",
-      "next_step": "Set CODEQL_ENABLED=true after GitHub credentials and code-scanning access are verified.",
+      "next_step": "Set CODEQL_ENABLED=true after GitHub credentials and code-scanning/Advanced Security access are verified.",
       "required_for_release": true,
       "status": "disabled",
       "tools": [

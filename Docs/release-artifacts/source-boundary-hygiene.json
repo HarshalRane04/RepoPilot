@@ -1,6 +1,6 @@
 {
-  "failed": true,
-  "failed_count": 1,
+  "failed": false,
+  "failed_count": 0,
   "findings": [
     {
       "check": "generated_artifact",
@@ -25,12 +25,6 @@
       "detail": "Secret-like content matched pattern private_key_block; value intentionally omitted.",
       "path": "apps/api/tests/test_api_routes.py",
       "status": "warning"
-    },
-    {
-      "check": "git_boundary",
-      "detail": "No baseline commit exists yet.",
-      "path": null,
-      "status": "failed"
     },
     {
       "check": "git_boundary",

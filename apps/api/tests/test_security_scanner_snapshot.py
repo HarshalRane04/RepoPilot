@@ -21,6 +21,7 @@ def test_scanner_snapshot_records_disabled_external_scanners(tmp_path: Path, mon
     assert "SEMGREP_ENABLED is false" in markdown
     assert "DEPENDENCY_AUDIT_ENABLED is false" in markdown
     assert "CODEQL_ENABLED is false" in markdown
+    assert "code-scanning/Advanced Security access" in markdown
 
 
 def test_scanner_snapshot_blocks_enabled_semgrep_when_tool_is_missing(tmp_path: Path, monkeypatch) -> None:
