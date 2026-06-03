@@ -258,7 +258,10 @@ async def _provider_catalog_entry(
 
 def _provider_request_auth(*, provider_id: str, api_key: str | None) -> tuple[dict[str, str], dict[str, str] | None]:
     if provider_id == "google":
-        return {"Accept": "application/json"}, {"key": api_key} if api_key else None
+        headers = {"Accept": "application/json"}
+        if api_key:
+            headers["x-goog-api-key"] = api_key
+        return headers, None
     if provider_id == "anthropic":
         headers = {"Accept": "application/json", "anthropic-version": "2023-06-01"}
         if api_key:

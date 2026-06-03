@@ -42,11 +42,10 @@ async def verify_model_provider(
     checked_at = datetime.now(UTC).isoformat()
     endpoint = _models_endpoint(provider_id=provider.id, base_url=base_url)
     headers = _headers(provider_id=provider.id, api_key=api_key)
-    params = {"key": api_key} if provider.id == "google" else None
 
     try:
         async with httpx.AsyncClient(timeout=min(max(timeout_seconds, 5), 30)) as client:
-            response = await client.get(endpoint, headers=headers, params=params)
+            response = await client.get(endpoint, headers=headers)
     except httpx.HTTPError as exc:
         return _result(False, provider.id, model, f"Provider request failed: {exc.__class__.__name__}", checked_at, started)
 
@@ -69,7 +68,7 @@ def _models_endpoint(*, provider_id: str, base_url: str) -> str:
 
 def _headers(*, provider_id: str, api_key: str) -> dict[str, str]:
     if provider_id == "google":
-        return {"Accept": "application/json"}
+        return {"Accept": "application/json", "x-goog-api-key": api_key}
     if provider_id == "anthropic":
         return {
             "Accept": "application/json",

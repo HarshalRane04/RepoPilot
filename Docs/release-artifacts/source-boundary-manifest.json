@@ -115,10 +115,10 @@
       "sha256": "4b9a728d8ccc4dbeab73b286c9b25285ea0af0d99cac852454f5625acca7eec7"
     },
     {
-      "bytes": 127265,
+      "bytes": 127664,
       "kind": "file",
       "path": "Docs/IMPROVEMENT_PLAN.md",
-      "sha256": "a614479971ed54c43b5fd8eedc695dd5c13f0ba731b768d588d5766199be214f"
+      "sha256": "ec83e47215cd723a6e4fff4e349159735ed312dbc8a49593ff27cb56574fe1de"
     },
     {
       "bytes": 6885,
@@ -805,22 +805,22 @@
       "sha256": "b7279bfade233384b2afd5801b6b3582fbdeeda117027d385dc7f21c12e5e00e"
     },
     {
-      "bytes": 13727,
+      "bytes": 13788,
       "kind": "file",
       "path": "apps/api/app/services/model_catalog.py",
-      "sha256": "f39ee95fd9ddbcf5b21d139896aeccd86f60fd9b78dd1d05d237dc309f1c6277"
+      "sha256": "ce5a492b212eff141a6d52a25f6a144b3bed8b8753d1dc21591bb97fc6291ac1"
     },
     {
-      "bytes": 19915,
+      "bytes": 23962,
       "kind": "file",
       "path": "apps/api/app/services/model_gateway.py",
-      "sha256": "7786ff8aaaaa8ae874aa2275d2674e933401269f38124087aedca90cfa82cc31"
+      "sha256": "bde6c40e40a352a588c966964e72eff510848096376e617eb42a1dc467801ef4"
     },
     {
-      "bytes": 3771,
+      "bytes": 3716,
       "kind": "file",
       "path": "apps/api/app/services/model_provider_verification.py",
-      "sha256": "4241081ad6d43c0969443ec872e9095571d38f7c02c8389e057f41fa438426e2"
+      "sha256": "142300c54ff63bf7de48451d7d507748f100cc96e05a3bebc60ec0fb026a402c"
     },
     {
       "bytes": 4054,
@@ -997,10 +997,10 @@
       "sha256": "662b5cb80f6a9237839068c0d7075f4b16bc23b9585079e4b218efcdd34426e3"
     },
     {
-      "bytes": 7085,
+      "bytes": 12822,
       "kind": "file",
       "path": "apps/api/tests/test_model_gateway.py",
-      "sha256": "0a75ddbf340099039b1e22b25f8fef54c71f51a0888502e7d0c67f5e6a1e7683"
+      "sha256": "30555ffc101a935dc692c0950376118851ee8ce08eaf53d51bb592f4961ea695"
     },
     {
       "bytes": 9561,
@@ -1765,10 +1765,10 @@
       "sha256": "d3b4748413b5ce6d91eba1cfaeb99bd98b694bd8204918b01266a2ccb148e068"
     },
     {
-      "bytes": 1147,
+      "bytes": 1342,
       "kind": "file",
       "path": "packages/llm_client/README.md",
-      "sha256": "c16d6532568de1e4924a4e55b4aa4710d1a8645f93c95598b5fe8851af50c4d7"
+      "sha256": "21b37563ffabd352907dad12dcf0389b3396def42be141a3134acef6bb9dcce2"
     },
     {
       "bytes": 370,
@@ -1920,10 +1920,10 @@
     "Docs/release-artifacts/source-boundary-manifest.md"
   ],
   "file_count": 319,
-  "generated_at": "2026-06-03T06:46:01.148162+00:00",
-  "head_sha": "69a3ddc7feafb931fd3a23f85682c812b1801168",
-  "manifest_sha256": "dc51c2f147a3147950d89872064daf736669ddd1ad60c20b294245fd1be1a101",
+  "generated_at": "2026-06-03T14:04:37.635368+00:00",
+  "head_sha": "7decb4b86d36da6c8e48edd163351c17576312c9",
+  "manifest_sha256": "0d04791145920b07a7e2d8d2bdb84cd045759bf908f7d0f757e9b0d8ed3e677b",
   "root": "/Users/harshalrane/Documents/RepoPilot",
-  "status_count": 11,
-  "total_bytes": 33671536
+  "status_count": 6,
+  "total_bytes": 33681920
 }
