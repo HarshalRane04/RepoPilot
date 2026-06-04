@@ -3,6 +3,12 @@
   "failed_count": 0,
   "findings": [
     {
+      "check": "env_file",
+      "detail": "Ignored local environment file is present; keep it out of commits and remove it before final source-boundary packaging.",
+      "path": ".env",
+      "status": "warning"
+    },
+    {
       "check": "generated_artifact",
       "detail": "Allowed Docker mount point; stop the web service before final source-boundary packaging if physical absence is required.",
       "path": "apps/web/node_modules",
@@ -34,5 +40,5 @@
     }
   ],
   "root": "/Users/harshalrane/Documents/RepoPilot",
-  "warning_count": 5
+  "warning_count": 6
 }

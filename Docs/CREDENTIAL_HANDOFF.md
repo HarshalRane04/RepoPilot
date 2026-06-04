@@ -4,6 +4,23 @@ RepoPilot is intentionally safe-by-default. Local mode keeps GitHub writes disab
 
 Use this handoff when you are ready to prove the live GitHub/model paths.
 
+## Local Runtime Secret Store
+
+For local testing, store real credentials in RepoPilot's encrypted runtime secret store, not in `.env` and not in GitHub Actions. The local store defaults to:
+
+| File | Purpose |
+|---|---|
+| `~/.repopilot/runtime-secrets.json` | Encrypted runtime values used by the API and dashboard. |
+| `~/.repopilot/runtime-secrets.key` | Local Fernet key used to decrypt the runtime store. |
+
+The dashboard Settings screen writes to this store through write-only secret forms. You can also run:
+
+```bash
+make configure-runtime-secrets
+```
+
+The helper prompts with hidden input for API keys, OAuth secrets, webhook secrets, and private keys, then prints only configured/missing status. Use GitHub repository Actions secrets only when a GitHub-hosted workflow needs a provider key, for example the Provider Planning Eval workflow.
+
 ## Required GitHub App Inputs
 
 Provide these through the dashboard Settings screen or runtime secret store, not by committing them:

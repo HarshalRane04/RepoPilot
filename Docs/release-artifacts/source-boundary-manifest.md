@@ -1,12 +1,12 @@
 # RepoPilot Source-Boundary Manifest
 
 - Root: `/Users/harshalrane/Documents/RepoPilot`
-- Generated at: `2026-06-04T04:58:21.807087+00:00`
-- Git HEAD: `e6fc40f2bc9837921b181afbe04bf9ccb4e47a62`
-- Git status entries: `1`
-- Source candidate files: `323`
-- Total bytes: `33718983`
-- Manifest SHA-256: `58e0f2ff0a582aebb4a18161ebaed4ae8794f7490525eb65eb7b8090cf14871e`
+- Generated at: `2026-06-04T17:00:32.932161+00:00`
+- Git HEAD: `32173a9a2a0c01ebd311d5d79316f4dd5836b86a`
+- Git status entries: `10`
+- Source candidate files: `324`
+- Total bytes: `33731361`
+- Manifest SHA-256: `57ecdaaa501033138b15f17ec5dd83aa0b5cb99d6a7db85db44ec20136ebe8a2`
 - Excluded self-output files: `Docs/release-artifacts/source-boundary-manifest.json, Docs/release-artifacts/source-boundary-manifest.md`
 
 | Path | Type | Bytes | SHA-256 |
@@ -26,7 +26,7 @@
 | `Docs/ADRs/0001-local-platform-stack.md` | file | 620 | `d7a84259c8d26a290798390325f5bb1fdefa324c66f8fad539556bf2d20a50a2` |
 | `Docs/ARCHITECTURE.md` | file | 7121 | `48487272d64ae4a0a7b71c383bf548a3c71d034589f72d1382840a9c99292df5` |
 | `Docs/CASE_STUDY.md` | file | 2080 | `7a5b56267e85f9561a46febd63b7b8f7b93f6b452121fcaedf547aaed50b94a6` |
-| `Docs/CREDENTIAL_HANDOFF.md` | file | 4726 | `c473b55ae0b917cd66a79bcb6f426bdc4e9d51b2db41df9cfec763f9439cfda9` |
+| `Docs/CREDENTIAL_HANDOFF.md` | file | 5575 | `c6bf5b01009c526e6d4c75c7997e49cd78fa699f8f6899b0ebc5fba2a76fe075` |
 | `Docs/DEMO_SCRIPT.md` | file | 4287 | `43867dbab1812c8ed8564ecbcf1f314f97b590f9f0172c6638afabd9a2d32f21` |
 | `Docs/DEPLOYMENT_GUIDE.md` | file | 4780 | `018f8c98ac70a382d01187c3ee14f0d0bcc0fc1ba1257eceba4a362fcf9a81fe` |
 | `Docs/EVALS.md` | file | 6067 | `6339bf23930d85b17b11764e660098edcb19e28f1c5844da1e006290e709d344` |
@@ -67,8 +67,8 @@
 | `Docs/release-artifacts/release-gifs.md` | file | 1170 | `75e504b3a672a6752370550b7e6047c2037a16b3384c4aa7e08924d06cbfc872` |
 | `Docs/release-artifacts/security-scanner-snapshot.json` | file | 3777 | `1269f6683aa4fdbfc7c5e342ac07c1d7ce1f3cc0e0f966dd855d506056c487c5` |
 | `Docs/release-artifacts/security-scanner-snapshot.md` | file | 2331 | `9fe1009e29173a41ce55599f4209ed22bf75c937ced09a0d697616ae66755da1` |
-| `Docs/release-artifacts/source-boundary-hygiene.json` | file | 1301 | `24323d982e94f10dcb4f400f3077f65f88a1d768d2ffdae55948b10b9b61129e` |
-| `Docs/release-artifacts/source-boundary-hygiene.md` | file | 965 | `da672a8aed9a36b97c31a91c91e10c9b526fb35f1dd448eb58f061adeadcee16` |
+| `Docs/release-artifacts/source-boundary-hygiene.json` | file | 3098 | `641c2f244e9b57fa4df13e64f7a9623d5fc9be38c42a6b885746fb658e8fb4d3` |
+| `Docs/release-artifacts/source-boundary-hygiene.md` | file | 2088 | `2629bf1988c1ad8f867a27d8d699bbeecd3dec83e9aeb603a6b487dd21c20e5c` |
 | `Efficiency_Improvement_proposal.md` | file | 48012 | `422b3235685a7655d6a092ecddeffb63795d0d7495bf461f879d206122ae3c8b` |
 | `Images/ChatGPT Image May 20, 2026, 08_37_18 PM.png` | file | 1354320 | `0bb150ba351d0beba9618424d8e8c67de89e50a54149f76e08439d9a5f2cefd0` |
 | `Images/ChatGPT Image May 20, 2026, 08_38_47 PM.png` | file | 1200058 | `ce329b0606b762b5fe47e1f0c5963b4daa47ca56aa0b3ff94690752e9303f9ee` |
@@ -92,4 +92,4 @@
 | `Images/ChatGPT Image May 20, 2026, 08_41_32 PM.png` | file | 1206285 | `6473af8a196c64bdd1d4ed5d731cfa3630b4ea974d2f95df7a0ef202db364cf5` |
 | `Images/f3de6791-d799-4411-a9ed-8654f875614a.png` | file | 1326483 | `802ed20fae4e5a7cb932d6196c5af0cca2298d5593e723b79c809e59ab4c826d` |
 
-_JSON manifest contains 243 additional file entries._
+_JSON manifest contains 244 additional file entries._

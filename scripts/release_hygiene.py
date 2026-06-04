@@ -159,6 +159,16 @@ class ReleaseHygieneScanner:
                     HygieneFinding(check="generated_artifact", status="failed", path=relative, detail="Generated artifact or cache path is present.")
                 )
             if path.name.startswith(".env") and path.name != ".env.example":
+                if self.is_git_ignored(path):
+                    report.findings.append(
+                        HygieneFinding(
+                            check="env_file",
+                            status="warning",
+                            path=relative,
+                            detail="Ignored local environment file is present; keep it out of commits and remove it before final source-boundary packaging.",
+                        )
+                    )
+                    continue
                 report.findings.append(
                     HygieneFinding(check="env_file", status="failed", path=relative, detail="Environment files other than .env.example must stay outside source control.")
                 )
@@ -264,6 +274,14 @@ class ReleaseHygieneScanner:
 
     def is_allowed_mount_child(self, relative: str) -> bool:
         return any(relative.startswith(f"{mount}/") for mount in ALLOWED_MOUNT_POINTS)
+
+    def is_git_ignored(self, path: Path) -> bool:
+        result = subprocess.run(
+            ["git", "check-ignore", "--quiet", self.relative(path)],
+            cwd=self.root,
+            check=False,
+        )
+        return result.returncode == 0
 
     def should_scan_content(self, path: Path) -> bool:
         relative = self.relative(path)

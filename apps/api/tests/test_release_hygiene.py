@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from scripts.release_hygiene import ReleaseHygieneScanner, render_markdown
@@ -101,6 +102,17 @@ def test_release_hygiene_scanner_reports_missing_ignore_patterns(tmp_path: Path)
 
     assert any(finding.check == "gitignore_pattern" and "Missing required pattern" in finding.detail for finding in report.findings)
     assert any(finding.check == "dockerignore_pattern" and "Missing required pattern" in finding.detail for finding in report.findings)
+
+
+def test_release_hygiene_scanner_warns_for_ignored_local_env_file(tmp_path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    write_required_ignore_files(tmp_path)
+    tmp_path.joinpath(".env").write_text("SESSION_SECRET_KEY=local-only\n", encoding="utf-8")
+
+    report = ReleaseHygieneScanner(root=tmp_path).scan()
+
+    assert any(finding.check == "env_file" and finding.path == ".env" and finding.status == "warning" for finding in report.findings)
+    assert not any(finding.check == "env_file" and finding.path == ".env" and finding.status == "failed" for finding in report.findings)
 
 
 def test_release_hygiene_scanner_links_documented_duplicate_readme_decision(tmp_path: Path) -> None:

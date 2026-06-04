@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -183,18 +184,23 @@ class DeploymentValidator:
         curl_path = shutil.which("curl")
         if curl_path is None:
             raise RuntimeError("curl is required for runtime HTTP smoke checks.")
-        result = subprocess.run(
-            [curl_path, "-sS", "-L", "--max-time", "15", "--output", "/dev/null", "--write-out", "%{http_code}", url],
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError((result.stderr or result.stdout).strip() or f"curl exited with {result.returncode}")
-        status_text = result.stdout.strip()[-3:]
-        if not status_text.isdigit():
-            raise RuntimeError(f"curl returned an invalid HTTP status: {result.stdout.strip()!r}")
-        return int(status_text)
+        last_error = ""
+        for attempt in range(1, 4):
+            result = subprocess.run(
+                [curl_path, "-sS", "-L", "--max-time", "30", "--output", "/dev/null", "--write-out", "%{http_code}", url],
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            if result.returncode == 0:
+                status_text = result.stdout.strip()[-3:]
+                if not status_text.isdigit():
+                    raise RuntimeError(f"curl returned an invalid HTTP status: {result.stdout.strip()!r}")
+                return int(status_text)
+            last_error = (result.stderr or result.stdout).strip() or f"curl exited with {result.returncode}"
+            if attempt < 3:
+                time.sleep(2)
+        raise RuntimeError(last_error)
 
     def read_file(self, relative_path: str, report: DeploymentValidationReport, *, check: str) -> str | None:
         path = self.root / relative_path

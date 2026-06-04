@@ -6,7 +6,7 @@ TASK_COUNT ?= 5
 API_KEY_ENV ?=
 BASE_URL ?=
 
-.PHONY: up down logs migrate migration-verify api-test web-typecheck sandbox-image eval-report provider-planning-eval source-boundary-manifest readiness-snapshot security-scanner-snapshot release-gifs release-hygiene deployment-validate deployment-smoke
+.PHONY: up down logs migrate migration-verify api-test web-typecheck sandbox-image configure-runtime-secrets eval-report provider-planning-eval source-boundary-manifest readiness-snapshot security-scanner-snapshot release-gifs release-hygiene deployment-validate deployment-smoke
 
 up:
 	$(COMPOSE) up --build
@@ -31,6 +31,9 @@ web-typecheck:
 
 sandbox-image:
 	$(COMPOSE) --profile tools build sandbox-image
+
+configure-runtime-secrets:
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/configure_runtime_secrets.py
 
 eval-report:
 	env PYTHONPATH=packages/evals:packages/shared_contracts uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.report --out-dir Docs/eval-reports --report-name v1-local-latest --allow-failed-gates

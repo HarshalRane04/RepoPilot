@@ -91,10 +91,10 @@
       "sha256": "7a5b56267e85f9561a46febd63b7b8f7b93f6b452121fcaedf547aaed50b94a6"
     },
     {
-      "bytes": 4726,
+      "bytes": 5575,
       "kind": "file",
       "path": "Docs/CREDENTIAL_HANDOFF.md",
-      "sha256": "c473b55ae0b917cd66a79bcb6f426bdc4e9d51b2db41df9cfec763f9439cfda9"
+      "sha256": "c6bf5b01009c526e6d4c75c7997e49cd78fa699f8f6899b0ebc5fba2a76fe075"
     },
     {
       "bytes": 4287,
@@ -337,16 +337,16 @@
       "sha256": "9fe1009e29173a41ce55599f4209ed22bf75c937ced09a0d697616ae66755da1"
     },
     {
-      "bytes": 1301,
+      "bytes": 3098,
       "kind": "file",
       "path": "Docs/release-artifacts/source-boundary-hygiene.json",
-      "sha256": "24323d982e94f10dcb4f400f3077f65f88a1d768d2ffdae55948b10b9b61129e"
+      "sha256": "641c2f244e9b57fa4df13e64f7a9623d5fc9be38c42a6b885746fb658e8fb4d3"
     },
     {
-      "bytes": 965,
+      "bytes": 2088,
       "kind": "file",
       "path": "Docs/release-artifacts/source-boundary-hygiene.md",
-      "sha256": "da672a8aed9a36b97c31a91c91e10c9b526fb35f1dd448eb58f061adeadcee16"
+      "sha256": "2629bf1988c1ad8f867a27d8d699bbeecd3dec83e9aeb603a6b487dd21c20e5c"
     },
     {
       "bytes": 48012,
@@ -487,10 +487,10 @@
       "sha256": "4727b30466869637c1d083d09d232cb459481e28bc4a07693f155ab9a4f651af"
     },
     {
-      "bytes": 2558,
+      "bytes": 2686,
       "kind": "file",
       "path": "Makefile",
-      "sha256": "0ed8cafbeaa58411af83f29d2860a7435952344354603e6f46aae028a2d825ed"
+      "sha256": "604f3cfea537d23cceecaedaaa3f3395549892146b445bfa5116cacc250b2616"
     },
     {
       "bytes": 9348,
@@ -1075,10 +1075,10 @@
       "sha256": "2cf8867bfcf72264d0ad94b1f449b193e92db2699e0117e666e70bf997f0d755"
     },
     {
-      "bytes": 5083,
+      "bytes": 5743,
       "kind": "file",
       "path": "apps/api/tests/test_release_hygiene.py",
-      "sha256": "039e442938a70fc7e6293a30d37170ddce06f998019f976e2d6a1d9655f1e71c"
+      "sha256": "1f0114632b5a7b0a8fd735897945cfdd857bd03f1fd128c3e9094aac791b8164"
     },
     {
       "bytes": 3931,
@@ -1861,10 +1861,16 @@
       "sha256": "80d3356c1755a4bfcaaffdfc77f43ef4a6a0904d37ced5d9711d03a76b56a66a"
     },
     {
-      "bytes": 13398,
+      "bytes": 6846,
+      "kind": "file",
+      "path": "scripts/configure_runtime_secrets.py",
+      "sha256": "19b484317a9384fd8d165c5293cd24a2a248539aa55fb52f607fdddd9839e247"
+    },
+    {
+      "bytes": 13620,
       "kind": "file",
       "path": "scripts/deployment_validate.py",
-      "sha256": "fc252dec69ad1dcf88c07c4019fbd60a2a5daf28375c33907d9d17619b945b1e"
+      "sha256": "a357e3c8427695d2982db4faad138cf66182a6df8981f36ffb87d45f684949d6"
     },
     {
       "bytes": 5736,
@@ -1879,10 +1885,10 @@
       "sha256": "ac34d11a929c814d70866fcbcabf3d4ce3209c1733493f90d97b020adc3640ed"
     },
     {
-      "bytes": 12739,
+      "bytes": 13492,
       "kind": "file",
       "path": "scripts/release_hygiene.py",
-      "sha256": "72d7a2fc747f26cd4168a91805675f7df4ef75087380853ea370275f53bffeae"
+      "sha256": "0b68105723b65cd3829d00f90626f85d645fea56577074764e601a4ad1b531ab"
     },
     {
       "bytes": 16159,
@@ -1943,11 +1949,11 @@
     "Docs/release-artifacts/source-boundary-manifest.json",
     "Docs/release-artifacts/source-boundary-manifest.md"
   ],
-  "file_count": 323,
-  "generated_at": "2026-06-04T04:58:21.807087+00:00",
-  "head_sha": "e6fc40f2bc9837921b181afbe04bf9ccb4e47a62",
-  "manifest_sha256": "58e0f2ff0a582aebb4a18161ebaed4ae8794f7490525eb65eb7b8090cf14871e",
+  "file_count": 324,
+  "generated_at": "2026-06-04T17:00:32.932161+00:00",
+  "head_sha": "32173a9a2a0c01ebd311d5d79316f4dd5836b86a",
+  "manifest_sha256": "57ecdaaa501033138b15f17ec5dd83aa0b5cb99d6a7db85db44ec20136ebe8a2",
   "root": "/Users/harshalrane/Documents/RepoPilot",
-  "status_count": 1,
-  "total_bytes": 33718983
+  "status_count": 10,
+  "total_bytes": 33731361
 }
