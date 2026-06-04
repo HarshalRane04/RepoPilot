@@ -78,6 +78,7 @@ Keep `GITHUB_WRITES_ENABLED=false` until credential verification, demo-repo writ
 - Run workspaces live under `/tmp/repopilot-agent-workspaces` in local Compose and are shared by API/worker/beat through the `agent_workspaces` volume.
 - Startup cleanup and Celery Beat cleanup remove terminal or abandoned stale workspaces while skipping active run IDs.
 - Web `node_modules` and `.next` are Docker named volumes in local development and should not be treated as source.
+- The API/worker image installs Semgrep and pip-audit into an isolated `/opt/repopilot-security-tools` virtualenv, then exposes only the command shims on `PATH`. This keeps scanner dependencies from altering the API runtime dependency graph while making `SEMGREP_ENABLED=true` and `DEPENDENCY_AUDIT_ENABLED=true` meaningful runtime gates.
 
 ## Backups
 

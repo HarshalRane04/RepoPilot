@@ -265,9 +265,15 @@ def collect_snapshot(
 
     if env_flags["CODEQL_ENABLED"]:
         if codeql_workflow_present:
-            detail = "CODEQL_ENABLED is true and a CodeQL workflow file is present."
-            status = "ready"
-            next_step = None
+            if has_tool(tools, "codeql"):
+                detail = "CODEQL_ENABLED is true, a CodeQL workflow file is present, and the local CodeQL executable is available."
+                status = "ready"
+                next_step = None
+            else:
+                detail = "CODEQL_ENABLED is true and a CodeQL workflow file is present; GitHub code-scanning run evidence is still required."
+                warnings.append(detail)
+                status = "workflow_ready"
+                next_step = "Run the GitHub CodeQL workflow on a code-scanning-enabled repository and capture alert/SARIF evidence."
         else:
             detail = "CODEQL_ENABLED is true, but no CodeQL workflow file is present under .github/workflows."
             blockers.append(detail)
@@ -306,7 +312,11 @@ def collect_snapshot(
             )
         )
 
-    release_scanner_proof_ready = not blockers and all(scanner.status == "ready" for scanner in scanners if scanner.required_for_release)
+    release_scanner_proof_ready = (
+        not blockers
+        and not warnings
+        and all(scanner.status == "ready" for scanner in scanners if scanner.required_for_release)
+    )
     return SecurityScannerSnapshot(
         generated_at=datetime.now(timezone.utc).isoformat(),
         root=str(root),

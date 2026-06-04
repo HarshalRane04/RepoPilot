@@ -12,11 +12,11 @@
     "packages/shared_contracts/pyproject.toml"
   ],
   "environment": {
-    "CODEQL_ENABLED": false,
-    "DEPENDENCY_AUDIT_ENABLED": false,
-    "SEMGREP_ENABLED": false
+    "CODEQL_ENABLED": true,
+    "DEPENDENCY_AUDIT_ENABLED": true,
+    "SEMGREP_ENABLED": true
   },
-  "generated_at": "2026-06-03T06:11:18.382151+00:00",
+  "generated_at": "2026-06-04T17:58:49.892694+00:00",
   "release_scanner_proof_ready": false,
   "root": "/Users/harshalrane/Documents/RepoPilot",
   "scanners": [
@@ -41,38 +41,38 @@
       "tools": []
     },
     {
-      "detail": "SEMGREP_ENABLED is false; Semgrep evidence remains local-placeholder only.",
-      "enabled": false,
+      "detail": "Semgrep is enabled and the executable is available for sandbox security gates.",
+      "enabled": true,
       "env_key": "SEMGREP_ENABLED",
       "name": "semgrep",
-      "next_step": "Install Semgrep and set SEMGREP_ENABLED=true for release scanner proof.",
+      "next_step": null,
       "required_for_release": true,
-      "status": "disabled",
+      "status": "ready",
       "tools": [
         "semgrep"
       ]
     },
     {
-      "detail": "DEPENDENCY_AUDIT_ENABLED is false; npm/pip audit evidence is not production-proven.",
-      "enabled": false,
+      "detail": "Dependency audit is enabled and manifests were found: 8.",
+      "enabled": true,
       "env_key": "DEPENDENCY_AUDIT_ENABLED",
       "name": "dependency_audit",
-      "next_step": "Install audit tools and set DEPENDENCY_AUDIT_ENABLED=true for release scanner proof.",
+      "next_step": null,
       "required_for_release": true,
-      "status": "disabled",
+      "status": "ready",
       "tools": [
         "npm",
         "pip-audit"
       ]
     },
     {
-      "detail": "CODEQL_ENABLED is false; CodeQL workflow is present, but SARIF/alert evidence remains credential-blocked.",
-      "enabled": false,
+      "detail": "CODEQL_ENABLED is true and a CodeQL workflow file is present; GitHub code-scanning run evidence is still required.",
+      "enabled": true,
       "env_key": "CODEQL_ENABLED",
       "name": "codeql",
-      "next_step": "Set CODEQL_ENABLED=true after GitHub credentials and code-scanning/Advanced Security access are verified.",
+      "next_step": "Run the GitHub CodeQL workflow on a code-scanning-enabled repository and capture alert/SARIF evidence.",
       "required_for_release": true,
-      "status": "disabled",
+      "status": "workflow_ready",
       "tools": [
         "codeql"
       ]
@@ -80,14 +80,14 @@
   ],
   "tool_versions": [
     {
-      "available": false,
+      "available": true,
       "command": [
         "semgrep",
         "--version"
       ],
-      "detail": "semgrep executable was not found.",
+      "detail": null,
       "name": "semgrep",
-      "version": null
+      "version": "1.165.0"
     },
     {
       "available": true,
@@ -100,14 +100,14 @@
       "version": "10.9.4"
     },
     {
-      "available": false,
+      "available": true,
       "command": [
         "pip-audit",
         "--version"
       ],
-      "detail": "pip-audit executable was not found.",
+      "detail": null,
       "name": "pip-audit",
-      "version": null
+      "version": "pip-audit 2.10.0"
     },
     {
       "available": false,
@@ -121,8 +121,6 @@
     }
   ],
   "warnings": [
-    "SEMGREP_ENABLED is false; Semgrep evidence remains local-placeholder only.",
-    "DEPENDENCY_AUDIT_ENABLED is false; npm/pip audit evidence is not production-proven.",
-    "CODEQL_ENABLED is false; CodeQL workflow is present, but SARIF/alert evidence remains credential-blocked."
+    "CODEQL_ENABLED is true and a CodeQL workflow file is present; GitHub code-scanning run evidence is still required."
   ]
 }

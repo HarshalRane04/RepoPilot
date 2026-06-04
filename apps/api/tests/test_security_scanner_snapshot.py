@@ -79,3 +79,27 @@ def test_scanner_snapshot_writes_markdown_and_json(tmp_path: Path, monkeypatch) 
     assert snapshot.release_scanner_proof_ready is True
     assert "Release scanner proof ready: `True`" in md_out.read_text(encoding="utf-8")
     assert '"codeql_workflow_present": true' in json_out.read_text(encoding="utf-8")
+
+
+def test_scanner_snapshot_keeps_codeql_workflow_only_proof_as_warning(tmp_path: Path, monkeypatch) -> None:
+    tmp_path.joinpath(".github/workflows").mkdir(parents=True)
+    tmp_path.joinpath(".github/workflows/codeql.yml").write_text("name: CodeQL\n", encoding="utf-8")
+
+    def fake_which(name: str) -> str | None:
+        if name in {"semgrep", "npm", "pip-audit"}:
+            return f"/usr/bin/{name}"
+        return None
+
+    def fake_runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=command, returncode=0, stdout=f"{command[0]} 1.0\n", stderr="")
+
+    monkeypatch.setattr("scripts.security_scanner_snapshot.shutil.which", fake_which)
+    snapshot = collect_snapshot(
+        root=tmp_path,
+        env={"SEMGREP_ENABLED": "true", "DEPENDENCY_AUDIT_ENABLED": "true", "CODEQL_ENABLED": "true"},
+        runner=fake_runner,
+    )
+
+    assert snapshot.release_scanner_proof_ready is False
+    assert any(scanner.name == "codeql" and scanner.status == "workflow_ready" for scanner in snapshot.scanners)
+    assert any("GitHub code-scanning run evidence" in warning for warning in snapshot.warnings)

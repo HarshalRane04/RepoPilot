@@ -1,6 +1,6 @@
 # RepoPilot Security Scanner Snapshot
 
-- Generated at: `2026-06-03T06:11:18.382151+00:00`
+- Generated at: `2026-06-04T17:58:49.892694+00:00`
 - Root: `/Users/harshalrane/Documents/RepoPilot`
 - Release scanner proof ready: `False`
 - CodeQL workflow present: `True`
@@ -12,17 +12,17 @@
 |---|---|---|---|---|---|---|
 | built_in_prompt_and_secret_guards |  | True | ready | True | Deterministic prompt-injection and secret-pattern guards are implemented in the local control plane. |  |
 | release_hygiene_secret_scan |  | True | ready | True | Source-boundary hygiene scanning is available through make release-hygiene. |  |
-| semgrep | SEMGREP_ENABLED | False | disabled | True | SEMGREP_ENABLED is false; Semgrep evidence remains local-placeholder only. | Install Semgrep and set SEMGREP_ENABLED=true for release scanner proof. |
-| dependency_audit | DEPENDENCY_AUDIT_ENABLED | False | disabled | True | DEPENDENCY_AUDIT_ENABLED is false; npm/pip audit evidence is not production-proven. | Install audit tools and set DEPENDENCY_AUDIT_ENABLED=true for release scanner proof. |
-| codeql | CODEQL_ENABLED | False | disabled | True | CODEQL_ENABLED is false; CodeQL workflow is present, but SARIF/alert evidence remains credential-blocked. | Set CODEQL_ENABLED=true after GitHub credentials and code-scanning/Advanced Security access are verified. |
+| semgrep | SEMGREP_ENABLED | True | ready | True | Semgrep is enabled and the executable is available for sandbox security gates. |  |
+| dependency_audit | DEPENDENCY_AUDIT_ENABLED | True | ready | True | Dependency audit is enabled and manifests were found: 8. |  |
+| codeql | CODEQL_ENABLED | True | workflow_ready | True | CODEQL_ENABLED is true and a CodeQL workflow file is present; GitHub code-scanning run evidence is still required. | Run the GitHub CodeQL workflow on a code-scanning-enabled repository and capture alert/SARIF evidence. |
 
 ## Tool Availability
 
 | Tool | Available | Version | Detail |
 |---|---|---|---|
-| semgrep | False |  | semgrep executable was not found. |
+| semgrep | True | 1.165.0 |  |
 | npm | True | 10.9.4 |  |
-| pip-audit | False |  | pip-audit executable was not found. |
+| pip-audit | True | pip-audit 2.10.0 |  |
 | codeql | False |  | codeql executable was not found. |
 
 ## Dependency Manifests
@@ -38,6 +38,4 @@
 
 ## Warnings
 
-- SEMGREP_ENABLED is false; Semgrep evidence remains local-placeholder only.
-- DEPENDENCY_AUDIT_ENABLED is false; npm/pip audit evidence is not production-proven.
-- CODEQL_ENABLED is false; CodeQL workflow is present, but SARIF/alert evidence remains credential-blocked.
+- CODEQL_ENABLED is true and a CodeQL workflow file is present; GitHub code-scanning run evidence is still required.

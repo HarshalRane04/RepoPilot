@@ -17,6 +17,10 @@ COPY packages/llm_client ./packages/llm_client
 COPY packages/github_client ./packages/github_client
 COPY apps/api/requirements.txt ./apps/api/requirements.txt
 RUN pip install --no-cache-dir -r apps/api/requirements.txt
+RUN python -m venv /opt/repopilot-security-tools \
+    && /opt/repopilot-security-tools/bin/pip install --no-cache-dir "semgrep>=1.120,<2.0" "pip-audit>=2.7,<3.0" \
+    && ln -s /opt/repopilot-security-tools/bin/semgrep /usr/local/bin/semgrep \
+    && ln -s /opt/repopilot-security-tools/bin/pip-audit /usr/local/bin/pip-audit
 
 COPY apps/api ./apps/api
 

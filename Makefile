@@ -52,7 +52,7 @@ readiness-snapshot:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/readiness_snapshot.py
 
 security-scanner-snapshot:
-	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/security_scanner_snapshot.py --allow-warnings --allow-blockers
+	PYTHONDONTWRITEBYTECODE=1 SEMGREP_ENABLED=true DEPENDENCY_AUDIT_ENABLED=true CODEQL_ENABLED=true uv run --with semgrep --with pip-audit python scripts/security_scanner_snapshot.py --allow-warnings --allow-blockers
 
 release-gifs:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/release_gifs.py
