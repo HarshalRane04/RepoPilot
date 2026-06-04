@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from repopilot_contracts import AgentRunState, CIAnalysisRequest, ImplementationPlan
 
 from app.db.models import AgentRun, AgentStep, Plan, PullRequest
 from app.services.ci_analyzer import CIAnalyzer
+from app.services.ci_metrics import CIMetricsCalculator
 from app.services.revision_planner import RevisionPlanner
 
 
@@ -127,3 +129,69 @@ def test_ci_analyzer_returns_revision_fields_without_db() -> None:
     assert analyzer.summary(conclusion=request.conclusion, failure_reasons=analyzer.failure_reasons(request.log_text)).startswith(
         "CI concluded failure"
     )
+
+
+def test_ci_metrics_track_first_run_and_revision_passes() -> None:
+    issue_a = uuid4()
+    issue_b = uuid4()
+    issue_c = uuid4()
+    parent_plan_b = uuid4()
+    revision_plan_b = uuid4()
+    run_a = AgentRun(id=uuid4(), issue_id=issue_a, plan_id=uuid4(), state=AgentRunState.READY_FOR_REVIEW.value)
+    run_b = AgentRun(id=uuid4(), issue_id=issue_b, plan_id=revision_plan_b, state=AgentRunState.READY_FOR_REVIEW.value)
+    run_c = AgentRun(id=uuid4(), issue_id=issue_c, plan_id=uuid4(), state=AgentRunState.WAIT_FOR_CI.value)
+    run_without_ci = AgentRun(id=uuid4(), issue_id=uuid4(), plan_id=uuid4(), state=AgentRunState.WAIT_FOR_CI.value)
+    prs = [
+        PullRequest(id=uuid4(), run_id=run_a.id, pr_number=1, url="local://pr/1", status="ready_for_review", ci_status="success"),
+        PullRequest(id=uuid4(), run_id=run_b.id, pr_number=2, url="local://pr/2", status="ready_for_review", ci_status="success"),
+        PullRequest(id=uuid4(), run_id=run_c.id, pr_number=3, url="local://pr/3", status="draft", ci_status="failure"),
+        PullRequest(id=uuid4(), run_id=run_without_ci.id, pr_number=4, url="local://pr/4", status="draft"),
+    ]
+    plans = [
+        Plan(id=parent_plan_b, issue_id=issue_b, version=1, approval_status="approved", plan_json={"plan_id": str(parent_plan_b)}),
+        Plan(
+            id=revision_plan_b,
+            issue_id=issue_b,
+            version=2,
+            approval_status="waiting",
+            plan_json={"plan_id": str(revision_plan_b), "revision_parent_plan_id": str(parent_plan_b)},
+        ),
+    ]
+    steps = [
+        AgentStep(
+            run_id=run_b.id,
+            step_name=AgentRunState.WAIT_FOR_CI.value,
+            output_json={"conclusion": "failure"},
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ),
+        AgentStep(
+            run_id=run_b.id,
+            step_name=AgentRunState.WAIT_FOR_CI.value,
+            output_json={"conclusion": "success"},
+            created_at=datetime(2026, 1, 2, tzinfo=UTC),
+        ),
+        AgentStep(
+            run_id=run_c.id,
+            step_name=AgentRunState.WAIT_FOR_CI.value,
+            output_json={"conclusion": "failure"},
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ),
+    ]
+
+    metrics = CIMetricsCalculator().calculate(
+        pull_requests=prs,
+        runs=[run_a, run_b, run_c, run_without_ci],
+        plans=plans,
+        steps=steps,
+    )
+
+    assert metrics.ci_total_prs == 3
+    assert metrics.ci_successful_prs == 2
+    assert metrics.ci_failed_prs == 1
+    assert metrics.ci_pass_rate == 0.6667
+    assert metrics.ci_first_run_pass_count == 1
+    assert metrics.ci_first_run_ci_pass_rate == 0.3333
+    assert metrics.ci_revision_fixup_attempts == 1
+    assert metrics.ci_revised_pr_count == 1
+    assert metrics.ci_pass_after_revision_count == 1
+    assert metrics.ci_pass_after_revision_rate == 1.0

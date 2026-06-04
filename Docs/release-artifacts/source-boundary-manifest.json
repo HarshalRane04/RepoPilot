@@ -109,10 +109,10 @@
       "sha256": "018f8c98ac70a382d01187c3ee14f0d0bcc0fc1ba1257eceba4a362fcf9a81fe"
     },
     {
-      "bytes": 5845,
+      "bytes": 6067,
       "kind": "file",
       "path": "Docs/EVALS.md",
-      "sha256": "3e1bfb5f6fe2faf48d0931326eebc0d25c772f3bee4868bd9a42568289b56a71"
+      "sha256": "6339bf23930d85b17b11764e660098edcb19e28f1c5844da1e006290e709d344"
     },
     {
       "bytes": 5877,
@@ -121,10 +121,10 @@
       "sha256": "4b9a728d8ccc4dbeab73b286c9b25285ea0af0d99cac852454f5625acca7eec7"
     },
     {
-      "bytes": 128879,
+      "bytes": 129699,
       "kind": "file",
       "path": "Docs/IMPROVEMENT_PLAN.md",
-      "sha256": "9b6f8870b536db7db0232e378c8cab6b0e2bae8db255eebf64137817f8233c1e"
+      "sha256": "6fd39eccb7721c84c59915c9a99ba73ecf19c83354a1dfe0583ce7257573109a"
     },
     {
       "bytes": 2699,
@@ -619,10 +619,10 @@
       "sha256": "ef10fd2071626f4fac166b386f9e003c18454a06a4189bad08d4c989292cfcb2"
     },
     {
-      "bytes": 1817,
+      "bytes": 1957,
       "kind": "file",
       "path": "apps/api/app/api/routes/metrics.py",
-      "sha256": "e0ef6c19c81d827445ae87a87bc9006eaa063d402bba78cfe4a8ef642fca9954"
+      "sha256": "0b4d7cd7640b14c2d87ece35cb4030e21d77311d1b836cafd04ad95fbd59dece"
     },
     {
       "bytes": 7237,
@@ -763,16 +763,22 @@
       "sha256": "4b8da4526c910051c4a50ddc6aa105f90e42849a853d54057c40e6839d634b05"
     },
     {
+      "bytes": 7817,
+      "kind": "file",
+      "path": "apps/api/app/services/ci_metrics.py",
+      "sha256": "c0c55ab1ffd8b1fbdaa2f803e345e5a9a7e20de3f7c7d4273596eb8aeee56d9c"
+    },
+    {
       "bytes": 21126,
       "kind": "file",
       "path": "apps/api/app/services/draft_pr.py",
       "sha256": "17273f01221a30af812632f00c6531470c22c246503a67d9624dd71b96d8d16c"
     },
     {
-      "bytes": 19297,
+      "bytes": 20048,
       "kind": "file",
       "path": "apps/api/app/services/eval_runner.py",
-      "sha256": "af64b088b8f191f188afe1d8d54ee4b69f8f967ef1a7fce639a7ab67f691ac7e"
+      "sha256": "d6bd4fc2df65d1d044f2b431a2e51aeb3847bbc5825ce236844a3193beb1f3bb"
     },
     {
       "bytes": 26013,
@@ -1039,16 +1045,16 @@
       "sha256": "16839d604a065782063f60ae26011985d050231e0e312a626fd860d6f50f78de"
     },
     {
-      "bytes": 4367,
+      "bytes": 7345,
       "kind": "file",
       "path": "apps/api/tests/test_phase8_ci_revision.py",
-      "sha256": "c7f887bab638bbbd9c55ba949e89c0be7b7dcc0319d10c3726a09fb00219f9cc"
+      "sha256": "2e3aad028a113448dde13063567a6694e766de37fb57ee5dda9aa87e326970ee"
     },
     {
-      "bytes": 24927,
+      "bytes": 25306,
       "kind": "file",
       "path": "apps/api/tests/test_phase9_evals.py",
-      "sha256": "df3e8249b538301aee0ec0d8b9e6b29db5b34d73966eba1a4f6ce73e79d11ce2"
+      "sha256": "f56cea7ef2a8fa650be01be41908936db1b2cd8aeae30f1e16c3566771a5016b"
     },
     {
       "bytes": 8438,
@@ -1249,10 +1255,10 @@
       "sha256": "2c4212c455d15199a94ece9934730e745543b296ae9e3498bf1f796e492a2038"
     },
     {
-      "bytes": 61025,
+      "bytes": 61330,
       "kind": "file",
       "path": "apps/web/app/globals.css",
-      "sha256": "a962f2c35eee6cd038e28de14ecc16ab4b3ad8906871d5e392b82ab379ca9ab2"
+      "sha256": "d0650f89dabde7adf45580f6193a18c921846ebf65b89e38f891db7fbbfc7adc"
     },
     {
       "bytes": 471,
@@ -1267,10 +1273,10 @@
       "sha256": "2e3faab1a08b56677319cb43e2327c652cea546649dc95cc25438a6ae7b8b629"
     },
     {
-      "bytes": 175044,
+      "bytes": 175608,
       "kind": "file",
       "path": "apps/web/app/operator-console.tsx",
-      "sha256": "5dfa031615596d51b1f3ce621a5c4d34e874c27c71cf0d46500094d62c0c56fa"
+      "sha256": "7103e59e7527e09fe54a396e0e6a8fcf0dc2f4f53a5a99a2a623c5155f8e096e"
     },
     {
       "bytes": 283,
@@ -1285,10 +1291,10 @@
       "sha256": "5db2a16250d17eb3a790479a7d75b856543e799a25cd2d18fdce825e82c395cd"
     },
     {
-      "bytes": 10827,
+      "bytes": 11201,
       "kind": "file",
       "path": "apps/web/lib/api.ts",
-      "sha256": "3d7f196a515a269a0b0ef9ee0c3310a12fc66d64df5d00eb38649edae0f63bcb"
+      "sha256": "bafcf01d3235b71e6c0f01c5ee56049c3817950208c75a6d80ee5348bc40e24d"
     },
     {
       "bytes": 247,
@@ -1937,11 +1943,11 @@
     "Docs/release-artifacts/source-boundary-manifest.json",
     "Docs/release-artifacts/source-boundary-manifest.md"
   ],
-  "file_count": 322,
-  "generated_at": "2026-06-04T04:26:48.248225+00:00",
-  "head_sha": "7f08908a86879945e6232064aa0ab9b02ec5bce2",
-  "manifest_sha256": "09ed4b3f27642dbbcfd0ad11b96ab13cd4aaae0100ef19e1fa2734b07af34bbd",
+  "file_count": 323,
+  "generated_at": "2026-06-04T04:55:00.038624+00:00",
+  "head_sha": "0b26842518938acb6c53ed5be0594c0a3f28b21b",
+  "manifest_sha256": "6fec00a118a58a5b475f384edad6a42e3e10ca11750d59ea3c9e04d3b8f40022",
   "root": "/Users/harshalrane/Documents/RepoPilot",
-  "status_count": 5,
-  "total_bytes": 33704417
+  "status_count": 12,
+  "total_bytes": 33718767
 }

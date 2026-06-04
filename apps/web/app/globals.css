@@ -644,6 +644,10 @@ textarea,
   grid-template-columns: repeat(7, minmax(140px, 1fr));
 }
 
+.statGrid.ten {
+  grid-template-columns: repeat(5, minmax(160px, 1fr));
+}
+
 .statGrid.six {
   grid-template-columns: repeat(6, minmax(155px, 1fr));
 }
@@ -3012,6 +3016,10 @@ button:active:not(:disabled) {
 
 /* 7-col → 4-col at ~1600px */
 @media (max-width: 1700px) {
+  .statGrid.ten {
+    grid-template-columns: repeat(5, minmax(160px, 1fr));
+  }
+
   .statGrid.seven {
     grid-template-columns: repeat(4, minmax(180px, 1fr));
   }
@@ -3019,6 +3027,10 @@ button:active:not(:disabled) {
 
 /* 7-col → 3-col / 6-col → 3-col at ~1300px */
 @media (max-width: 1400px) {
+  .statGrid.ten {
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+  }
+
   .statGrid.seven {
     grid-template-columns: repeat(3, minmax(180px, 1fr));
   }
@@ -3050,7 +3062,8 @@ button:active:not(:disabled) {
 @media (max-width: 1050px) {
   .statGrid.four,
   .statGrid.five,
-  .statGrid.six {
+  .statGrid.six,
+  .statGrid.ten {
     grid-template-columns: repeat(2, minmax(160px, 1fr));
   }
 
@@ -3198,7 +3211,8 @@ button:active:not(:disabled) {
     white-space: normal;
   }
 
-  .statGrid.seven {
+  .statGrid.seven,
+  .statGrid.ten {
     grid-template-columns: repeat(2, minmax(160px, 1fr));
   }
 
@@ -3247,6 +3261,7 @@ button:active:not(:disabled) {
   .statGrid.five,
   .statGrid.six,
   .statGrid.seven,
+  .statGrid.ten,
   .metaStrip,
   .threePanels,
   .securityNotes,
@@ -3295,7 +3310,8 @@ button:active:not(:disabled) {
   .statGrid.four,
   .statGrid.five,
   .statGrid.six,
-  .statGrid.seven {
+  .statGrid.seven,
+  .statGrid.ten {
     gap: 12px;
   }
 

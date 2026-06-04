@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AgentRun, EvalRun, Plan, PullRequest, SecurityFinding, ValidationResult
+from app.services.ci_metrics import CIMetricsService
 
 
 class EvalRunner:
@@ -231,10 +232,10 @@ class EvalRunner:
         passed_validations = (
             await db.scalar(select(func.count()).select_from(ValidationResult).where(ValidationResult.status == "passed")) or 0
         )
-        total_prs = await db.scalar(select(func.count()).select_from(PullRequest)) or 0
         ready_prs = (
             await db.scalar(select(func.count()).select_from(PullRequest).where(PullRequest.status == "ready_for_review")) or 0
         )
+        ci_metrics = await CIMetricsService().overview(db)
         blocking_findings = (
             await db.scalar(
                 select(func.count())
@@ -332,7 +333,17 @@ class EvalRunner:
             "observed_agent_runs": run_count,
             "plan_approval_rate": self._ratio(approved_plans, total_plans),
             "patch_success_rate": self._ratio(passed_validations, run_count),
-            "first_run_ci_pass_rate": self._ratio(ready_prs, total_prs),
+            "first_run_ci_pass_rate": ci_metrics.ci_first_run_ci_pass_rate,
+            "ci_total_prs": ci_metrics.ci_total_prs,
+            "ci_successful_prs": ci_metrics.ci_successful_prs,
+            "ci_failed_prs": ci_metrics.ci_failed_prs,
+            "ci_pass_rate": ci_metrics.ci_pass_rate,
+            "ci_first_run_pass_count": ci_metrics.ci_first_run_pass_count,
+            "ci_revision_fixup_attempts": ci_metrics.ci_revision_fixup_attempts,
+            "ci_revised_pr_count": ci_metrics.ci_revised_pr_count,
+            "ci_pass_after_revision_count": ci_metrics.ci_pass_after_revision_count,
+            "ci_pass_after_revision_rate": ci_metrics.ci_pass_after_revision_rate,
+            "ci_average_fixup_attempts_per_revised_pr": ci_metrics.ci_average_fixup_attempts_per_revised_pr,
             "security_block_rate": self._ratio(blocking_findings, max(total_findings, 1)),
             "ready_for_review_prs": ready_prs,
             "blocking_security_findings": blocking_findings,

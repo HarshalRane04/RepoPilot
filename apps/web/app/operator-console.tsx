@@ -1149,17 +1149,22 @@ function DashboardScreen({
   const activity = data.activities.slice(0, 5);
   const risk = riskCounts(data.issues);
   const avgCost = data.runs.length ? data.runs.reduce((sum, run) => sum + run.total_cost, 0) / data.runs.length : 0;
-  const ciRate = ciPassRateLabel(data.pullRequests);
+  const ciRate = data.metrics?.ci_total_prs ? metricPercent(data.metrics.ci_pass_rate).label : ciPassRateLabel(data.pullRequests);
+  const firstRunCiRate = data.metrics?.ci_total_prs ? metricPercent(data.metrics.ci_first_run_ci_pass_rate).label : "N/A";
+  const revisionCiRate = data.metrics?.ci_revised_pr_count ? metricPercent(data.metrics.ci_pass_after_revision_rate).label : "N/A";
   return (
     <div className="screen">
       <ScreenHeader title="Dashboard" subtitle="Your agentic GitHub development command center." />
-      <section className={`statGrid seven${isRefreshing ? " is-loading" : ""}`}>
+      <section className={`statGrid ten${isRefreshing ? " is-loading" : ""}`}>
         <StatCard label="Connected repositories" value={data.metrics?.repositories ?? data.repositories.length} />
         <StatCard label="Agent-ready issues" value={data.issues.filter((issue) => normalizedStatus(issue.status) === "agent_ready").length} />
         <StatCard label="Plans awaiting approval" value={data.issues.filter((issue) => issue.plan?.approval_status === "draft").length} />
         <StatCard label="Draft PRs created" value={data.metrics?.open_pull_requests ?? data.pullRequests.length} />
         <StatCard label="CI pass rate" value={ciRate} />
+        <StatCard label="First-run CI" value={firstRunCiRate} />
+        <StatCard label="CI after revision" value={revisionCiRate} />
         <StatCard label="Security blocks" value={data.metrics?.blocking_security_findings ?? 0} />
+        <StatCard label="Fixup attempts" value={data.metrics?.ci_revision_fixup_attempts ?? 0} />
         <StatCard label="Avg cost/task" value={formatMoney(avgCost)} />
       </section>
       <div className="dashboardGrid">

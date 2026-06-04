@@ -22,6 +22,17 @@ export type MetricsResponse = {
   passed_validations: number;
   ready_for_review_prs: number;
   eval_runs: number;
+  ci_total_prs: number;
+  ci_successful_prs: number;
+  ci_failed_prs: number;
+  ci_pass_rate: number;
+  ci_first_run_pass_count: number;
+  ci_first_run_ci_pass_rate: number;
+  ci_revision_fixup_attempts: number;
+  ci_revised_pr_count: number;
+  ci_pass_after_revision_count: number;
+  ci_pass_after_revision_rate: number;
+  ci_average_fixup_attempts_per_revised_pr: number;
 };
 
 export type RepositoryResponse = {

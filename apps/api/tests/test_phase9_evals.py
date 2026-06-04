@@ -22,6 +22,17 @@ from repopilot_evals import (
 from repopilot_evals.provider_harness import default_provider_api_key_env, default_provider_base_url
 
 
+class ScalarResult:
+    def __init__(self, items: list[object]) -> None:
+        self.items = items
+
+    def scalars(self):
+        return self
+
+    def all(self) -> list[object]:
+        return self.items
+
+
 class FakeDb:
     def __init__(self) -> None:
         self.added: list[object] = []
@@ -29,6 +40,9 @@ class FakeDb:
 
     async def scalar(self, _statement):
         return 0
+
+    async def execute(self, _statement):
+        return ScalarResult([])
 
     def add(self, item: object) -> None:
         self.added.append(item)
@@ -88,6 +102,8 @@ def test_eval_runner_returns_per_task_outcomes_and_quality_gates() -> None:
     assert metrics["plan_quality_observed_count"] == 0
     assert metrics["plan_quality_pass_rate"] == 0.0
     assert metrics["context_precision"] == 0.0
+    assert metrics["ci_total_prs"] == 0
+    assert metrics["ci_pass_after_revision_rate"] == 0.0
     assert len(metrics["task_outcomes"]) == metrics["benchmark_task_count"]
     assert metrics["quality_gate_results"]["minimum_fixture_count_for_v1"] is True
     assert metrics["quality_gate_results"]["security_block_tasks_required"] is True

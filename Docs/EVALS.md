@@ -63,6 +63,7 @@ Implemented local endpoints:
 - `POST /evals/run`: loads the fixture dataset, validates task schemas, scores per-task outcomes, records quality-gate results, and persists an `eval_runs` report.
 - The runner verifies fixture repository existence, expected changed-file presence, expected validation command targets, and executable repository markers before a task can pass.
 - The runner can also score optional `model_config.observed_plan_results`, `model_config.observed_task_results`, and `model_config.provider_eval_results` entries against benchmark expectations and records plan quality, context precision, patch quality, human edit distance, provider comparison ranking, per-task observed results, and release gates.
+- The runner now reuses the platform CI metrics calculator for first-run CI pass rate, latest CI pass rate, pass-after-revision rate, revised PR count, and fixup-attempt totals from persisted PR/run/plan/CI-step evidence.
 - `GET /evals/reports`: lists benchmark version, metrics, per-task outcomes inside metrics, report URI, and creation time.
 
 Implemented local report artifact:

@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AgentRun, EvalRun, PullRequest, Repository, SecurityFinding, ValidationResult
 from app.db.session import get_db
+from app.services.ci_metrics import CIMetricsService
 
 router = APIRouter()
 
@@ -26,6 +27,7 @@ async def metrics_overview(db: AsyncSession = Depends(get_db)) -> dict[str, int 
     )
     ready_pr_count = await db.scalar(select(func.count()).select_from(PullRequest).where(PullRequest.status == "ready_for_review"))
     eval_count = await db.scalar(select(func.count()).select_from(EvalRun))
+    ci_metrics = await CIMetricsService().overview(db)
     return {
         "repositories": repo_count or 0,
         "agent_runs": run_count or 0,
@@ -35,4 +37,5 @@ async def metrics_overview(db: AsyncSession = Depends(get_db)) -> dict[str, int 
         "passed_validations": passed_validation_count or 0,
         "ready_for_review_prs": ready_pr_count or 0,
         "eval_runs": eval_count or 0,
+        **ci_metrics.as_dict(),
     }
