@@ -33,6 +33,8 @@ Health checks:
 
 The web service bind-mounts `apps/web` for local iteration and uses Docker named volumes for `node_modules` and `.next`. Docker Desktop may leave ignored ACL-protected mount-point directories at `apps/web/node_modules` and `apps/web/.next` while the service is running; treat them as runtime mount points, not source files.
 
+Runtime secrets entered through the dashboard are encrypted under `.local/repopilot-secrets`, which Docker Compose bind-mounts to `/home/appuser/.repopilot` for `api`, `worker`, and `beat`. Keep this directory out of git; it is intentionally ignored and excluded from the Docker build context.
+
 Build the sandbox image used by the default Docker backend:
 
 ```bash

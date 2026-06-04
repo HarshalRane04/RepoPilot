@@ -27,6 +27,8 @@ REQUIRED_ENV_KEYS = {
     "MODEL_API_KEY",
     "GITHUB_WRITES_ENABLED",
     "REPOPILOT_ARTIFACT_STORE_ROOT",
+    "REPOPILOT_RUNTIME_SECRETS_KEY_PATH",
+    "REPOPILOT_RUNTIME_SECRETS_STORE_PATH",
     "OTEL_EXPORTER_OTLP_ENDPOINT",
 }
 REQUIRED_GUIDE_SECTIONS = {
@@ -131,6 +133,25 @@ class DeploymentValidator:
                 report.findings.append(DeploymentFinding(check="compose_workspace_volume", status="failed", target=service, detail="Service must mount agent_workspaces."))
             if service in {"api", "worker", "beat"} and "agent_artifacts:" not in block:
                 report.findings.append(DeploymentFinding(check="compose_artifact_volume", status="failed", target=service, detail="Service must mount agent_artifacts."))
+            if "./.local/repopilot-secrets:/home/appuser/.repopilot" not in block:
+                report.findings.append(
+                    DeploymentFinding(
+                        check="compose_runtime_secret_volume",
+                        status="failed",
+                        target=service,
+                        detail="Service must mount the repo-local encrypted runtime secret store.",
+                    )
+                )
+            for env_key in ["REPOPILOT_RUNTIME_SECRETS_KEY_PATH", "REPOPILOT_RUNTIME_SECRETS_STORE_PATH"]:
+                if env_key not in block:
+                    report.findings.append(
+                        DeploymentFinding(
+                            check="compose_runtime_secret_env",
+                            status="failed",
+                            target=f"{service}:{env_key}",
+                            detail="Service must use the mounted runtime secret store path.",
+                        )
+                    )
 
     def validate_env_example(self, report: DeploymentValidationReport) -> None:
         env_text = self.read_file(".env.example", report, check="env_example")

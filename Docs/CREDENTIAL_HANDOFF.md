@@ -10,8 +10,12 @@ For local testing, store real credentials in RepoPilot's encrypted runtime secre
 
 | File | Purpose |
 |---|---|
-| `~/.repopilot/runtime-secrets.json` | Encrypted runtime values used by the API and dashboard. |
-| `~/.repopilot/runtime-secrets.key` | Local Fernet key used to decrypt the runtime store. |
+| `.local/repopilot-secrets/runtime-secrets.json` | Encrypted runtime values used by Docker Compose API, worker, beat, and dashboard settings writes. |
+| `.local/repopilot-secrets/runtime-secrets.key` | Local Fernet key used to decrypt the Docker Compose runtime store. |
+| `~/.repopilot/runtime-secrets.json` | Optional host-only store used when running `make configure-runtime-secrets` outside Docker without Compose path overrides. |
+| `~/.repopilot/runtime-secrets.key` | Optional host-only key for the host-only store. |
+
+Docker Compose bind-mounts `.local/repopilot-secrets` to `/home/appuser/.repopilot` in the API, worker, and beat containers. That makes dashboard-entered secrets local and persistent across container rebuilds while keeping them out of git and out of the Docker build context.
 
 The dashboard Settings screen writes to this store through write-only secret forms. You can also run:
 
@@ -19,7 +23,7 @@ The dashboard Settings screen writes to this store through write-only secret for
 make configure-runtime-secrets
 ```
 
-The helper prompts with hidden input for API keys, OAuth secrets, webhook secrets, and private keys, then prints only configured/missing status. Use GitHub repository Actions secrets only when a GitHub-hosted workflow needs a provider key, for example the Provider Planning Eval workflow.
+The helper prompts with hidden input for API keys, OAuth secrets, webhook secrets, and private keys, then prints only configured/missing status. If the stack is running through Docker Compose, prefer the dashboard Settings screen so the values are written directly into `.local/repopilot-secrets`; use the helper for host-only scripts or export `REPOPILOT_RUNTIME_SECRETS_KEY_PATH` and `REPOPILOT_RUNTIME_SECRETS_STORE_PATH` to point at the repo-local files. Use GitHub repository Actions secrets only when a GitHub-hosted workflow needs a provider key, for example the Provider Planning Eval workflow.
 
 ## Required GitHub App Inputs
 

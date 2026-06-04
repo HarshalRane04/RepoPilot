@@ -3,6 +3,7 @@
 .env.*
 .secrets
 apps/api/.secrets
+.local
 .DS_Store
 .pytest_cache
 .mypy_cache

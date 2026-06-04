@@ -62,6 +62,8 @@ services:
       MODEL_PROVIDER_VERIFIED_AT: ${MODEL_PROVIDER_VERIFIED_AT:-}
       MODEL_PROVIDER_VERIFIED_MODEL: ${MODEL_PROVIDER_VERIFIED_MODEL:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      REPOPILOT_RUNTIME_SECRETS_KEY_PATH: ${REPOPILOT_RUNTIME_SECRETS_KEY_PATH:-/home/appuser/.repopilot/runtime-secrets.key}
+      REPOPILOT_RUNTIME_SECRETS_STORE_PATH: ${REPOPILOT_RUNTIME_SECRETS_STORE_PATH:-/home/appuser/.repopilot/runtime-secrets.json}
       SEMGREP_ENABLED: ${SEMGREP_ENABLED:-false}
       CODEQL_ENABLED: ${CODEQL_ENABLED:-false}
       DEPENDENCY_AUDIT_ENABLED: ${DEPENDENCY_AUDIT_ENABLED:-false}
@@ -74,6 +76,7 @@ services:
     volumes:
       - ./apps/api:/app/apps/api
       - ./packages:/app/packages
+      - ./.local/repopilot-secrets:/home/appuser/.repopilot
       - agent_workspaces:/tmp/repopilot-agent-workspaces
       - agent_artifacts:/tmp/repopilot-artifacts
     depends_on:
@@ -111,6 +114,8 @@ services:
       MODEL_REASONING_LEVEL: ${MODEL_REASONING_LEVEL:-}
       MODEL_PROVIDER_VERIFIED_AT: ${MODEL_PROVIDER_VERIFIED_AT:-}
       MODEL_PROVIDER_VERIFIED_MODEL: ${MODEL_PROVIDER_VERIFIED_MODEL:-}
+      REPOPILOT_RUNTIME_SECRETS_KEY_PATH: ${REPOPILOT_RUNTIME_SECRETS_KEY_PATH:-/home/appuser/.repopilot/runtime-secrets.key}
+      REPOPILOT_RUNTIME_SECRETS_STORE_PATH: ${REPOPILOT_RUNTIME_SECRETS_STORE_PATH:-/home/appuser/.repopilot/runtime-secrets.json}
       WORKSPACE_CLEANUP_MAX_AGE_SECONDS: ${WORKSPACE_CLEANUP_MAX_AGE_SECONDS:-86400}
       WORKSPACE_CLEANUP_INTERVAL_SECONDS: ${WORKSPACE_CLEANUP_INTERVAL_SECONDS:-3600}
       REPOPILOT_ARTIFACT_STORE_ROOT: ${REPOPILOT_ARTIFACT_STORE_ROOT:-/tmp/repopilot-artifacts}
@@ -118,6 +123,7 @@ services:
     volumes:
       - ./apps/api:/app/apps/api
       - ./packages:/app/packages
+      - ./.local/repopilot-secrets:/home/appuser/.repopilot
       - agent_workspaces:/tmp/repopilot-agent-workspaces
       - agent_artifacts:/tmp/repopilot-artifacts
     depends_on:
@@ -138,9 +144,12 @@ services:
       WORKSPACE_CLEANUP_MAX_AGE_SECONDS: ${WORKSPACE_CLEANUP_MAX_AGE_SECONDS:-86400}
       WORKSPACE_CLEANUP_INTERVAL_SECONDS: ${WORKSPACE_CLEANUP_INTERVAL_SECONDS:-3600}
       REPOPILOT_ARTIFACT_STORE_ROOT: ${REPOPILOT_ARTIFACT_STORE_ROOT:-/tmp/repopilot-artifacts}
+      REPOPILOT_RUNTIME_SECRETS_KEY_PATH: ${REPOPILOT_RUNTIME_SECRETS_KEY_PATH:-/home/appuser/.repopilot/runtime-secrets.key}
+      REPOPILOT_RUNTIME_SECRETS_STORE_PATH: ${REPOPILOT_RUNTIME_SECRETS_STORE_PATH:-/home/appuser/.repopilot/runtime-secrets.json}
     volumes:
       - ./apps/api:/app/apps/api
       - ./packages:/app/packages
+      - ./.local/repopilot-secrets:/home/appuser/.repopilot
       - agent_workspaces:/tmp/repopilot-agent-workspaces
       - agent_artifacts:/tmp/repopilot-artifacts
     depends_on:

@@ -59,6 +59,8 @@ Require eval and smoke proof.
                 "MODEL_API_KEY=",
                 "GITHUB_WRITES_ENABLED=false",
                 "REPOPILOT_ARTIFACT_STORE_ROOT=/tmp/repopilot-artifacts",
+                "REPOPILOT_RUNTIME_SECRETS_KEY_PATH=/home/appuser/.repopilot/runtime-secrets.key",
+                "REPOPILOT_RUNTIME_SECRETS_STORE_PATH=/home/appuser/.repopilot/runtime-secrets.json",
                 "OTEL_EXPORTER_OTLP_ENDPOINT=",
             ]
         ),
@@ -76,15 +78,27 @@ services:
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
   api:
+    environment:
+      REPOPILOT_RUNTIME_SECRETS_KEY_PATH: /home/appuser/.repopilot/runtime-secrets.key
+      REPOPILOT_RUNTIME_SECRETS_STORE_PATH: /home/appuser/.repopilot/runtime-secrets.json
     volumes:
+      - ./.local/repopilot-secrets:/home/appuser/.repopilot
       - agent_workspaces:/tmp/repopilot-agent-workspaces
       - agent_artifacts:/tmp/repopilot-artifacts
   worker:
+    environment:
+      REPOPILOT_RUNTIME_SECRETS_KEY_PATH: /home/appuser/.repopilot/runtime-secrets.key
+      REPOPILOT_RUNTIME_SECRETS_STORE_PATH: /home/appuser/.repopilot/runtime-secrets.json
     volumes:
+      - ./.local/repopilot-secrets:/home/appuser/.repopilot
       - agent_workspaces:/tmp/repopilot-agent-workspaces
       - agent_artifacts:/tmp/repopilot-artifacts
   beat:
+    environment:
+      REPOPILOT_RUNTIME_SECRETS_KEY_PATH: /home/appuser/.repopilot/runtime-secrets.key
+      REPOPILOT_RUNTIME_SECRETS_STORE_PATH: /home/appuser/.repopilot/runtime-secrets.json
     volumes:
+      - ./.local/repopilot-secrets:/home/appuser/.repopilot
       - agent_workspaces:/tmp/repopilot-agent-workspaces
       - agent_artifacts:/tmp/repopilot-artifacts
   web:

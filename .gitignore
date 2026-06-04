@@ -4,6 +4,7 @@
 !.env.example
 .secrets/
 apps/api/.secrets/
+.local/
 
 __pycache__/
 *.py[cod]
