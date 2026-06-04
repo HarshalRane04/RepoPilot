@@ -121,10 +121,10 @@
       "sha256": "4b9a728d8ccc4dbeab73b286c9b25285ea0af0d99cac852454f5625acca7eec7"
     },
     {
-      "bytes": 129699,
+      "bytes": 129915,
       "kind": "file",
       "path": "Docs/IMPROVEMENT_PLAN.md",
-      "sha256": "6fd39eccb7721c84c59915c9a99ba73ecf19c83354a1dfe0583ce7257573109a"
+      "sha256": "29a5a54cabf11e85d4c36cfd1b99eec2cebc0558da28bfc74cdab3f760e8f8c9"
     },
     {
       "bytes": 2699,
@@ -1944,10 +1944,10 @@
     "Docs/release-artifacts/source-boundary-manifest.md"
   ],
   "file_count": 323,
-  "generated_at": "2026-06-04T04:55:00.038624+00:00",
-  "head_sha": "0b26842518938acb6c53ed5be0594c0a3f28b21b",
-  "manifest_sha256": "6fec00a118a58a5b475f384edad6a42e3e10ca11750d59ea3c9e04d3b8f40022",
+  "generated_at": "2026-06-04T04:58:21.807087+00:00",
+  "head_sha": "e6fc40f2bc9837921b181afbe04bf9ccb4e47a62",
+  "manifest_sha256": "58e0f2ff0a582aebb4a18161ebaed4ae8794f7490525eb65eb7b8090cf14871e",
   "root": "/Users/harshalrane/Documents/RepoPilot",
-  "status_count": 12,
-  "total_bytes": 33718767
+  "status_count": 1,
+  "total_bytes": 33718983
 }

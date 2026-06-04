@@ -1,12 +1,12 @@
 # RepoPilot Source-Boundary Manifest
 
 - Root: `/Users/harshalrane/Documents/RepoPilot`
-- Generated at: `2026-06-04T04:55:00.038624+00:00`
-- Git HEAD: `0b26842518938acb6c53ed5be0594c0a3f28b21b`
-- Git status entries: `12`
+- Generated at: `2026-06-04T04:58:21.807087+00:00`
+- Git HEAD: `e6fc40f2bc9837921b181afbe04bf9ccb4e47a62`
+- Git status entries: `1`
 - Source candidate files: `323`
-- Total bytes: `33718767`
-- Manifest SHA-256: `6fec00a118a58a5b475f384edad6a42e3e10ca11750d59ea3c9e04d3b8f40022`
+- Total bytes: `33718983`
+- Manifest SHA-256: `58e0f2ff0a582aebb4a18161ebaed4ae8794f7490525eb65eb7b8090cf14871e`
 - Excluded self-output files: `Docs/release-artifacts/source-boundary-manifest.json, Docs/release-artifacts/source-boundary-manifest.md`
 
 | Path | Type | Bytes | SHA-256 |
@@ -31,7 +31,7 @@
 | `Docs/DEPLOYMENT_GUIDE.md` | file | 4780 | `018f8c98ac70a382d01187c3ee14f0d0bcc0fc1ba1257eceba4a362fcf9a81fe` |
 | `Docs/EVALS.md` | file | 6067 | `6339bf23930d85b17b11764e660098edcb19e28f1c5844da1e006290e709d344` |
 | `Docs/GITHUB_APP_SETUP.md` | file | 5877 | `4b9a728d8ccc4dbeab73b286c9b25285ea0af0d99cac852454f5625acca7eec7` |
-| `Docs/IMPROVEMENT_PLAN.md` | file | 129699 | `6fd39eccb7721c84c59915c9a99ba73ecf19c83354a1dfe0583ce7257573109a` |
+| `Docs/IMPROVEMENT_PLAN.md` | file | 129915 | `29a5a54cabf11e85d4c36cfd1b99eec2cebc0558da28bfc74cdab3f760e8f8c9` |
 | `Docs/MODEL_TESTING.md` | file | 2699 | `4c22431dee568859f2ec26938bdfc04fcab9c94ecf6a0d4e1f5e33a5001f1f0d` |
 | `Docs/RELEASE_CHECKLIST.md` | file | 6885 | `4f0430c13eb04ca0dd091ea6f2659e5f2a7bb39d009f8f4df150177b2f925b96` |
 | `Docs/RELEASE_NOTES.md` | file | 9457 | `9a463a7cacdae4f5142f6fd2591ce0c98d28af8e2cd2bb60e781af726df28418` |

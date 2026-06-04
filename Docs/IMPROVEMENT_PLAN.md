@@ -129,7 +129,7 @@ RepoPilot should be completed through four coordinated tracks. These tracks can 
 
 | Phase | Objective | Implementation Scope | Current Build Status | Next Action | Required Exit Evidence |
 |---|---|---|---|---|---|
-| 0A. Repository hygiene and release safety | Establish a clean, reviewable source baseline. | Git initialization, ignore rules, Docker context hygiene, governance docs, CI/release workflow scaffolding, truthful README claims, executable source-boundary manifest, executable release hygiene scanner. | Partially complete. Git exists, hygiene rules are present, the duplicate README removal is documented in `Docs/SOURCE_BOUNDARY_DECISIONS.md`, `make source-boundary-manifest` hashes the current non-ignored candidate files, and `make release-hygiene` creates Markdown/JSON evidence, but the source boundary is not committed yet. | Create the intentional baseline commit and push it to GitHub. | Clean `git status`, clean artifact scan, CI workflow present, Docker context excludes secrets. |
+| 0A. Repository hygiene and release safety | Establish a clean, reviewable source baseline. | Git initialization, ignore rules, Docker context hygiene, governance docs, CI/release workflow scaffolding, truthful README claims, executable source-boundary manifest, executable release hygiene scanner. | Mostly complete. Git baseline exists on GitHub, hygiene rules are present, the duplicate README removal is documented in `Docs/SOURCE_BOUNDARY_DECISIONS.md`, `make source-boundary-manifest` hashes the current non-ignored candidate files, `make release-hygiene` creates Markdown/JSON evidence, and GitHub CI is green on `main`. | Keep the source boundary clean after each implementation slice and before release tagging. | Clean `git status`, clean artifact scan, CI workflow present and passing, Docker context excludes secrets. |
 | 0B. Security envelope | Make unsafe model/write behavior impossible by default. | Auth, object access, rate limits, budgets, redaction, immutable hashes, typed tool denial reasons, safe model output parsing, audit metadata. | Mostly complete locally. | Recheck security paths after live credentials are enabled. | Tests for auth, denial, rate limit, budget, redaction, plan hash, diff hash, and audit records. |
 | 1. Model gateway and LLMOps | Centralize all provider access behind stable contracts. | Mock-first gateway, structured JSON helper, embeddings helper, trace persistence, capped transient retry policy, token/cost/latency accounting, provider verification. | Mostly complete locally. | Run credentialed provider comparison evals and add provider-specific adapters beyond OpenAI-compatible flows. | Mock tests green, retry tests green, OpenRouter verification passed, live/fallback provider trace rows include provider, mode, prompt/response hashes, metadata, and no raw secrets; local provider-comparison scoring is implemented. |
 | 2. Repository indexing and RAG | Retrieve trustworthy repository context before planning. | Clone/fetch, safe scanner, semantic chunking, embedding/index metadata, pgvector search, lexical fallback, citations, score breakdowns, freshness metadata, stale-index behavior, secret/generated-file filtering, symlink escape rejection. | Mostly complete locally. | Run live embedding retrieval benchmark once provider key is available and reindex demo repositories to populate `repository_indexes`. | Known issues retrieve cited files/tests/docs with semantic/lexical/path scores; secret files, generated dependency trees, and symlink escapes are skipped. |
@@ -242,8 +242,8 @@ The next work should proceed in this order. The order matters because each step 
 3. Rerun the artifact scan and Docker context check.
 4. Run `make source-boundary-manifest` and inspect `Docs/release-artifacts/source-boundary-manifest.md`.
 5. Run `make release-hygiene` and save/inspect `Docs/release-artifacts/source-boundary-hygiene.md`.
-6. Create the intentional initial commit once the owner approves the source boundary.
-7. Treat this commit as the baseline for future phase work and release notes.
+6. Keep the pushed GitHub baseline as the source boundary for future phase work and release notes.
+7. Refresh the manifest after each implementation slice and before release tagging.
 
 **Exit Gate:** `git status --short` contains only intentional changes, `make release-hygiene` has no failed findings, artifact scans are clean, and CI files are committed.
 
@@ -1587,7 +1587,7 @@ This backlog converts the phase plan into implementation tickets that can be ass
 
 | ID | Work Package | Deliverables | Verification |
 |---|---|---|---|
-| RP-0A-01 | Source-control baseline | Confirm git repo initialization, create intentional initial commit boundary when user approves, document current untracked/ignored artifacts. | `git status --short`; no tracked generated artifacts. |
+| RP-0A-01 | Source-control baseline | Implemented: git repo is initialized, the intentional baseline and follow-up implementation slices are pushed to GitHub, and source-boundary manifests document current tracked scope. | `git status --short`; no tracked generated artifacts; GitHub CI green on `main`. |
 | RP-0A-02 | Artifact and secret hygiene | Remove generated folders, local secret stores, stale caches, and ignored OS files from tracked scope. | `find . -name '.secrets' -o -name node_modules -o -name '.next' -o -name '__pycache__'`. |
 | RP-0A-03 | Ignore and Docker context policy | Maintain `.gitignore` and `.dockerignore` rules for secrets, generated web builds, caches, dependency trees, docs/images, and local tool artifacts. | Docker context check in CI; `docker compose config --quiet`. |
 | RP-0A-04 | Governance files | Keep `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, root `SECURITY.md`, ADR template/process, issue/PR templates. | File existence and README links. |
@@ -1764,10 +1764,10 @@ This checklist reflects the current workspace state. "Implemented" means the cod
 
 | Requirement | Current Status | Remaining Action |
 |---|---|---|
-| Git repo initialized and clean | Partially complete | Git is initialized and the stale duplicate README has been removed, but the project still needs the intentional initial commit boundary and GitHub push. `make release-hygiene` currently reports the missing baseline commit as a failed source-boundary gate. |
-| Secrets and generated artifacts removed | Partially complete | Secret folders are ignored and cleanup has been run; `make release-hygiene` now scans generated artifacts, secret-store paths, ignore-file coverage, secret-like content, duplicate README review state, and git boundary status before commit/release. |
+| Git repo initialized and clean | Implemented locally and pushed | Git is initialized, the stale duplicate README has been removed, source-boundary manifests are generated, and `main` is pushed to GitHub with green CI. Keep `git status --short` clean after each slice. |
+| Secrets and generated artifacts removed | Mostly complete | Secret folders are ignored and cleanup has been run; `make release-hygiene` now scans generated artifacts, secret-store paths, ignore-file coverage, secret-like content, duplicate README review state, and git boundary status before commit/release. Known warnings are limited to Docker web mount points and intentional fake-key test fixtures. |
 | `.dockerignore` excludes secret directories | Implemented | Keep Docker context hygiene in CI. |
-| CI exists and passes | Partially complete | Workflow files exist and local equivalent checks pass; run GitHub Actions after the first commit/push. |
+| CI exists and passes | Implemented | GitHub Actions CI is present and green on `main`; CodeQL is intentionally gated/skipped for the private repository until code scanning is available. |
 | Model gateway has mock-provider tests | Implemented | Add live provider smoke tests once keys are available. |
 | LLM traces are persisted and redacted | Implemented | Recheck with live provider responses and large context packs. |
 | Large validation/tool evidence is artifact-backed | Implemented locally | Add cloud object-storage backend or signed retrieval path before multi-host deployment. |
