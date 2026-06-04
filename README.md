@@ -30,6 +30,7 @@ Implemented today:
 - Fixture-backed local eval runner with 31 benchmark tasks, per-task outcomes, category pass rates, observed plan-quality/context-precision/patch-quality/human-edit-distance/provider-comparison scoring, and release quality gates.
 - Local Markdown/JSON eval report generation with `make eval-report`; the latest baseline is in `Docs/eval-reports/`.
 - Planning-only live-provider eval harness with `make provider-planning-eval`, using provider keys from the shell environment rather than source files.
+- Manual GitHub Actions provider-planning workflow for credentialed model tests with secret-name inputs and downloadable eval artifacts.
 - Source-boundary manifest generation with `make source-boundary-manifest`; the latest manifest is in `Docs/release-artifacts/`.
 - Redacted credential readiness snapshot generation with `make readiness-snapshot`; the latest snapshot is in `Docs/release-artifacts/`.
 - Security scanner posture snapshot generation with `make security-scanner-snapshot`; the latest snapshot is in `Docs/release-artifacts/`.
@@ -115,6 +116,8 @@ make release-hygiene
 make deployment-validate
 make deployment-smoke
 ```
+
+For live model testing from GitHub, add the provider key as a repository secret and run the manual **Provider Planning Eval** workflow. See [Docs/MODEL_TESTING.md](Docs/MODEL_TESTING.md).
 
 ## API Highlights
 

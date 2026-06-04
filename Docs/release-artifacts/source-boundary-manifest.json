@@ -37,6 +37,12 @@
       "sha256": "695e605f6353722430b733a7bfc7a7ac52d53e39749ab6e4c4b6388fc8292fb6"
     },
     {
+      "bytes": 2742,
+      "kind": "file",
+      "path": ".github/workflows/provider-planning-eval.yml",
+      "sha256": "9230c92a234ea768822d6f1810561e03dd94d74a8980ba8bd5ef135783842639"
+    },
+    {
       "bytes": 731,
       "kind": "file",
       "path": ".github/workflows/release.yml",
@@ -103,10 +109,10 @@
       "sha256": "018f8c98ac70a382d01187c3ee14f0d0bcc0fc1ba1257eceba4a362fcf9a81fe"
     },
     {
-      "bytes": 5553,
+      "bytes": 5845,
       "kind": "file",
       "path": "Docs/EVALS.md",
-      "sha256": "db02a11c0a0f9cbafc83ce5dd48309d86189c7edf4c34eb39d8667eacb3e8a12"
+      "sha256": "3e1bfb5f6fe2faf48d0931326eebc0d25c772f3bee4868bd9a42568289b56a71"
     },
     {
       "bytes": 5877,
@@ -115,10 +121,16 @@
       "sha256": "4b9a728d8ccc4dbeab73b286c9b25285ea0af0d99cac852454f5625acca7eec7"
     },
     {
-      "bytes": 128185,
+      "bytes": 128879,
       "kind": "file",
       "path": "Docs/IMPROVEMENT_PLAN.md",
-      "sha256": "4fb7bb9e1623471997034ebb736f837d267a1c3459029ae0db4ab03e5c3071a5"
+      "sha256": "9b6f8870b536db7db0232e378c8cab6b0e2bae8db255eebf64137817f8233c1e"
+    },
+    {
+      "bytes": 2699,
+      "kind": "file",
+      "path": "Docs/MODEL_TESTING.md",
+      "sha256": "4c22431dee568859f2ec26938bdfc04fcab9c94ecf6a0d4e1f5e33a5001f1f0d"
     },
     {
       "bytes": 6885,
@@ -481,10 +493,10 @@
       "sha256": "0ed8cafbeaa58411af83f29d2860a7435952344354603e6f46aae028a2d825ed"
     },
     {
-      "bytes": 9022,
+      "bytes": 9348,
       "kind": "file",
       "path": "README.md",
-      "sha256": "7741ced50d6ae0e075f92f5067ddc62c2560b1470d57f2509d5ab52ee129bf26"
+      "sha256": "ee93eb30ac4791fecff7797ca7e1b79115d1d6c12a75a15da594e286ec88734f"
     },
     {
       "bytes": 1266,
@@ -1925,11 +1937,11 @@
     "Docs/release-artifacts/source-boundary-manifest.json",
     "Docs/release-artifacts/source-boundary-manifest.md"
   ],
-  "file_count": 320,
-  "generated_at": "2026-06-03T14:30:42.830766+00:00",
-  "head_sha": "4892bc2d5ff063b193a5a73e4f72cdc651370e71",
-  "manifest_sha256": "833f8e6b5d009bfaa7d5eb8073d02f18cd99314d0a2d9ad079f13f715cfcdba7",
+  "file_count": 322,
+  "generated_at": "2026-06-04T04:26:48.248225+00:00",
+  "head_sha": "7f08908a86879945e6232064aa0ab9b02ec5bce2",
+  "manifest_sha256": "09ed4b3f27642dbbcfd0ad11b96ab13cd4aaae0100ef19e1fa2734b07af34bbd",
   "root": "/Users/harshalrane/Documents/RepoPilot",
-  "status_count": 11,
-  "total_bytes": 33697664
+  "status_count": 5,
+  "total_bytes": 33704417
 }
