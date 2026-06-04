@@ -7,7 +7,7 @@ API_KEY_ENV ?=
 BASE_URL ?=
 LOCAL_RUNTIME_SECRET_ENV = REPOPILOT_RUNTIME_SECRETS_KEY_PATH=.local/repopilot-secrets/runtime-secrets.key REPOPILOT_RUNTIME_SECRETS_STORE_PATH=.local/repopilot-secrets/runtime-secrets.json
 
-.PHONY: up down logs migrate migration-verify api-test web-typecheck sandbox-image configure-runtime-secrets eval-report provider-planning-eval model-provider-smoke source-boundary-manifest readiness-snapshot security-scanner-snapshot release-gifs release-hygiene deployment-validate deployment-smoke
+.PHONY: up down logs migrate migration-verify api-test web-typecheck sandbox-image configure-runtime-secrets eval-report provider-planning-eval model-provider-smoke github-app-smoke source-boundary-manifest readiness-snapshot security-scanner-snapshot release-gifs release-hygiene deployment-validate deployment-smoke
 
 up:
 	$(COMPOSE) up --build
@@ -44,6 +44,9 @@ provider-planning-eval:
 
 model-provider-smoke:
 	PYTHONDONTWRITEBYTECODE=1 $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python scripts/model_provider_smoke.py --allow-blocked
+
+github-app-smoke:
+	PYTHONDONTWRITEBYTECODE=1 $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python scripts/github_app_smoke.py --allow-blocked
 
 source-boundary-manifest:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/source_boundary_manifest.py

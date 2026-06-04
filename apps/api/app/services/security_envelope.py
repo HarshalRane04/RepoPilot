@@ -42,6 +42,11 @@ def redact_text(value: str) -> str:
         r"\1=[REDACTED_SECRET]",
         redacted,
     )
+    redacted = re.sub(
+        r"(?i)(api[_-]?key|password|secret|token)\s*=\s*[^\s,;]+",
+        r"\1=[REDACTED_SECRET]",
+        redacted,
+    )
     return redacted
 
 

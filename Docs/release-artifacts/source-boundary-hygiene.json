@@ -47,6 +47,12 @@
     {
       "check": "secret_content",
       "detail": "Secret-like content matched pattern private_key_block; value intentionally omitted.",
+      "path": "apps/api/tests/test_github_app_smoke.py",
+      "status": "warning"
+    },
+    {
+      "check": "secret_content",
+      "detail": "Secret-like content matched pattern private_key_block; value intentionally omitted.",
       "path": "apps/api/tests/test_api_routes.py",
       "status": "warning"
     },
@@ -58,5 +64,5 @@
     }
   ],
   "root": "/Users/harshalrane/Documents/RepoPilot",
-  "warning_count": 9
+  "warning_count": 10
 }
