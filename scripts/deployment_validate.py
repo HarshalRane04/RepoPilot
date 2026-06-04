@@ -55,6 +55,8 @@ REQUIRED_RELEASE_ARTIFACTS = {
     "Docs/release-artifacts/credential-readiness-snapshot.json",
     "Docs/release-artifacts/security-scanner-snapshot.md",
     "Docs/release-artifacts/security-scanner-snapshot.json",
+    "Docs/release-artifacts/model-provider-smoke.md",
+    "Docs/release-artifacts/model-provider-smoke.json",
     "Docs/eval-reports/v1-local-latest.md",
     "Docs/eval-reports/v1-local-latest.json",
 }

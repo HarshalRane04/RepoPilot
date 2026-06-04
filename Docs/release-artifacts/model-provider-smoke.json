@@ -1,0 +1,15 @@
+{
+  "api_key_configured": false,
+  "detail": "Configure a live model provider before running provider smoke verification.",
+  "generated_at": "2026-06-04T17:36:27.618526+00:00",
+  "key_permissions_ok": true,
+  "latency_ms": null,
+  "model": "mock-planner",
+  "model_available": false,
+  "ok": false,
+  "provider": "mock",
+  "status": "blocked",
+  "store_exists": false,
+  "store_permissions_ok": true,
+  "verified_at": null
+}

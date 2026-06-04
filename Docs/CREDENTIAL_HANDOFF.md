@@ -23,7 +23,7 @@ The dashboard Settings screen writes to this store through write-only secret for
 make configure-runtime-secrets
 ```
 
-The helper prompts with hidden input for API keys, OAuth secrets, webhook secrets, and private keys, then prints only configured/missing status. If the stack is running through Docker Compose, prefer the dashboard Settings screen so the values are written directly into `.local/repopilot-secrets`; use the helper for host-only scripts or export `REPOPILOT_RUNTIME_SECRETS_KEY_PATH` and `REPOPILOT_RUNTIME_SECRETS_STORE_PATH` to point at the repo-local files. Use GitHub repository Actions secrets only when a GitHub-hosted workflow needs a provider key, for example the Provider Planning Eval workflow.
+The helper prompts with hidden input for API keys, OAuth secrets, webhook secrets, and private keys, then prints only configured/missing status. The Make target pins the helper to `.local/repopilot-secrets` even though `.env` uses the in-container `/home/appuser/.repopilot` path. Use GitHub repository Actions secrets only when a GitHub-hosted workflow needs a provider key, for example the Provider Planning Eval workflow.
 
 ## Required GitHub App Inputs
 

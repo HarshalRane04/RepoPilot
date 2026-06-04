@@ -24,6 +24,7 @@ FORBIDDEN_NAMES = {
 FORBIDDEN_SUFFIXES = {".pyc", ".pyo"}
 FORBIDDEN_DIR_SUFFIXES = {".egg-info"}
 FORBIDDEN_SECRET_PATHS = {".secrets", "apps/api/.secrets"}
+LOCAL_RUNTIME_SECRET_PATHS = {".local", ".local/repopilot-secrets"}
 ALLOWED_MOUNT_POINTS = {"apps/web/node_modules", "apps/web/.next"}
 SOURCE_BOUNDARY_DECISION_FILE = "Docs/SOURCE_BOUNDARY_DECISIONS.md"
 REQUIRED_GITIGNORE_PATTERNS = {
@@ -33,6 +34,7 @@ REQUIRED_GITIGNORE_PATTERNS = {
     "!.env.example",
     ".secrets/",
     "apps/api/.secrets/",
+    ".local/",
     "__pycache__/",
     "*.py[cod]",
     "*.egg-info/",
@@ -49,6 +51,7 @@ REQUIRED_DOCKERIGNORE_PATTERNS = {
     ".env.*",
     ".secrets",
     "apps/api/.secrets",
+    ".local",
     ".DS_Store",
     ".pytest_cache",
     "__pycache__",
@@ -152,6 +155,21 @@ class ReleaseHygieneScanner:
             if relative in FORBIDDEN_SECRET_PATHS or any(relative.startswith(f"{item}/") for item in FORBIDDEN_SECRET_PATHS):
                 report.findings.append(
                     HygieneFinding(check="secret_store_path", status="failed", path=relative, detail="Runtime secret store must not be in the source boundary.")
+                )
+                continue
+            if relative in LOCAL_RUNTIME_SECRET_PATHS or any(relative.startswith(f"{item}/") for item in LOCAL_RUNTIME_SECRET_PATHS):
+                if self.is_git_ignored(path):
+                    report.findings.append(
+                        HygieneFinding(
+                            check="local_runtime_secret_store",
+                            status="warning",
+                            path=relative,
+                            detail="Ignored local runtime secret store is present; keep it out of commits and source-boundary packaging.",
+                        )
+                    )
+                    continue
+                report.findings.append(
+                    HygieneFinding(check="local_runtime_secret_store", status="failed", path=relative, detail="Local runtime secret store must be git-ignored.")
                 )
                 continue
             if self.is_forbidden_generated_path(path):

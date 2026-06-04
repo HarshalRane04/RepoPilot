@@ -16,6 +16,7 @@ def write_required_ignore_files(root: Path) -> None:
                 "!.env.example",
                 ".secrets/",
                 "apps/api/.secrets/",
+                ".local/",
                 "__pycache__/",
                 "*.py[cod]",
                 "*.egg-info/",
@@ -37,6 +38,7 @@ def write_required_ignore_files(root: Path) -> None:
                 ".env.*",
                 ".secrets",
                 "apps/api/.secrets",
+                ".local",
                 ".DS_Store",
                 ".pytest_cache",
                 "__pycache__",
@@ -113,6 +115,19 @@ def test_release_hygiene_scanner_warns_for_ignored_local_env_file(tmp_path: Path
 
     assert any(finding.check == "env_file" and finding.path == ".env" and finding.status == "warning" for finding in report.findings)
     assert not any(finding.check == "env_file" and finding.path == ".env" and finding.status == "failed" for finding in report.findings)
+
+
+def test_release_hygiene_scanner_warns_for_ignored_local_runtime_secret_store(tmp_path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    write_required_ignore_files(tmp_path)
+    secret_store = tmp_path / ".local" / "repopilot-secrets"
+    secret_store.mkdir(parents=True)
+    secret_store.joinpath("runtime-secrets.key").write_text("local-key-material\n", encoding="utf-8")
+
+    report = ReleaseHygieneScanner(root=tmp_path).scan()
+
+    assert any(finding.check == "local_runtime_secret_store" and finding.path == ".local" and finding.status == "warning" for finding in report.findings)
+    assert not any(finding.check == "local_runtime_secret_store" and finding.status == "failed" for finding in report.findings)
 
 
 def test_release_hygiene_scanner_links_documented_duplicate_readme_decision(tmp_path: Path) -> None:

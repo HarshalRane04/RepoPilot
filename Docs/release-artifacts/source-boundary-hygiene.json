@@ -3,9 +3,27 @@
   "failed_count": 0,
   "findings": [
     {
+      "check": "local_runtime_secret_store",
+      "detail": "Ignored local runtime secret store is present; keep it out of commits and source-boundary packaging.",
+      "path": ".local",
+      "status": "warning"
+    },
+    {
       "check": "env_file",
       "detail": "Ignored local environment file is present; keep it out of commits and remove it before final source-boundary packaging.",
       "path": ".env",
+      "status": "warning"
+    },
+    {
+      "check": "local_runtime_secret_store",
+      "detail": "Ignored local runtime secret store is present; keep it out of commits and source-boundary packaging.",
+      "path": ".local/repopilot-secrets",
+      "status": "warning"
+    },
+    {
+      "check": "local_runtime_secret_store",
+      "detail": "Ignored local runtime secret store is present; keep it out of commits and source-boundary packaging.",
+      "path": ".local/repopilot-secrets/runtime-secrets.key",
       "status": "warning"
     },
     {
@@ -40,5 +58,5 @@
     }
   ],
   "root": "/Users/harshalrane/Documents/RepoPilot",
-  "warning_count": 6
+  "warning_count": 9
 }
