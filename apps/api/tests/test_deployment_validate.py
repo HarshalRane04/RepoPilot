@@ -129,6 +129,8 @@ volumes:
         "Docs/release-artifacts/model-provider-smoke.json",
         "Docs/release-artifacts/github-app-smoke.md",
         "Docs/release-artifacts/github-app-smoke.json",
+        "Docs/release-artifacts/github-oauth-smoke.md",
+        "Docs/release-artifacts/github-oauth-smoke.json",
         "Docs/eval-reports/v1-local-latest.md",
         "Docs/eval-reports/v1-local-latest.json",
     ]:

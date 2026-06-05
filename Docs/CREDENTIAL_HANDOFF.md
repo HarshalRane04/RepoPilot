@@ -69,8 +69,9 @@ Provide these through the dashboard Settings screen or runtime secret store, not
 Run live proof in this order so failures stay isolated:
 
 1. Save GitHub App credentials with `GITHUB_WRITES_ENABLED=false`.
-2. Run `/settings/github/app/verify` from the dashboard or API, or run `make github-app-smoke` to write redacted local evidence under `Docs/release-artifacts/`.
-3. Sync installation repositories and confirm the demo repo appears.
+2. Run `make github-oauth-smoke` to prove the dashboard OAuth/session inputs can generate a GitHub authorize URL without exposing the client secret.
+3. Run `/settings/github/app/verify` from the dashboard or API, or run `make github-app-smoke` to write redacted local evidence under `Docs/release-artifacts/`.
+4. Sync installation repositories and confirm the demo repo appears.
 4. Deliver a signed issue webhook and confirm it is stored, deduped, queued, normalized, and visible in Activity.
 5. Post `/repopilot status` from a real collaborator and verify permission mapping.
 6. Save model provider credentials and run `/settings/models/verify`.
