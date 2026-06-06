@@ -69,17 +69,18 @@ Provide these through the dashboard Settings screen or runtime secret store, not
 Run live proof in this order so failures stay isolated:
 
 1. Save GitHub App credentials with `GITHUB_WRITES_ENABLED=false`.
-2. Run `make github-oauth-smoke` to prove the dashboard OAuth/session inputs can generate a GitHub authorize URL without exposing the client secret.
-3. Run `/settings/github/app/verify` from the dashboard or API, or run `make github-app-smoke` to write redacted local evidence under `Docs/release-artifacts/`.
-4. Sync installation repositories and confirm the demo repo appears.
-4. Deliver a signed issue webhook and confirm it is stored, deduped, queued, normalized, and visible in Activity.
-5. Post `/repopilot status` from a real collaborator and verify permission mapping.
-6. Save model provider credentials and run `/settings/models/verify`.
-7. Run live triage/planning on a disposable issue and confirm no code is written before plan approval.
-8. Enable `GITHUB_WRITES_ENABLED=true` only for the disposable demo repo.
-9. Approve a low-risk plan and run the issue-to-draft-PR flow.
-10. Confirm branch, commit, draft PR, issue comment, validation evidence, security evidence, audit rows, and PR summary.
-11. Disable write mode again after the smoke test unless continuing controlled validation.
+2. Run `make credential-smoke` to create a redacted aggregate status artifact for GitHub OAuth, GitHub App installation-token readiness, and model-provider readiness.
+3. Run `make github-oauth-smoke` to prove the dashboard OAuth/session inputs can generate a GitHub authorize URL without exposing the client secret.
+4. Run `/settings/github/app/verify` from the dashboard or API, or run `make github-app-smoke` to write redacted local evidence under `Docs/release-artifacts/`.
+5. Sync installation repositories and confirm the demo repo appears.
+6. Deliver a signed issue webhook and confirm it is stored, deduped, queued, normalized, and visible in Activity.
+7. Post `/repopilot status` from a real collaborator and verify permission mapping.
+8. Save model provider credentials and run `/settings/models/verify`.
+9. Run live triage/planning on a disposable issue and confirm no code is written before plan approval.
+10. Enable `GITHUB_WRITES_ENABLED=true` only for the disposable demo repo.
+11. Approve a low-risk plan and run the issue-to-draft-PR flow.
+12. Confirm branch, commit, draft PR, issue comment, validation evidence, security evidence, audit rows, and PR summary.
+13. Disable write mode again after the smoke test unless continuing controlled validation.
 
 ## Evidence To Capture
 
