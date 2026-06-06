@@ -1,0 +1,81 @@
+name: Provider Applied Patch Eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Provider id, such as openrouter, anthropic, or google
+        required: true
+        default: openrouter
+      model:
+        description: Provider model id
+        required: true
+        default: gemma-4-31b-it:free
+      task_count:
+        description: Number of benchmark tasks to evaluate
+        required: true
+        default: "5"
+      api_key_secret_name:
+        description: Repository secret name containing the provider API key
+        required: true
+        default: OPENROUTER_API_KEY
+      base_url:
+        description: Optional provider base URL override
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  provider-applied-patch-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PROVIDER: ${{ inputs.provider }}
+      MODEL: ${{ inputs.model }}
+      TASK_COUNT: ${{ inputs.task_count }}
+      BASE_URL: ${{ inputs.base_url }}
+      REPOPILOT_PROVIDER_API_KEY: ${{ secrets[inputs.api_key_secret_name] }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+      - name: Validate model secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${REPOPILOT_PROVIDER_API_KEY:-}" ]; then
+            echo "::error::GitHub Actions secret '${{ inputs.api_key_secret_name }}' is not configured or is empty."
+            exit 1
+          fi
+      - name: Prepare fixture dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix packages/evals/fixtures/web-dashboard
+      - name: Run provider applied patch eval
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_URL}" ]; then
+            env API_KEY_ENV=REPOPILOT_PROVIDER_API_KEY PROVIDER="${PROVIDER}" MODEL="${MODEL}" TASK_COUNT="${TASK_COUNT}" BASE_URL="${BASE_URL}" make provider-applied-patch-eval
+          else
+            env API_KEY_ENV=REPOPILOT_PROVIDER_API_KEY PROVIDER="${PROVIDER}" MODEL="${MODEL}" TASK_COUNT="${TASK_COUNT}" make provider-applied-patch-eval
+          fi
+      - name: Upload provider applied patch eval report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: provider-applied-patch-eval-${{ github.run_id }}
+          path: |
+            Docs/eval-reports/v1-provider-applied-patch.md
+            Docs/eval-reports/v1-provider-applied-patch.json
+            Docs/eval-reports/v1-provider-applied-patch.observed-evidence.json
+          if-no-files-found: warn

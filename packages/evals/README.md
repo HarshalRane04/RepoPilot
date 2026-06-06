@@ -58,4 +58,12 @@ ANTHROPIC_API_KEY=... make provider-planning-eval PROVIDER=anthropic MODEL=claud
 GEMINI_API_KEY=... make provider-planning-eval PROVIDER=google MODEL=gemini-2.5-pro
 ```
 
+Run applied patch evidence when you need stronger patch-quality proof:
+
+```bash
+make provider-applied-patch-eval PROVIDER=openrouter MODEL=gemma-4-31b-it:free TASK_COUNT=5
+```
+
+Applied patch evals copy fixture repositories into temporary workspaces, apply model-generated unified diffs, run only benchmark-declared validation commands, and write `v1-provider-applied-patch.*` reports. The fixture repositories are not mutated.
+
 The benchmark task list and fixture repositories in this package are the portfolio/demo seed set. Future work can run model-by-model patch assertions and CI-backed checks against cloned copies of these fixtures.

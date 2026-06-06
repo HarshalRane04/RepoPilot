@@ -45,3 +45,14 @@ def test_provider_retrieval_eval_workflow_uploads_report_artifacts() -> None:
     assert "REPOPILOT_PROVIDER_API_KEY" in workflow
     assert "provider-retrieval-eval-${{ github.run_id }}" in workflow
     assert "v1-provider-retrieval.observed-evidence.json" in workflow
+
+
+def test_provider_applied_patch_eval_workflow_uploads_report_artifacts() -> None:
+    workflow = ROOT.joinpath(".github/workflows/provider-applied-patch-eval.yml").read_text(encoding="utf-8")
+
+    assert "Provider Applied Patch Eval" in workflow
+    assert "api_key_secret_name" in workflow
+    assert "make provider-applied-patch-eval" in workflow
+    assert "REPOPILOT_PROVIDER_API_KEY" in workflow
+    assert "provider-applied-patch-eval-${{ github.run_id }}" in workflow
+    assert "v1-provider-applied-patch.observed-evidence.json" in workflow

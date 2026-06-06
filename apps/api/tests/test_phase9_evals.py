@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
 import subprocess
 import sys
@@ -18,6 +19,7 @@ from repopilot_evals import (
     ProviderComparisonScorer,
     ProviderEvalEvidence,
     ProviderChatClient,
+    ProviderAppliedPatchEvalRunner,
     ProviderPatchEvalRunner,
     ProviderPlanningEvalRunner,
     ProviderRetrievalEvalRunner,
@@ -486,6 +488,56 @@ def test_provider_patch_eval_runner_writes_observed_patch_evidence_without_netwo
     assert "observed_task_results" in observed_payload
     assert "validation_note" in observed_payload
     assert "mock-patcher" in report_markdown
+
+
+def test_provider_applied_patch_eval_runner_applies_and_validates_temp_fixture(tmp_path) -> None:
+    fixture_readme = EvalRunner().benchmark_path.parent / "fixtures/python-service/README.md"
+    original_content = fixture_readme.read_text(encoding="utf-8")
+    updated_content = original_content.replace(
+        "older `DB_URL` references should be treated as documentation bugs.",
+        "legacy database setting references should be treated as documentation bugs.",
+    )
+    generated_diff = "".join(
+        difflib.unified_diff(
+            original_content.splitlines(keepends=True),
+            updated_content.splitlines(keepends=True),
+            fromfile="a/README.md",
+            tofile="b/README.md",
+        )
+    )
+
+    class FakeChatClient:
+        def complete_json(self, *, model: str, messages: list[dict[str, str]], timeout_seconds: int) -> dict[str, object]:
+            assert model == "mock-patcher"
+            assert timeout_seconds == 5
+            return {
+                "changed_files": ["README.md", "Docs/RUNBOOK.md"],
+                "diff_summary": "Replace DB_URL references with DATABASE_URL and add migration note.",
+                "generated_diff": generated_diff,
+                "validation_commands": ["docs link check"],
+                "validation_status": "not_run",
+                "security_result": "unknown",
+            }
+
+    result = ProviderAppliedPatchEvalRunner(client=FakeChatClient()).run(
+        provider="mock",
+        model="mock-patcher",
+        output_dir=tmp_path,
+        report_name="provider-applied-patch",
+        task_count=1,
+        timeout_seconds=5,
+        allow_failed_gates=True,
+    )
+    observed_payload = json.loads(result.observed_evidence_path.read_text(encoding="utf-8"))
+
+    assert fixture_readme.read_text(encoding="utf-8") == original_content
+    assert result.report.metrics["patch_quality_observed_count"] == 1
+    assert observed_payload["application_results"][0]["workspace_mutated"] is False
+    assert observed_payload["application_results"][0]["validation_results"][0]["command"] == "docs link check"
+    assert observed_payload["application_results"][0]["validation_results"][0]["passed"] is True
+    assert observed_payload["observed_task_results"][0]["validation_status"] == "passed"
+    assert observed_payload["observed_task_results"][0]["security_result"] == "pass"
+    assert observed_payload["observed_task_results"][0]["changed_files"] == ["README.md"]
 
 
 def test_provider_retrieval_eval_runner_writes_context_precision_evidence_without_network(tmp_path) -> None:

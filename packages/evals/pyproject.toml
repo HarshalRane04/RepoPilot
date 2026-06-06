@@ -17,6 +17,7 @@ build-backend = "setuptools.build_meta"
 repopilot-evals-report = "repopilot_evals.report:main"
 repopilot-provider-planning-eval = "repopilot_evals.provider_harness:main"
 repopilot-provider-retrieval-eval = "repopilot_evals.provider_retrieval_harness:main"
+repopilot-provider-applied-patch-eval = "repopilot_evals.provider_applied_patch_harness:main"
 
 [tool.setuptools.packages.find]
 include = ["repopilot_evals*"]

@@ -29,6 +29,8 @@ Use the manual **Provider Retrieval Eval** workflow when you want provider-backe
 
 Use the manual **Provider Patch Eval** workflow when you want provider-backed patch-attempt evidence without applying patches. It uses the same provider/model/secret-name inputs, writes `Docs/eval-reports/v1-provider-patch.md`, `.json`, and `.observed-evidence.json`, then uploads them as artifacts. It scores expected files, disallowed changes, validation commands, security result, and diff intent, but it does not claim validation passed unless explicit validation evidence is supplied.
 
+Use the manual **Provider Applied Patch Eval** workflow when you want stronger patch proof. It copies fixture repositories to temporary workspaces, applies model-generated unified diffs, runs only benchmark-declared validation commands, writes `Docs/eval-reports/v1-provider-applied-patch.md`, `.json`, and `.observed-evidence.json`, then uploads them as artifacts. Fixture repositories are not mutated.
+
 ## Local Provider Eval
 
 For local testing, save the provider key in RepoPilot's encrypted runtime secret store and run the same harness:
@@ -45,6 +47,14 @@ Patch-attempt eval:
 ```bash
 make provider-patch-eval PROVIDER=openrouter MODEL=gemma-4-31b-it:free TASK_COUNT=5
 ```
+
+Applied patch eval:
+
+```bash
+make provider-applied-patch-eval PROVIDER=openrouter MODEL=gemma-4-31b-it:free TASK_COUNT=5
+```
+
+Applied patch evals are the preferred local proof for patch quality once a model provider is configured. They apply generated diffs to temporary copies of benchmark fixtures and run only the fixture-declared validation commands.
 
 Retrieval-quality eval:
 

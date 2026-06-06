@@ -7,7 +7,7 @@ API_KEY_ENV ?=
 BASE_URL ?=
 LOCAL_RUNTIME_SECRET_ENV = REPOPILOT_RUNTIME_SECRETS_KEY_PATH=.local/repopilot-secrets/runtime-secrets.key REPOPILOT_RUNTIME_SECRETS_STORE_PATH=.local/repopilot-secrets/runtime-secrets.json
 
-.PHONY: up down logs migrate migration-verify api-test web-typecheck sandbox-image configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke source-boundary-manifest readiness-snapshot security-scanner-snapshot release-gifs release-hygiene deployment-validate deployment-smoke
+.PHONY: up down logs migrate migration-verify api-test web-typecheck sandbox-image configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval provider-applied-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke source-boundary-manifest readiness-snapshot security-scanner-snapshot release-gifs release-hygiene deployment-validate deployment-smoke
 
 up:
 	$(COMPOSE) up --build
@@ -47,6 +47,9 @@ provider-retrieval-eval:
 
 provider-patch-eval:
 	env PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_patch_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-patch --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
+
+provider-applied-patch-eval:
+	env PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_applied_patch_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-applied-patch --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
 
 model-provider-smoke:
 	PYTHONDONTWRITEBYTECODE=1 $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python scripts/model_provider_smoke.py --allow-blocked
