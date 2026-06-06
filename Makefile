@@ -40,10 +40,10 @@ eval-report:
 	env PYTHONPATH=packages/evals:packages/shared_contracts uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.report --out-dir Docs/eval-reports --report-name v1-local-latest --allow-failed-gates
 
 provider-planning-eval:
-	env PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-planning --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
+	env PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-planning --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
 
 provider-patch-eval:
-	env PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_patch_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-patch --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
+	env PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_patch_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-patch --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
 
 model-provider-smoke:
 	PYTHONDONTWRITEBYTECODE=1 $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python scripts/model_provider_smoke.py --allow-blocked

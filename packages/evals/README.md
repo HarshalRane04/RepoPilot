@@ -34,19 +34,14 @@ PYTHONPATH=packages/evals:packages/shared_contracts python -m repopilot_evals.re
   --report-name v1-provider-comparison
 ```
 
-Run a provider-backed planning eval by supplying the provider key through the environment, not the command line:
+Run a provider-backed planning eval by saving the provider key in RepoPilot's encrypted local runtime secret store:
 
 ```bash
-PYTHONPATH=packages/evals:packages/shared_contracts OPENROUTER_API_KEY=... python -m repopilot_evals.provider_harness \
-  --provider openrouter \
-  --model gemma-4-31b-it:free \
-  --task-count 5 \
-  --out-dir Docs/eval-reports \
-  --report-name v1-openrouter-planning \
-  --allow-failed-gates
+make configure-runtime-secrets
+make provider-planning-eval PROVIDER=openrouter MODEL=gemma-4-31b-it:free TASK_COUNT=5
 ```
 
-The same command is available as `make provider-planning-eval` after `OPENROUTER_API_KEY` is set in the shell.
+The provider eval commands use `.local/repopilot-secrets/runtime-secrets.json` by default. Environment variables such as `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, and `GEMINI_API_KEY` still override the local store for CI and one-off runs.
 
 Anthropic and Gemini can use the same harness without changing the report contract:
 

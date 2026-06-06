@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "RepoPilot benchmark fixture definitions and local fixture verification helpers."
 requires-python = ">=3.12"
 dependencies = [
+  "cryptography>=42,<46",
   "pydantic>=2.7,<3.0",
   "repopilot-contracts==0.1.0",
 ]

@@ -21,6 +21,13 @@ def __getattr__(name: str):
         from .provider_patch_harness import ProviderPatchEvalRunner
 
         return {"ProviderPatchEvalRunner": ProviderPatchEvalRunner}[name]
+    if name in {"ProviderCredentialResolution", "resolve_provider_credentials"}:
+        from .provider_credentials import ProviderCredentialResolution, resolve_provider_credentials
+
+        return {
+            "ProviderCredentialResolution": ProviderCredentialResolution,
+            "resolve_provider_credentials": resolve_provider_credentials,
+        }[name]
     raise AttributeError(name)
 
 __all__ = [
@@ -41,4 +48,6 @@ __all__ = [
     "ProviderChatClient",
     "ProviderPlanningEvalRunner",
     "ProviderPatchEvalRunner",
+    "ProviderCredentialResolution",
+    "resolve_provider_credentials",
 ]

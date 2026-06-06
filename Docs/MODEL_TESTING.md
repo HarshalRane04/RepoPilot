@@ -29,12 +29,14 @@ Use the manual **Provider Patch Eval** workflow when you want provider-backed pa
 
 ## Local Provider Eval
 
-For local testing, set the provider key in your shell and run the same harness:
+For local testing, save the provider key in RepoPilot's encrypted runtime secret store and run the same harness:
 
 ```bash
-export OPENROUTER_API_KEY=...
+make configure-runtime-secrets
 make provider-planning-eval PROVIDER=openrouter MODEL=gemma-4-31b-it:free TASK_COUNT=5
 ```
+
+The provider eval commands read `MODEL_API_KEY`, `MODEL_PROVIDER`, and `MODEL_BASE_URL` from `.local/repopilot-secrets/runtime-secrets.json` by default. Environment variables such as `OPENROUTER_API_KEY` still override the local store, which is useful for one-off tests and mirrors GitHub Actions behavior.
 
 Patch-attempt eval:
 
@@ -42,7 +44,7 @@ Patch-attempt eval:
 make provider-patch-eval PROVIDER=openrouter MODEL=gemma-4-31b-it:free TASK_COUNT=5
 ```
 
-Anthropic and Gemini use the same target with their provider-specific key variables:
+Anthropic and Gemini use the same targets after the local store is configured for that provider, or with their provider-specific environment variables:
 
 ```bash
 export ANTHROPIC_API_KEY=...

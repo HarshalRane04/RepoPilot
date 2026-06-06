@@ -35,7 +35,7 @@ This script is written for the local single-tenant demo first, then the credenti
 11. Ingest CI evidence or use the CI summary endpoint to show the run reaching review-ready state.
 12. Run evals and show per-task outcomes, category metrics, observed plan quality, context precision, observed patch quality, human edit distance, provider comparison ranking, and quality gates.
 13. Open `Docs/eval-reports/v1-local-latest.md` to show the baseline fixture report and the remaining false gates for missing observed model/provider evidence.
-14. If a provider key is configured in the shell, run `make provider-planning-eval` and show the generated planning-only provider report without claiming patch-quality proof.
+14. If a provider key is configured in the encrypted local runtime secret store, run `make provider-planning-eval` and show the generated planning-only provider report without claiming patch-quality proof. Shell environment keys still work as an override for one-off runs.
 
 Recommended demo issue:
 

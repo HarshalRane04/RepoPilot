@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import time
 import urllib.error
@@ -14,6 +13,7 @@ from typing import Any, Protocol
 from repopilot_contracts import EvalTaskFixture
 from repopilot_llm_client import build_completion_request, extract_completion_content, provider_by_id
 
+from .provider_credentials import resolve_provider_credentials
 from .report import BenchmarkReport, BenchmarkReportBuilder
 
 
@@ -271,6 +271,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", required=True)
     parser.add_argument("--api-key-env")
     parser.add_argument("--base-url")
+    parser.add_argument("--no-runtime-secret-store", action="store_true")
     parser.add_argument("--benchmark", type=Path, default=Path(__file__).resolve().parents[1] / "benchmark_tasks.json")
     parser.add_argument("--out-dir", type=Path, default=Path("Docs/eval-reports"))
     parser.add_argument("--report-name", default="v1-provider-planning")
@@ -283,15 +284,23 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     api_key_env = args.api_key_env or default_provider_api_key_env(args.provider)
-    api_key = os.environ.get(api_key_env)
-    if not api_key:
-        print(f"Missing provider API key. Set {api_key_env} in the environment.")
+    credentials = resolve_provider_credentials(
+        provider=args.provider,
+        api_key_env=api_key_env,
+        base_url=args.base_url,
+        allow_runtime_store=not args.no_runtime_secret_store,
+    )
+    if not credentials.api_key:
+        print(
+            "Missing provider API key. "
+            f"Set {api_key_env} in the environment or save MODEL_API_KEY in RepoPilot's local runtime secret store."
+        )
         return 2
     runner = ProviderPlanningEvalRunner(
         benchmark_path=args.benchmark,
         client=ProviderChatClient(
-            base_url=args.base_url or default_provider_base_url(args.provider),
-            api_key=api_key,
+            base_url=credentials.base_url,
+            api_key=credentials.api_key,
             provider=args.provider,
         ),
     )

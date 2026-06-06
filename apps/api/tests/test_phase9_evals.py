@@ -7,6 +7,7 @@ import sys
 
 from app.db.models import EvalRun
 from app.services.eval_runner import EvalRunner
+from cryptography.fernet import Fernet
 from repopilot_evals import (
     BenchmarkReportBuilder,
     FixtureVerifier,
@@ -19,6 +20,7 @@ from repopilot_evals import (
     ProviderChatClient,
     ProviderPatchEvalRunner,
     ProviderPlanningEvalRunner,
+    resolve_provider_credentials,
 )
 from repopilot_evals.provider_harness import default_provider_api_key_env, default_provider_base_url
 
@@ -576,6 +578,90 @@ def test_provider_harness_defaults_provider_key_env_and_base_url() -> None:
     assert default_provider_api_key_env("anthropic") == "ANTHROPIC_API_KEY"
     assert default_provider_api_key_env("google") == "GEMINI_API_KEY"
     assert default_provider_base_url("google") == "https://generativelanguage.googleapis.com"
+
+
+def test_provider_credentials_use_runtime_secret_store(tmp_path, monkeypatch) -> None:
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+    store_path = tmp_path / "runtime-secrets.json"
+    key_path = tmp_path / "runtime-secrets.key"
+    key_path.write_bytes(key + b"\n")
+    store_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "values": {
+                    "MODEL_PROVIDER": fernet.encrypt(b"openrouter").decode("utf-8"),
+                    "MODEL_API_KEY": fernet.encrypt(b"runtime-test-key").decode("utf-8"),
+                    "MODEL_BASE_URL": fernet.encrypt(b"https://openrouter.example/api/v1").decode("utf-8"),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("REPOPILOT_RUNTIME_SECRETS_STORE_PATH", str(store_path))
+    monkeypatch.setenv("REPOPILOT_RUNTIME_SECRETS_KEY_PATH", str(key_path))
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    credentials = resolve_provider_credentials(provider="openrouter")
+
+    assert credentials.api_key == "runtime-test-key"
+    assert credentials.base_url == "https://openrouter.example/api/v1"
+    assert credentials.source == "runtime_secret_store"
+
+
+def test_provider_credentials_keep_environment_override(tmp_path, monkeypatch) -> None:
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+    store_path = tmp_path / "runtime-secrets.json"
+    key_path = tmp_path / "runtime-secrets.key"
+    key_path.write_bytes(key)
+    store_path.write_text(
+        json.dumps(
+            {
+                "values": {
+                    "MODEL_PROVIDER": fernet.encrypt(b"openrouter").decode(),
+                    "MODEL_API_KEY": fernet.encrypt(b"runtime-key").decode(),
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("REPOPILOT_RUNTIME_SECRETS_STORE_PATH", str(store_path))
+    monkeypatch.setenv("REPOPILOT_RUNTIME_SECRETS_KEY_PATH", str(key_path))
+    monkeypatch.setenv("OPENROUTER_API_KEY", "env-key")
+
+    credentials = resolve_provider_credentials(provider="openrouter")
+
+    assert credentials.api_key == "env-key"
+    assert credentials.source == "environment:OPENROUTER_API_KEY"
+
+
+def test_provider_credentials_ignore_runtime_secret_for_other_provider(tmp_path, monkeypatch) -> None:
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+    store_path = tmp_path / "runtime-secrets.json"
+    key_path = tmp_path / "runtime-secrets.key"
+    key_path.write_bytes(key)
+    store_path.write_text(
+        json.dumps(
+            {
+                "values": {
+                    "MODEL_PROVIDER": fernet.encrypt(b"openrouter").decode(),
+                    "MODEL_API_KEY": fernet.encrypt(b"runtime-key").decode(),
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("REPOPILOT_RUNTIME_SECRETS_STORE_PATH", str(store_path))
+    monkeypatch.setenv("REPOPILOT_RUNTIME_SECRETS_KEY_PATH", str(key_path))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    credentials = resolve_provider_credentials(provider="anthropic")
+
+    assert credentials.api_key is None
+    assert credentials.source == "missing"
 
 
 def test_eval_fixture_repositories_are_executable() -> None:
