@@ -1,0 +1,78 @@
+{
+  "artifact_name": "release-evidence-27059971285",
+  "artifact_files": [
+    {
+      "bytes": 12063,
+      "path": "eval-reports/v1-local-latest.json",
+      "sha256": "856c15a64e979ead0bbfd2acb0b94f1df06481475a574d7f3217cd67ff8573a5"
+    },
+    {
+      "bytes": 1425,
+      "path": "eval-reports/v1-local-latest.md",
+      "sha256": "103bdb7ba720963f07338fec0a9df7a660a5ae899c2e395f915fc79e4c8b484b"
+    },
+    {
+      "bytes": 285,
+      "path": "release-artifacts/deployment-validation.json",
+      "sha256": "158a3bd18879e525d19d25a362dd5c41d659b65ca1c701c3353fa955aedcf1cf"
+    },
+    {
+      "bytes": 255,
+      "path": "release-artifacts/deployment-validation.md",
+      "sha256": "e67a77b522a7b3add6d8a66547141c165c55426a5efaf6d2ca3beaca58c8d8bd"
+    },
+    {
+      "bytes": 69525,
+      "path": "release-artifacts/source-boundary-manifest.json",
+      "sha256": "feeb7307c2849598cb2741bfcba4b946c230953bbb1f76042a8a491a85e2ca3e"
+    },
+    {
+      "bytes": 11270,
+      "path": "release-artifacts/source-boundary-manifest.md",
+      "sha256": "719e7100e3bb18a317ffd80dfdbcc1ce0723124ae8b6bd5c4fc44b9fae438ce3"
+    }
+  ],
+  "build_images_job": {
+    "conclusion": "success",
+    "name": "build-images"
+  },
+  "deployment_validation": {
+    "failed": false,
+    "failed_count": 0,
+    "warning_count": 0
+  },
+  "eval_summary": {
+    "benchmark_task_count": 31,
+    "fixture_file_coverage_rate": 1.0,
+    "fixture_repository_pass_rate": 1.0,
+    "quality_gate_results": {
+      "context_precision_required": false,
+      "executable_fixture_repositories_required": true,
+      "fixture_file_coverage_required": true,
+      "human_edit_distance_required": false,
+      "minimum_fixture_count_for_v1": true,
+      "minimum_task_pass_rate_for_v1": true,
+      "patch_quality_observations_required": false,
+      "patch_quality_pass_rate_required": false,
+      "plan_quality_observations_required": false,
+      "plan_quality_pass_rate_required": false,
+      "provider_comparisons_required": false,
+      "security_block_tasks_required": true
+    },
+    "task_pass_rate": 1.0
+  },
+  "release_evidence_job": {
+    "conclusion": "success",
+    "name": "release-evidence"
+  },
+  "run_id": 27059971285,
+  "run_url": "https://github.com/HarshalRane04/RepoPilot/actions/runs/27059971285",
+  "source_boundary_manifest": {
+    "file_count": 346,
+    "head_sha": "c99a0966e821ec279f4e49ffdef711528a5c2e31",
+    "manifest_sha256": "a320706fc917d32f2bf898651b369d5115d27e9eb64dc95f5077d22426f2d2fc",
+    "status_count": 0,
+    "total_bytes": 33950490
+  },
+  "workflow": "Release Images"
+}
