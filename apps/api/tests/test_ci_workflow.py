@@ -56,3 +56,15 @@ def test_provider_applied_patch_eval_workflow_uploads_report_artifacts() -> None
     assert "REPOPILOT_PROVIDER_API_KEY" in workflow
     assert "provider-applied-patch-eval-${{ github.run_id }}" in workflow
     assert "v1-provider-applied-patch.observed-evidence.json" in workflow
+
+
+def test_release_workflow_uploads_local_evidence_bundle_before_images() -> None:
+    workflow = ROOT.joinpath(".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    assert "workflow_dispatch:" in workflow
+    assert "release-evidence:" in workflow
+    assert "python -m repopilot_evals.report" in workflow
+    assert "scripts/source_boundary_manifest.py" in workflow
+    assert "scripts/deployment_validate.py" in workflow
+    assert "release-evidence-${{ github.run_id }}" in workflow
+    assert "needs: release-evidence" in workflow
