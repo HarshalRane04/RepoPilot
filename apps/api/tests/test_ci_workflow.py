@@ -65,6 +65,8 @@ def test_release_workflow_uploads_local_evidence_bundle_before_images() -> None:
     assert "release-evidence:" in workflow
     assert "python -m repopilot_evals.report" in workflow
     assert "scripts/source_boundary_manifest.py" in workflow
+    assert "Build credential smoke summary" in workflow
+    assert "scripts/credential_smoke.py" in workflow
     assert "scripts/deployment_validate.py" in workflow
     assert "release-evidence-${{ github.run_id }}" in workflow
     assert "needs: release-evidence" in workflow

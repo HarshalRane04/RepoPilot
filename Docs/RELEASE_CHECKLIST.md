@@ -25,6 +25,7 @@ RepoPilot v1.0 is release-ready only when local controls, credentialed GitHub pr
 - Release GIF evidence is generated with `make release-gifs`; the latest manifest lives at `Docs/release-artifacts/release-gifs.md`.
 - Deployment validation report is generated with `make deployment-validate`; the latest report lives at `Docs/release-artifacts/deployment-validation.md`.
 - Local runtime deployment smoke report is generated with `make deployment-smoke`; the latest report lives at `Docs/release-artifacts/deployment-runtime-smoke.md`.
+- Release workflow evidence uploads include deterministic eval, source-boundary, credential-smoke, and deployment-validation artifacts before image builds.
 
 ## Required Credentialed Evidence
 

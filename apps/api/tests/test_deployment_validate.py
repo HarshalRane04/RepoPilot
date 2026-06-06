@@ -123,6 +123,8 @@ volumes:
         "Docs/release-artifacts/deployment-runtime-smoke.json",
         "Docs/release-artifacts/credential-readiness-snapshot.md",
         "Docs/release-artifacts/credential-readiness-snapshot.json",
+        "Docs/release-artifacts/credential-smoke-summary.md",
+        "Docs/release-artifacts/credential-smoke-summary.json",
         "Docs/release-artifacts/security-scanner-snapshot.md",
         "Docs/release-artifacts/security-scanner-snapshot.json",
         "Docs/release-artifacts/model-provider-smoke.md",

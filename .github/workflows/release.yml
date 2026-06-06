@@ -35,6 +35,13 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 python scripts/source_boundary_manifest.py \
             --json-out /tmp/repopilot-release-evidence/release-artifacts/source-boundary-manifest.json \
             --md-out /tmp/repopilot-release-evidence/release-artifacts/source-boundary-manifest.md
+      - name: Build credential smoke summary
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python scripts/credential_smoke.py \
+            --json-out /tmp/repopilot-release-evidence/release-artifacts/credential-smoke-summary.json \
+            --md-out /tmp/repopilot-release-evidence/release-artifacts/credential-smoke-summary.md \
+            --allow-blocked
       - name: Validate deployment docs and topology
         run: |
           set -euo pipefail
