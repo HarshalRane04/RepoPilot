@@ -21,6 +21,13 @@ def __getattr__(name: str):
         from .provider_patch_harness import ProviderPatchEvalRunner
 
         return {"ProviderPatchEvalRunner": ProviderPatchEvalRunner}[name]
+    if name in {"ProviderRetrievalEvalRunner", "ProviderEmbeddingClient"}:
+        from .provider_retrieval_harness import ProviderEmbeddingClient, ProviderRetrievalEvalRunner
+
+        return {
+            "ProviderEmbeddingClient": ProviderEmbeddingClient,
+            "ProviderRetrievalEvalRunner": ProviderRetrievalEvalRunner,
+        }[name]
     if name in {"ProviderCredentialResolution", "resolve_provider_credentials"}:
         from .provider_credentials import ProviderCredentialResolution, resolve_provider_credentials
 
@@ -48,6 +55,8 @@ __all__ = [
     "ProviderChatClient",
     "ProviderPlanningEvalRunner",
     "ProviderPatchEvalRunner",
+    "ProviderEmbeddingClient",
+    "ProviderRetrievalEvalRunner",
     "ProviderCredentialResolution",
     "resolve_provider_credentials",
 ]

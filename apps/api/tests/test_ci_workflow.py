@@ -19,6 +19,12 @@ def test_ci_workflow_uploads_scanner_posture_evidence() -> None:
     assert "security-scanner-posture-${{ github.run_id }}" in workflow
 
 
+def test_ci_workflow_checks_provider_retrieval_package_boundary() -> None:
+    workflow = ROOT.joinpath(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "ProviderRetrievalEvalRunner" in workflow
+
+
 def test_provider_patch_eval_workflow_uploads_report_artifacts() -> None:
     workflow = ROOT.joinpath(".github/workflows/provider-patch-eval.yml").read_text(encoding="utf-8")
 
@@ -28,3 +34,14 @@ def test_provider_patch_eval_workflow_uploads_report_artifacts() -> None:
     assert "REPOPILOT_PROVIDER_API_KEY" in workflow
     assert "provider-patch-eval-${{ github.run_id }}" in workflow
     assert "v1-provider-patch.observed-evidence.json" in workflow
+
+
+def test_provider_retrieval_eval_workflow_uploads_report_artifacts() -> None:
+    workflow = ROOT.joinpath(".github/workflows/provider-retrieval-eval.yml").read_text(encoding="utf-8")
+
+    assert "Provider Retrieval Eval" in workflow
+    assert "api_key_secret" in workflow
+    assert "make provider-retrieval-eval" in workflow
+    assert "REPOPILOT_PROVIDER_API_KEY" in workflow
+    assert "provider-retrieval-eval-${{ github.run_id }}" in workflow
+    assert "v1-provider-retrieval.observed-evidence.json" in workflow

@@ -20,6 +20,7 @@ from repopilot_evals import (
     ProviderChatClient,
     ProviderPatchEvalRunner,
     ProviderPlanningEvalRunner,
+    ProviderRetrievalEvalRunner,
     resolve_provider_credentials,
 )
 from repopilot_evals.provider_harness import default_provider_api_key_env, default_provider_base_url
@@ -485,6 +486,42 @@ def test_provider_patch_eval_runner_writes_observed_patch_evidence_without_netwo
     assert "observed_task_results" in observed_payload
     assert "validation_note" in observed_payload
     assert "mock-patcher" in report_markdown
+
+
+def test_provider_retrieval_eval_runner_writes_context_precision_evidence_without_network(tmp_path) -> None:
+    class FakeEmbeddingClient:
+        def embed(self, *, model: str, texts: list[str], timeout_seconds: int) -> list[list[float]]:
+            assert model == "mock-embedding"
+            assert timeout_seconds == 5
+            embeddings: list[list[float]] = []
+            for index, text in enumerate(texts):
+                if index == 0:
+                    embeddings.append([1.0, 0.0, 0.0])
+                elif text.startswith("### README.md") or text.startswith("### Docs/RUNBOOK.md"):
+                    embeddings.append([1.0, 0.0, 0.0])
+                else:
+                    embeddings.append([0.0, 1.0, 0.0])
+            return embeddings
+
+    result = ProviderRetrievalEvalRunner(client=FakeEmbeddingClient()).run(
+        provider="mock",
+        model="mock-embedding",
+        output_dir=tmp_path,
+        report_name="provider-retrieval",
+        task_count=1,
+        timeout_seconds=5,
+        top_k=2,
+        allow_failed_gates=True,
+    )
+    observed_payload = json.loads(result.observed_evidence_path.read_text(encoding="utf-8"))
+
+    assert result.report.metrics["plan_quality_observed_count"] == 1
+    assert result.report.metrics["context_precision"] == 1.0
+    assert result.report.metrics["provider_comparison_count"] == 1
+    assert result.report.metrics["best_provider_by_quality"]["provider"] == "mock"
+    assert observed_payload["retrieval_results"][0]["citations"] == ["Docs/RUNBOOK.md", "README.md"]
+    assert observed_payload["retrieval_results"][0]["precision"] == 1.0
+    assert "Non-retrieval observed plan fields are benchmark controls" in observed_payload["validation_note"]
 
 
 class FakeUrlopenResponse:

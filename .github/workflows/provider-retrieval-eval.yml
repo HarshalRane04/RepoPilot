@@ -1,0 +1,88 @@
+name: Provider Retrieval Eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "Provider adapter to test."
+        required: true
+        default: "openrouter"
+        type: string
+      model:
+        description: "Embedding-capable provider model id."
+        required: true
+        default: "text-embedding-3-small"
+        type: string
+      task_count:
+        description: "Number of benchmark tasks to sample."
+        required: true
+        default: 5
+        type: number
+      api_key_secret:
+        description: "GitHub Actions secret containing the provider API key."
+        required: true
+        default: "OPENROUTER_API_KEY"
+        type: string
+      base_url:
+        description: "Optional OpenAI-compatible base URL override."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  provider-retrieval-eval:
+    name: Retrieval eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PROVIDER: ${{ inputs.provider }}
+      MODEL: ${{ inputs.model }}
+      TASK_COUNT: ${{ inputs.task_count }}
+      BASE_URL: ${{ inputs.base_url }}
+      API_KEY_VALUE: ${{ secrets[inputs.api_key_secret] }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Validate model secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${API_KEY_VALUE:-}" ]; then
+            echo "::error::GitHub Actions secret '${{ inputs.api_key_secret }}' is not configured or is empty."
+            exit 1
+          fi
+
+      - name: Run provider retrieval eval
+        shell: bash
+        run: |
+          set -euo pipefail
+          export REPOPILOT_PROVIDER_API_KEY="${API_KEY_VALUE}"
+          if [ -n "${BASE_URL:-}" ]; then
+            env API_KEY_ENV=REPOPILOT_PROVIDER_API_KEY PROVIDER="${PROVIDER}" MODEL="${MODEL}" TASK_COUNT="${TASK_COUNT}" BASE_URL="${BASE_URL}" make provider-retrieval-eval
+          else
+            env API_KEY_ENV=REPOPILOT_PROVIDER_API_KEY PROVIDER="${PROVIDER}" MODEL="${MODEL}" TASK_COUNT="${TASK_COUNT}" make provider-retrieval-eval
+          fi
+
+      - name: Upload provider retrieval eval reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: provider-retrieval-eval-${{ github.run_id }}
+          path: |
+            Docs/eval-reports/v1-provider-retrieval.md
+            Docs/eval-reports/v1-provider-retrieval.json
+            Docs/eval-reports/v1-provider-retrieval.observed-evidence.json
+          if-no-files-found: warn

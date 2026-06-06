@@ -25,6 +25,8 @@ Use the manual **Provider Planning Eval** workflow when the code has been pushed
 
 The workflow writes `Docs/eval-reports/v1-provider-planning.md` and `.json` inside the runner workspace, then uploads those reports as artifacts. It does not write patches, push branches, open pull requests, or mutate fixture repositories.
 
+Use the manual **Provider Retrieval Eval** workflow when you want provider-backed context-retrieval evidence. It uses an embedding-capable provider model and writes `Docs/eval-reports/v1-provider-retrieval.md`, `.json`, and `.observed-evidence.json`, then uploads them as artifacts. It scores retrieved fixture file citations through the existing context-precision gate.
+
 Use the manual **Provider Patch Eval** workflow when you want provider-backed patch-attempt evidence without applying patches. It uses the same provider/model/secret-name inputs, writes `Docs/eval-reports/v1-provider-patch.md`, `.json`, and `.observed-evidence.json`, then uploads them as artifacts. It scores expected files, disallowed changes, validation commands, security result, and diff intent, but it does not claim validation passed unless explicit validation evidence is supplied.
 
 ## Local Provider Eval
@@ -43,6 +45,14 @@ Patch-attempt eval:
 ```bash
 make provider-patch-eval PROVIDER=openrouter MODEL=gemma-4-31b-it:free TASK_COUNT=5
 ```
+
+Retrieval-quality eval:
+
+```bash
+make provider-retrieval-eval PROVIDER=openrouter MODEL=text-embedding-3-small TASK_COUNT=5
+```
+
+Retrieval evals call the provider embeddings endpoint and write `Docs/eval-reports/v1-provider-retrieval.*`. Use an embedding-capable model for the selected provider; if the provider does not expose embeddings, the report records blocked/failed retrieval evidence instead of claiming context quality.
 
 Anthropic and Gemini use the same targets after the local store is configured for that provider, or with their provider-specific environment variables:
 

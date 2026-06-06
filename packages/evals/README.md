@@ -43,6 +43,14 @@ make provider-planning-eval PROVIDER=openrouter MODEL=gemma-4-31b-it:free TASK_C
 
 The provider eval commands use `.local/repopilot-secrets/runtime-secrets.json` by default. Environment variables such as `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, and `GEMINI_API_KEY` still override the local store for CI and one-off runs.
 
+Run retrieval-quality evidence with an embedding-capable model:
+
+```bash
+make provider-retrieval-eval PROVIDER=openrouter MODEL=text-embedding-3-small TASK_COUNT=5
+```
+
+The retrieval harness ranks fixture files for each issue, writes `v1-provider-retrieval.*` reports, and uses context precision as the quality signal. Providers without an embeddings endpoint produce failed retrieval evidence instead of a false pass.
+
 Anthropic and Gemini can use the same harness without changing the report contract:
 
 ```bash
