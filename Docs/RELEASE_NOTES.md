@@ -23,6 +23,7 @@ RepoPilot is not yet v1.0 release-ready. This candidate is a local, single-tenan
 - Fixture-backed eval reporting with Python and web fixture repositories plus observed plan-quality, context-precision, patch-quality, human-edit-distance, and provider-comparison scoring for target files, disallowed paths, validation evidence, security result, summary intent, reference diff distance, cost, and latency.
 - Local eval report generation through `repopilot_evals.BenchmarkReportBuilder`, `make eval-report`, and checked-in baseline artifacts under `Docs/eval-reports/`.
 - Planning-only provider eval harness through `repopilot_evals.ProviderPlanningEvalRunner` and `make provider-planning-eval`; provider keys are read from shell environment variables and are not stored in source files.
+- Patch-attempt provider eval harness through `repopilot_evals.ProviderPatchEvalRunner` and `make provider-patch-eval`; provider keys are read from shell environment variables and reports are explicit that validation is not passed unless evidence is supplied.
 - Source-boundary manifest generator through `scripts/source_boundary_manifest.py` and `make source-boundary-manifest`, with non-ignored candidate file hashes under `Docs/release-artifacts/`.
 - Redacted credential readiness snapshot through `scripts/readiness_snapshot.py` and `make readiness-snapshot`, with current GitHub/model/scanner readiness states under `Docs/release-artifacts/`.
 - Security scanner posture snapshot through `scripts/security_scanner_snapshot.py`, `make security-scanner-snapshot`, and the CI `scanner-posture` artifact job, with external scanner enablement, dependency manifest, CodeQL workflow, and tool-availability evidence under `Docs/release-artifacts/` or uploaded workflow artifacts.
@@ -57,7 +58,7 @@ RepoPilot is not yet v1.0 release-ready. This candidate is a local, single-tenan
 ### Known Limitations
 
 - Real GitHub App write readiness is not production-proven until the user supplies credentials and a disposable demo repository for branch/commit/draft-PR smoke testing.
-- Live model and live embedding quality are not production-proven until provider keys are supplied and provider-backed evals run.
+- Live model and live embedding quality are not production-proven until provider keys are supplied and provider-backed planning, patch-attempt, retrieval, and applied-patch evals run.
 - Semgrep, dependency-audit, and CodeQL scanner paths are implemented locally, and the CodeQL workflow file is present. CI now uploads Semgrep/dependency-audit posture evidence, but release-grade CodeQL proof remains incomplete until a code-scanning-enabled repository produces SARIF/alert evidence.
 - Artifact storage currently uses local filesystem-backed Docker volume storage; production object storage, retention policy, and signed artifact retrieval are pending deployment work.
 - Full browser visual QA remains partially pending: core static screenshots and local visual-flow GIFs are captured, but live credentialed write/CI states still need release captures.

@@ -17,6 +17,10 @@ def __getattr__(name: str):
             "ProviderChatClient": ProviderChatClient,
             "ProviderPlanningEvalRunner": ProviderPlanningEvalRunner,
         }[name]
+    if name in {"ProviderPatchEvalRunner"}:
+        from .provider_patch_harness import ProviderPatchEvalRunner
+
+        return {"ProviderPatchEvalRunner": ProviderPatchEvalRunner}[name]
     raise AttributeError(name)
 
 __all__ = [
@@ -36,4 +40,5 @@ __all__ = [
     "OpenAICompatibleChatClient",
     "ProviderChatClient",
     "ProviderPlanningEvalRunner",
+    "ProviderPatchEvalRunner",
 ]

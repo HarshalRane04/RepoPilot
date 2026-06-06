@@ -25,6 +25,8 @@ Use the manual **Provider Planning Eval** workflow when the code has been pushed
 
 The workflow writes `Docs/eval-reports/v1-provider-planning.md` and `.json` inside the runner workspace, then uploads those reports as artifacts. It does not write patches, push branches, open pull requests, or mutate fixture repositories.
 
+Use the manual **Provider Patch Eval** workflow when you want provider-backed patch-attempt evidence without applying patches. It uses the same provider/model/secret-name inputs, writes `Docs/eval-reports/v1-provider-patch.md`, `.json`, and `.observed-evidence.json`, then uploads them as artifacts. It scores expected files, disallowed changes, validation commands, security result, and diff intent, but it does not claim validation passed unless explicit validation evidence is supplied.
+
 ## Local Provider Eval
 
 For local testing, set the provider key in your shell and run the same harness:
@@ -32,6 +34,12 @@ For local testing, set the provider key in your shell and run the same harness:
 ```bash
 export OPENROUTER_API_KEY=...
 make provider-planning-eval PROVIDER=openrouter MODEL=gemma-4-31b-it:free TASK_COUNT=5
+```
+
+Patch-attempt eval:
+
+```bash
+make provider-patch-eval PROVIDER=openrouter MODEL=gemma-4-31b-it:free TASK_COUNT=5
 ```
 
 Anthropic and Gemini use the same target with their provider-specific key variables:

@@ -107,7 +107,7 @@ jobs:
         run: |
           python - <<'PY'
           from repopilot_contracts import ArtifactReference, CodeQLAlertFetchRequest, CodeQLSarifIngestionRequest, ImplementationPlan
-          from repopilot_evals import FixtureVerifier
+          from repopilot_evals import FixtureVerifier, ProviderPatchEvalRunner
           from repopilot_policy_engine import PolicyEngine
           from repopilot_llm_client import provider_catalog
           from repopilot_github_client import command_permission_decision
@@ -117,6 +117,7 @@ jobs:
           assert CodeQLSarifIngestionRequest(sarif={"runs": []}).source == "codeql-sarif"
           assert CodeQLAlertFetchRequest().tool_name == "CodeQL"
           assert FixtureVerifier.__name__ == "FixtureVerifier"
+          assert ProviderPatchEvalRunner.__name__ == "ProviderPatchEvalRunner"
           assert PolicyEngine().config.max_files_changed_without_approval > 0
           assert provider_catalog()
           assert command_permission_decision(command="approve", github_permission="write").allowed

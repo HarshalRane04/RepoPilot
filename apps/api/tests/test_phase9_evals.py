@@ -17,6 +17,7 @@ from repopilot_evals import (
     ProviderComparisonScorer,
     ProviderEvalEvidence,
     ProviderChatClient,
+    ProviderPatchEvalRunner,
     ProviderPlanningEvalRunner,
 )
 from repopilot_evals.provider_harness import default_provider_api_key_env, default_provider_base_url
@@ -439,6 +440,49 @@ def test_provider_planning_eval_runner_writes_observed_evidence_without_network(
     assert "observed_plan_results" in observed_payload
     assert "provider_eval_results" in observed_payload
     assert "mock-planner" in report_markdown
+
+
+def test_provider_patch_eval_runner_writes_observed_patch_evidence_without_network(tmp_path) -> None:
+    class FakeChatClient:
+        def complete_json(self, *, model: str, messages: list[dict[str, str]], timeout_seconds: int) -> dict[str, object]:
+            assert model == "mock-patcher"
+            assert timeout_seconds == 5
+            prompt = "\n".join(message["content"] for message in messages)
+            assert "expected_changed_files" not in prompt
+            assert "Task ID: docs-001" in prompt
+            assert "Relevant file excerpts" in prompt
+            return {
+                "changed_files": ["README.md", "Docs/RUNBOOK.md"],
+                "diff_summary": "Replace DB_URL references with DATABASE_URL and add migration note.",
+                "generated_diff": "- DB_URL\n+ DATABASE_URL\n",
+                "validation_commands": ["docs link check"],
+                "validation_status": "not_run",
+                "security_result": "pass",
+                "ci_status": None,
+            }
+
+    result = ProviderPatchEvalRunner(client=FakeChatClient()).run(
+        provider="mock",
+        model="mock-patcher",
+        output_dir=tmp_path,
+        report_name="provider-patch",
+        task_count=1,
+        timeout_seconds=5,
+        allow_failed_gates=True,
+    )
+    observed_payload = result.observed_evidence_path.read_text(encoding="utf-8")
+    report_markdown = result.markdown_path.read_text(encoding="utf-8")
+
+    assert result.report.metrics["patch_quality_observed_count"] == 1
+    assert result.report.metrics["patch_quality_pass_rate"] == 0.0
+    assert result.report.metrics["patch_quality_results"][0]["failure_reasons"] == [
+        "Expected passed validation but observed not_run."
+    ]
+    assert result.report.metrics["provider_comparison_count"] == 1
+    assert result.report.metrics["best_provider_by_quality"]["provider"] == "mock"
+    assert "observed_task_results" in observed_payload
+    assert "validation_note" in observed_payload
+    assert "mock-patcher" in report_markdown
 
 
 class FakeUrlopenResponse:

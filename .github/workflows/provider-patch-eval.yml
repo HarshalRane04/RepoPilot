@@ -1,0 +1,63 @@
+name: Provider Patch Eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Provider id, such as openrouter, anthropic, or google
+        required: true
+        default: openrouter
+      model:
+        description: Provider model id
+        required: true
+        default: gemma-4-31b-it:free
+      task_count:
+        description: Number of benchmark tasks to evaluate
+        required: true
+        default: "5"
+      api_key_secret_name:
+        description: Repository secret name containing the provider API key
+        required: true
+        default: OPENROUTER_API_KEY
+      base_url:
+        description: Optional provider base URL override
+        required: false
+        default: ""
+
+jobs:
+  provider-patch-eval:
+    runs-on: ubuntu-latest
+    env:
+      PROVIDER: ${{ inputs.provider }}
+      MODEL: ${{ inputs.model }}
+      TASK_COUNT: ${{ inputs.task_count }}
+      BASE_URL: ${{ inputs.base_url }}
+      REPOPILOT_PROVIDER_API_KEY: ${{ secrets[inputs.api_key_secret_name] }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install API dependencies
+        run: pip install -r apps/api/requirements.txt
+      - name: Run provider patch eval
+        run: |
+          set -euo pipefail
+          if [ -z "${REPOPILOT_PROVIDER_API_KEY}" ]; then
+            echo "Configured provider secret is empty or unavailable."
+            exit 2
+          fi
+          if [ -n "${BASE_URL}" ]; then
+            env API_KEY_ENV=REPOPILOT_PROVIDER_API_KEY PROVIDER="${PROVIDER}" MODEL="${MODEL}" TASK_COUNT="${TASK_COUNT}" BASE_URL="${BASE_URL}" make provider-patch-eval
+          else
+            env API_KEY_ENV=REPOPILOT_PROVIDER_API_KEY PROVIDER="${PROVIDER}" MODEL="${MODEL}" TASK_COUNT="${TASK_COUNT}" make provider-patch-eval
+          fi
+      - name: Upload provider patch eval report
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-patch-eval-${{ github.run_id }}
+          path: |
+            Docs/eval-reports/v1-provider-patch.md
+            Docs/eval-reports/v1-provider-patch.json
+            Docs/eval-reports/v1-provider-patch.observed-evidence.json
+          if-no-files-found: error
