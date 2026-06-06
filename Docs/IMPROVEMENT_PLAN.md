@@ -86,6 +86,8 @@ The following verification evidence reflects the latest implementation sweep and
 | Web dependency audit | `cd apps/web && npm audit --audit-level=moderate` | Passed: `0 vulnerabilities`. |
 | Generated artifact hygiene | `git check-ignore -v apps/web/node_modules apps/web/.next` and `find apps/web -maxdepth 1 \( -name '.next' -o -name 'node_modules' \) -print` | Source-ignore gate passed: live Docker dev mode intentionally creates ignored ACL-protected mount-point directories at `apps/web/node_modules` and `apps/web/.next`; the container mounts them to named volumes `web_node_modules` and `web_next`. Stop the web service before a final source-boundary scan if a physically absent mount point is required. |
 | Stale overclaim scan | `rg -n "Phase 9 MVP|synthetic pytest|not implemented yet|GitHub sender permission checks are not connected|local aggregate|future authenticated client|does not implement" README.md Docs packages apps/api/app/services apps/web/app/operator-console.tsx -g '*.md' -g '*.py' -g '*.tsx' -g '!Docs/IMPROVEMENT_PLAN.md'` | Passed after wording cleanup. |
+| GitHub CI on latest release-evidence archive | `gh run view 27069436753 --json status,conclusion,jobs` for commit `f052175` | Passed: run completed with `success`; `api-tests`, `web-typecheck`, `hygiene`, `package-boundaries`, `scanner-posture`, and `sandbox-image` all completed successfully. |
+| Manual release workflow dry run | `gh workflow run release.yml` followed by `gh run view 27059971285` and downloaded artifact inspection | Passed: `release-evidence` and `build-images` jobs succeeded; downloaded artifact hashes are archived in `Docs/release-artifacts/release-workflow-dry-run.md` and `.json`. |
 
 ### Evidence Limitations
 
