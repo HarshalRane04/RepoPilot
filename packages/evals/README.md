@@ -64,6 +64,6 @@ Run applied patch evidence when you need stronger patch-quality proof:
 make provider-applied-patch-eval PROVIDER=openrouter MODEL=gemma-4-31b-it:free TASK_COUNT=5
 ```
 
-Applied patch evals copy fixture repositories into temporary workspaces, apply model-generated unified diffs, run only benchmark-declared validation commands, and write `v1-provider-applied-patch.*` reports. The fixture repositories are not mutated.
+Applied patch evals copy fixture repositories into temporary workspaces, apply model-generated unified diffs, run only benchmark-declared validation commands, derive security results from changed paths and diff content, and write `v1-provider-applied-patch.*` reports. Security fixtures that should produce no code change can pass with a matching no-patch block/escalation decision. The fixture repositories are not mutated.
 
 The benchmark task list and fixture repositories in this package are the portfolio/demo seed set. Future work can run model-by-model patch assertions and CI-backed checks against cloned copies of these fixtures.
