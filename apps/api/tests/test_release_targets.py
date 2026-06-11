@@ -47,6 +47,18 @@ def test_credential_smoke_strict_runs_without_blocked_placeholder_flag() -> None
     assert "--allow-blocked" not in body
 
 
+def test_init_local_env_target_runs_bootstrap_script() -> None:
+    body = target_body(makefile_text(), "init-local-env")
+
+    assert "scripts/init_local_env.py" in body
+
+
+def test_up_target_starts_compose_detached() -> None:
+    body = target_body(makefile_text(), "up")
+
+    assert "up -d --build" in body
+
+
 def test_release_hygiene_strict_runs_without_warning_or_failure_placeholder_flags() -> None:
     body = target_body(makefile_text(), "release-hygiene-strict")
 

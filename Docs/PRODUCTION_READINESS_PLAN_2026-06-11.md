@@ -76,7 +76,7 @@ Tasks:
 3. Add a strict release verification target, separate from local placeholder-friendly targets. Completed locally through `make release-verify`; it is expected to fail until credential smoke and runtime smoke are real.
 4. Add a concise `QUICKSTART.md` or README section for the self-hosted path:
    - prerequisites
-   - copy `.env.example`
+   - run `make init-local-env`
    - start Compose
    - migrate
    - open dashboard

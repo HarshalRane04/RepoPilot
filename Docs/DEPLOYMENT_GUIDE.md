@@ -16,11 +16,12 @@ Required services:
 Start:
 
 ```bash
-POSTGRES_PASSWORD=<password> REDIS_PASSWORD=<password> GITHUB_WEBHOOK_SECRET=<secret> SESSION_SECRET_KEY=<secret> docker compose up -d --build
+make init-local-env
+docker compose up -d --build
 docker compose exec api alembic upgrade head
 ```
 
-For local demos, use placeholder values from `.env.example`. For live or production-like deployments, load secrets from a restricted `.env` outside source control or a secret manager; avoid placing live secrets directly in shell commands where they can be captured by shell history, process listings, or terminal logs.
+For local demos, `make init-local-env` writes git-ignored local-only values into `.env` and leaves live GitHub/model credentials blank. For live or production-like deployments, load secrets from a restricted `.env` outside source control or a secret manager; avoid placing live secrets directly in shell commands where they can be captured by shell history, process listings, or terminal logs.
 
 Health checks:
 

@@ -1,6 +1,6 @@
 # RepoPilot AI
 
-RepoPilot AI is a production-style, single-tenant GitHub App and operator console for turning GitHub issues into human-approved, tested, security-scanned draft pull requests.
+RepoPilot AI is a local-first, single-tenant GitHub App control plane and operator console for human-approved issue triage, planning, validation evidence, security checks, and gated draft PR workflows.
 
 The current codebase contains a strong local control plane, but the full AI coding loop is still under active implementation. See [Docs/IMPROVEMENT_PLAN.md](Docs/IMPROVEMENT_PLAN.md) for the safety-first roadmap from the current MVP to a production-grade LLM-powered PR agent.
 
@@ -63,31 +63,24 @@ RepoPilot is designed around these invariants:
 
 For a step-by-step self-hosted install path, use [Docs/QUICKSTART.md](Docs/QUICKSTART.md). The short path is:
 
-1. Copy the environment template for local service wiring:
+1. Create a local environment file for Docker Compose:
 
    ```bash
-   cp .env.example .env
+   make init-local-env
    ```
 
-   For local development, set local-only placeholder values for:
-
-   - `POSTGRES_PASSWORD`
-   - `REDIS_PASSWORD`
-   - `GITHUB_WEBHOOK_SECRET`
-   - `SESSION_SECRET_KEY`
-
-   Treat real database, Redis, webhook, session, OAuth, GitHub App, and model values as secrets. For a credentialed GitHub App smoke test, save `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_PATH`, OAuth credentials, and model-provider keys through the dashboard Settings screen or `make configure-runtime-secrets`. Keep `GITHUB_WRITES_ENABLED=false` until `/settings/readiness` reports `github_mode=read_only_verified` and a disposable demo repository has passed the write smoke test.
+   This writes git-ignored local-only values for Compose startup, keeps real GitHub/model credentials blank, and leaves `GITHUB_WRITES_ENABLED=false`. Treat real database, Redis, webhook, session, OAuth, GitHub App, and model values as secrets. For a credentialed GitHub App smoke test, save `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_PATH`, OAuth credentials, and model-provider keys through the dashboard Settings screen or `make configure-runtime-secrets`. Keep `GITHUB_WRITES_ENABLED=false` until `/settings/readiness` reports `github_mode=read_only_verified` and a disposable demo repository has passed the write smoke test.
 
 2. Start the local stack:
 
    ```bash
-   docker compose up --build
+   make up
    ```
 
 3. Run migrations:
 
    ```bash
-   docker compose exec api alembic upgrade head
+   make migrate
    ```
 
 4. Build the sandbox image:

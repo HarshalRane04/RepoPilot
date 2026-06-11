@@ -5,19 +5,20 @@
 Start:
 
 ```bash
-POSTGRES_PASSWORD=placeholder REDIS_PASSWORD=placeholder GITHUB_WEBHOOK_SECRET=change-me-local-dev SESSION_SECRET_KEY=placeholder DEV_HEADER_AUTH_ENABLED=true docker compose up -d --build
+make init-local-env
+make up
 ```
 
 Migrate:
 
 ```bash
-docker-compose exec api alembic upgrade head
+make migrate
 ```
 
 Verify the migration chain against a fresh temporary database:
 
 ```bash
-POSTGRES_PASSWORD=placeholder REDIS_PASSWORD=placeholder GITHUB_WEBHOOK_SECRET=change-me-local-dev SESSION_SECRET_KEY=placeholder DEV_HEADER_AUTH_ENABLED=true make migration-verify
+make migration-verify
 ```
 
 This creates a temporary PostgreSQL database, runs `upgrade head`, `downgrade base`, and `upgrade head`, then drops the temporary database.
@@ -63,7 +64,7 @@ Stored records include artifact type, storage backend, storage key, URI, SHA-256
 
 ## Credential Placeholders
 
-The repository includes `.env.example` with placeholders for GitHub App, OAuth, model, observability, and security-tool settings. Local mode is expected to show readiness blockers until real values are provided.
+The repository includes `.env.example` with placeholders for GitHub App, OAuth, model, observability, and security-tool settings. Run `make init-local-env` to create a git-ignored `.env` with local-only Compose values. Local mode is expected to show readiness blockers until real values are provided.
 
 Use `REPOPILOT_RELEASE_PROFILE=oss-demo` for local demos and `REPOPILOT_RELEASE_PROFILE=production` for release candidates. Production profile turns local-record GitHub write mode into a readiness blocker. Keep `ALLOW_MODEL_FALLBACK=false` outside local development so live-provider failures fail closed.
 

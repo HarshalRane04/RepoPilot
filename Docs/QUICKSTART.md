@@ -18,10 +18,10 @@ RepoPilot is safe-by-default: local mode can run without live GitHub writes or l
 ```bash
 git clone https://github.com/HarshalRane04/RepoPilot.git
 cd RepoPilot
-cp .env.example .env
+make init-local-env
 ```
 
-Edit `.env` only for local service wiring, callback URLs, feature toggles, and local-only placeholder passwords. Treat real database, Redis, webhook, session, OAuth, GitHub App, and model values as secrets. Do not commit `.env`.
+`make init-local-env` creates `.env` from `.env.example`, fills only local-safe Compose values, keeps `GITHUB_WRITES_ENABLED=false`, enables local header auth for the dashboard, and leaves live GitHub/model credentials blank. Edit `.env` only for local service wiring, callback URLs, feature toggles, and local-only placeholder passwords. Treat real database, Redis, webhook, session, OAuth, GitHub App, and model values as secrets. Do not commit `.env`.
 
 Keep `REPOPILOT_RELEASE_PROFILE=oss-demo` for local portfolio demos. Switch to `REPOPILOT_RELEASE_PROFILE=production` only when preparing a credentialed release candidate; production profile blocks local-record GitHub write mode, managed-file runtime encryption keys, and non-local model fallback from being reported as ready.
 
@@ -38,8 +38,8 @@ For non-local deployments, set `REPOPILOT_RUNTIME_SECRETS_KEY` through the host 
 ## 2. Start The Local Stack
 
 ```bash
-docker compose up -d --build
-docker compose exec api alembic upgrade head
+make up
+make migrate
 make sandbox-image
 ```
 
