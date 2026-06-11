@@ -224,8 +224,9 @@ const issueColumns = [
   "blocked"
 ];
 
-const settingsTabs = ["GitHub", "Models", "Policies", "Tool Permissions", "Cost Limits", "Notifications"] as const;
+const settingsTabs = ["GitHub", "Models", "Policies", "Tool Permissions", "Cost Limits", "Notifications", "Display"] as const;
 type SettingsTab = typeof settingsTabs[number];
+type MotionPreference = "no" | "reduced" | "standard" | "enhanced";
 const useBrowserLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: OperatorData; apiBaseUrl: string }) {
@@ -260,6 +261,24 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
   const [auditSourceFilter, setAuditSourceFilter] = useState("all");
   const [auditStatusFilter, setAuditStatusFilter] = useState<AuditStatusFilter>("all");
   const [auditRiskFilter, setAuditRiskFilter] = useState<AuditRiskFilter>("all");
+  const [motionPreference, setMotionPreference] = useState<MotionPreference>("standard");
+
+  useBrowserLayoutEffect(() => {
+    const stored = window.localStorage.getItem("repopilot-motion");
+    const resolved = (stored === "no" || stored === "reduced" || stored === "standard" || stored === "enhanced") ? stored : "standard";
+    setMotionPreference(resolved);
+    document.documentElement.setAttribute("data-motion", resolved);
+    document.documentElement.style.setProperty("--motion-level", resolved === "no" ? "0" : resolved === "reduced" ? "0.12" : resolved === "enhanced" ? "1.5" : "1");
+  }, []);
+
+  useBrowserLayoutEffect(() => {
+    document.documentElement.setAttribute("data-motion", motionPreference);
+    document.documentElement.style.setProperty(
+      "--motion-level",
+      motionPreference === "no" ? "0" : motionPreference === "reduced" ? "0.12" : motionPreference === "enhanced" ? "1.5" : "1"
+    );
+    window.localStorage.setItem("repopilot-motion", motionPreference);
+  }, [motionPreference]);
 
   const selectedRepo = data.repositories.find((repo) => repo.id === selectedRepoId) ?? data.repositories[0] ?? null;
   const selectedIssue = data.issues.find((issue) => issue.id === selectedIssueId) ?? data.issues[0] ?? null;
@@ -463,7 +482,7 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
       body: JSON.stringify(payload)
     });
     setData((current) => ({ ...current, modelConfig: status }));
-    setNotice(status.api_key_configured ? "Model provider saved securely." : "Model provider saved. Add an API key to connect it.");
+    setNotice(status.api_key_configured ? "Model provider saved. API keys are write-only and stored in encrypted local storage." : "Model provider saved. Add an API key to connect it.");
     await refresh({ quiet: true });
   }
 
@@ -472,7 +491,7 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
     try {
       const result = await fetchJson<ModelProviderVerificationResponse>("/settings/models/verify", { method: "POST" });
       setModelVerification(result);
-      setNotice(result.ok ? "Model provider responded successfully." : result.detail);
+      setNotice(result.ok ? "Live provider verification succeeded. No repository source is sent for this check." : result.detail);
     } catch (error) {
       setModelVerification(null);
       setNotice(error instanceof Error ? error.message : "Model provider verification failed");
@@ -935,6 +954,8 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
               githubAppVerification={githubAppVerification}
               verification={modelVerification}
               onReset={() => void refresh()}
+              motionPreference={motionPreference}
+              setMotionPreference={setMotionPreference}
             />
           ) : null}
           {view === "profile" ? <ProfileScreen data={data} onGithub={startGithubFlow} /> : null}
@@ -958,9 +979,9 @@ function LandingPage({
   const features: Array<[string, string, LucideIcon]> = [
     ["Issue Triage", "Auto-categorize and prioritize incoming GitHub issues.", AlertCircle],
     ["Plan Approval", "Review and approve clear, structured implementation plans.", FileText],
-    ["Draft PR Generation", "Generate production-ready code and open draft pull requests.", GitBranch],
-    ["CI Debugging", "Detect failures, fix issues, and re-run CI automatically.", Terminal],
-    ["Security Checks", "Run static analysis and dependency scans on every change.", Shield]
+    ["Draft PR Records", "Create gated draft PR records and evidence-backed change proposals.", GitBranch],
+    ["CI Evidence", "Record CI outcomes and create revision plans from supplied failure evidence.", Terminal],
+    ["Security Checks", "Run built-in checks, with external scanner adapters gated by configuration.", Shield]
   ];
 
   return (
@@ -973,7 +994,7 @@ function LandingPage({
         <nav>
           <button onClick={() => document.getElementById("product-features")?.scrollIntoView({ behavior: "smooth" })} type="button">Product</button>
           <button onClick={onSecurity} type="button">Security</button>
-          <button disabled type="button">Docs unavailable</button>
+          <button onClick={() => window.open("https://github.com/RepoPilotAI/RepoPilot", "_blank", "noopener,noreferrer")} title="Full documentation is coming soon. View the project README for setup and usage." type="button">Docs <span style={{ fontSize: "11px", color: "var(--text-2)" }}>(README)</span></button>
           <button onClick={onSignIn} type="button">
             Sign in
           </button>
@@ -982,9 +1003,9 @@ function LandingPage({
       <section className="heroGrid">
         <div className="heroCopy">
           <h1>
-            Agentic GitHub Development, with <span>Human Control</span>
+            GitHub Issue Planning, with <span>Human Control</span>
           </h1>
-          <p>RepoPilot AI turns GitHub issues into planned, tested, security-scanned draft pull requests while keeping humans in control.</p>
+          <p>RepoPilot AI turns GitHub issues into reviewed plans, validation evidence, security findings, and gated draft PR records while keeping humans in control.</p>
           <div className="heroActions">
             <button className="primaryAction" onClick={onConnect} type="button">
               <Github size={22} />
@@ -1005,8 +1026,8 @@ function LandingPage({
             ["Issue Received", "issue"],
             ["Plan Generated", "plan.md"],
             ["Approval Required", "awaiting review"],
-            ["Draft PR Opened", "draft"],
-            ["CI Passed", "all checks passed"]
+            ["Local PR Record", "draft"],
+            ["CI Evidence Recorded", "checks"]
           ].map(([label, tag], index) => (
             <div className="workflowStep" key={label}>
               <span className={index === 4 ? "timelineDot done" : "timelineDot"} />
@@ -1091,7 +1112,7 @@ function SetupScreen({ setup, onContinue }: { setup: ReturnType<typeof setupStat
 
   return (
     <div className="screen">
-      <ScreenHeader title="Set up RepoPilot AI" subtitle="Complete these steps to start turning GitHub issues into safe draft pull requests." />
+      <ScreenHeader title="Set up RepoPilot AI" subtitle="Complete these steps to start preparing reviewed plans and gated draft PR workflows." />
       <div className="setupGrid">
         <section className="panel setupPanel">
           <div className="progressHeader">
@@ -1154,12 +1175,12 @@ function DashboardScreen({
   const revisionCiRate = data.metrics?.ci_revised_pr_count ? metricPercent(data.metrics.ci_pass_after_revision_rate).label : "N/A";
   return (
     <div className="screen">
-      <ScreenHeader title="Dashboard" subtitle="Your agentic GitHub development command center." />
+      <ScreenHeader title="Dashboard" subtitle="Your issue planning, review, and readiness console." />
       <section className={`statGrid ten${isRefreshing ? " is-loading" : ""}`}>
         <StatCard label="Connected repositories" value={data.metrics?.repositories ?? data.repositories.length} />
         <StatCard label="Agent-ready issues" value={data.issues.filter((issue) => normalizedStatus(issue.status) === "agent_ready").length} />
         <StatCard label="Plans awaiting approval" value={data.issues.filter((issue) => issue.plan?.approval_status === "draft").length} />
-        <StatCard label="Draft PRs created" value={data.metrics?.open_pull_requests ?? data.pullRequests.length} />
+        <StatCard label="Draft PR records" value={data.metrics?.open_pull_requests ?? data.pullRequests.length} />
         <StatCard label="CI pass rate" value={ciRate} />
         <StatCard label="First-run CI" value={firstRunCiRate} />
         <StatCard label="CI after revision" value={revisionCiRate} />
@@ -1448,7 +1469,7 @@ function IssuesScreen({
   });
   return (
     <div className="screen">
-      <ScreenHeader title={mode === "board" ? "Issues Board" : "Issue Queue"} subtitle="Track issues from triage to draft pull request." />
+      <ScreenHeader title={mode === "board" ? "Issues Board" : "Issue Queue"} subtitle="Track issues from triage through plan approval and PR readiness." />
       <div className="toolbar">
         <select onChange={(event) => setRepositoryFilter(event.target.value)} value={repositoryFilter}>
           <option value="all">All repositories</option>
@@ -1617,11 +1638,11 @@ function IssueDetailScreen({
           <Field label="Run" value={issue.run ? shortId(issue.run.id) : "Unavailable"} />
           <Field label="Cost estimate" value={issue.run ? formatMoney(issue.run.total_cost) : "Unavailable"} />
           <Field label="Confidence" value={issue.run ? "From trace data" : "Unavailable"} />
-          <button className="primaryAction wide" onClick={() => onApprove(issue)} disabled={!issue.plan} type="button">
+          <button className="primaryAction wide" onClick={() => onApprove(issue)} disabled={!issue.plan} title={!issue.plan ? "Generate a plan before approval is available." : "Approve the current plan and continue."} type="button">
             <Check size={20} />
             Approve Plan
           </button>
-          <button className="ghostAction wide" onClick={() => onRevise(issue)} disabled={!issue.plan} type="button">
+          <button className="ghostAction wide" onClick={() => onRevise(issue)} disabled={!issue.plan} title={!issue.plan ? "Generate a plan before requesting a revision." : "Request changes to the current plan."} type="button">
             <RotateCcw size={18} />
             Request Revision
           </button>
@@ -1629,7 +1650,7 @@ function IssueDetailScreen({
             <RotateCcw size={18} />
             Generate New Plan
           </button>
-          <button className="dangerAction wide" onClick={() => onReject(issue)} disabled={!issue.plan} type="button">
+          <button className="dangerAction wide" onClick={() => onReject(issue)} disabled={!issue.plan} title={!issue.plan ? "Generate a plan before rejection is available." : "Reject the current plan."} type="button">
             <X size={18} />
             Reject Plan
           </button>
@@ -1668,7 +1689,7 @@ function AgentRunsScreen({
       <section className="statGrid five">
         <StatCard label="Status" value={run ? labelize(run.state) : "Unavailable"} icon={Clock3} />
         <StatCard label="Risk" value={issue ? riskLabel(issue.risk_score) : "Unavailable"} icon={ShieldAlert} />
-        <StatCard label="Agents used" value={trace?.steps?.length ?? 0} icon={Bot} />
+        <StatCard label="Steps recorded" value={trace?.steps?.length ?? 0} icon={Bot} />
         <StatCard label="Runtime" value={run ? elapsed(run.started_at, run.completed_at) : "Unavailable"} icon={Clock3} />
         <StatCard label="Cost" value={run ? formatMoney(run.total_cost) : "Unavailable"} icon={KeyRound} />
       </section>
@@ -1757,7 +1778,7 @@ function RunTraceScreen({
               <thead>
                 <tr>
                   <th scope="col">Time</th>
-                  <th scope="col">Agent</th>
+                  <th scope="col">Lane</th>
                   <th scope="col">Tool</th>
                   <th scope="col">Output summary</th>
                   <th scope="col">Latency</th>
@@ -1786,7 +1807,7 @@ function RunTraceScreen({
           <h2>Tool Call Details</h2>
           {steps[0] ? (
             <>
-              <Field label="Agent" value={agentName(steps[0].step_name)} />
+              <Field label="Lane" value={agentName(steps[0].step_name)} />
               <Field label="Tool" value={steps[0].step_name.toLowerCase()} mono />
               <Field label="Output" value={summaryFromOutput(steps[0].output_json)} />
               <Field label="Latency" value={steps[0].latency_ms ? `${(steps[0].latency_ms / 1000).toFixed(1)}s` : "Unavailable"} />
@@ -1846,7 +1867,7 @@ function PullRequestsScreen({
   });
   return (
     <div className="screen">
-      <ScreenHeader title="Pull Requests" subtitle="Draft PRs generated, monitored, or reviewed by RepoPilot AI." />
+      <ScreenHeader title="Pull Requests" subtitle="Draft PR records created, monitored, or reviewed by RepoPilot AI." />
       <div className="toolbar fiveFilters">
         <select onChange={(event) => setRepositoryFilter(event.target.value)} value={repositoryFilter}>
           <option value="all">All repositories</option>
@@ -1942,7 +1963,7 @@ function PullRequestDetailScreen({
     <div className="screen">
       <Breadcrumb trail={["Pull Requests", `#${pr.pr_number}`]} />
       <div className="titleRow">
-        <ScreenHeader title={`PR #${pr.pr_number} ${pr.issue?.title ?? ""}`} subtitle="This pull request was generated by RepoPilot AI and is ready for human review." />
+        <ScreenHeader title={`PR #${pr.pr_number} ${pr.issue?.title ?? ""}`} subtitle="This tracked PR record includes RepoPilot evidence for human review." />
         <Badge tone={statusTone(pr.status)}>{labelize(pr.status)}</Badge>
         <Badge tone={riskTone(pr.risk_score)}>{riskLabel(pr.risk_score)}</Badge>
         <Badge tone={statusTone(pr.ci_status ?? "unknown")}>CI {labelize(pr.ci_status ?? "unknown")}</Badge>
@@ -2022,19 +2043,19 @@ function PullRequestDetailScreen({
 
 function CiDebuggerScreen({ pr, onAnalyzeCi }: { pr: PullRequestSummary | null; onAnalyzeCi: (pr: PullRequestSummary) => void }) {
   if (!pr) {
-    return <EmptyState text="Select a pull request to debug CI." />;
+    return <EmptyState text="Select a pull request to inspect CI evidence." />;
   }
   const failed = pr.validation_results.find((result) => result.status !== "passed") ?? pr.validation_results[0] ?? null;
   return (
     <div className="screen">
-      <Breadcrumb trail={["Pull Requests", `#${pr.pr_number}`, "CI Failure"]} />
-      <ScreenHeader title="CI Failure Debugger" />
+      <Breadcrumb trail={["Pull Requests", `#${pr.pr_number}`, "CI Evidence"]} />
+      <ScreenHeader title="CI Evidence Analyzer" />
       <div className="failureBanner">
         <AlertTriangle size={26} />
         {failed ? `${failed.command} reported ${failed.status} on PR #${pr.pr_number}` : `No failing validation is recorded for PR #${pr.pr_number}`}
       </div>
       <section className="statGrid four">
-        <StatCard label="Workflow" value="GitHub Actions" icon={GitBranch} />
+        <StatCard label="Validation source" value="Recorded CI/log evidence" icon={GitBranch} />
         <StatCard label="Failed job" value={failed?.command ?? "Unavailable"} icon={ShieldAlert} />
         <StatCard label="Failed command" value={failed?.command ?? "Unavailable"} icon={Terminal} />
         <StatCard label="Status" value={failed ? labelize(failed.status) : "Unavailable"} icon={X} />
@@ -2044,7 +2065,7 @@ function CiDebuggerScreen({ pr, onAnalyzeCi }: { pr: PullRequestSummary | null; 
           <PanelHeader title="Failure Summary" />
           <InfoLine icon={AlertCircle} label="Root cause" value={failed?.parsed_summary ?? "No parsed failure summary is available."} />
           <InfoLine icon={AlertTriangle} label="Likely reason" value={failed?.command ?? "Unavailable"} />
-          <InfoLine icon={Wrench} label="Suggested fix" value="Analyze the latest CI logs to produce a real suggested fix." />
+          <InfoLine icon={Wrench} label="Revision plan" value="Analyze recorded CI evidence to create a suggested revision plan." />
         </section>
         <section className="panel">
           <PanelHeader title="Affected files" />
@@ -2053,10 +2074,10 @@ function CiDebuggerScreen({ pr, onAnalyzeCi }: { pr: PullRequestSummary | null; 
       </div>
       <section className="panel logPanel">
         <PanelHeader title="Log Preview" />
-        <pre>{failed?.parsed_summary ?? "No CI log preview is available. Use Ask Agent to Propose Fix with pasted GitHub Actions logs."}</pre>
+        <pre>{failed?.parsed_summary ?? "No CI log preview is available. Analyze supplied CI evidence after adding GitHub Actions logs."}</pre>
       </section>
       <div className="bottomActions">
-        <button className="primaryAction" onClick={() => onAnalyzeCi(pr)} type="button"><Sparkles size={18} /> Ask Agent to Propose Fix</button>
+        <button className="primaryAction" onClick={() => onAnalyzeCi(pr)} type="button"><Sparkles size={18} /> Analyze supplied CI evidence</button>
         <span className="mutedText"><CheckCircle2 size={18} style={{ marginRight: 8 }} />Approve fix not available</span>
         <span className="mutedText"><X size={18} style={{ marginRight: 8 }} />Dismiss not available</span>
         <button className="ghostAction" onClick={() => window.open(pr.url, "_blank", "noopener,noreferrer")} type="button"><Github size={18} /> Open PR in GitHub</button>
@@ -2369,6 +2390,7 @@ function AuditLogsScreen({
 function SettingsScreen({
   data,
   githubAppVerification,
+  motionPreference,
   onGithub,
   onSaveGithubApp,
   onSaveGithubOAuth,
@@ -2377,6 +2399,7 @@ function SettingsScreen({
   onVerifyModelProvider,
   policy,
   readiness,
+  setMotionPreference,
   setShowAppSecretForm,
   setShowSecretForm,
   showAppSecretForm,
@@ -2404,6 +2427,8 @@ function SettingsScreen({
   setTab: (tab: SettingsTab) => void;
   verification: ModelProviderVerificationResponse | null;
   onReset: () => void;
+  motionPreference: MotionPreference;
+  setMotionPreference: (pref: MotionPreference) => void;
 }) {
   const githubConnected = isGithubAccountConnected(data);
   const githubOAuth = githubOAuthIntegration(readiness);
@@ -2537,7 +2562,7 @@ function SettingsScreen({
               <h2>Policy status</h2>
               <div className="statusHero">
                 <CheckCircle2 size={32} />
-                <strong>{readiness?.production_ready ? "Production ready" : "Local policy active"}</strong>
+                <strong>{readiness?.production_ready ? "Readiness checks passed" : "Local policy active"}</strong>
               </div>
               <p className="mutedText">Environment: {readiness?.environment ?? "Unavailable"}</p>
               <button className="primaryAction wide" onClick={onReset} type="button">
@@ -2629,9 +2654,9 @@ function SettingsScreen({
               <Field label="Live verification" value={verification ? (verification.ok ? "Passed" : "Failed") : "Not run"} tone={verification?.ok ? "success" : verification ? "danger" : "warning"} />
               {verification ? <p className="mutedText">{verification.detail}</p> : null}
               <p className="mutedText">Environment: {readiness?.environment ?? "Unavailable"}</p>
-              <button className="cyanAction wide" disabled={!data.modelConfig?.api_key_configured} onClick={() => void onVerifyModelProvider()} title={data.modelConfig?.api_key_configured ? "Calls the provider models endpoint with the saved key." : "Save a provider API key before verification."} type="button">
+              <button className="cyanAction wide" disabled={!data.modelConfig?.api_key_configured} onClick={() => void onVerifyModelProvider()} title={data.modelConfig?.api_key_configured ? "Runs a live provider verification request using the saved key. No repository source is sent during verification." : "Save a provider API key before verification."} type="button">
                 <Sparkles size={18} />
-                Verify provider
+                Verify with live call
               </button>
               {data.modelConfig?.docs_url ? (
                 <button className="ghostAction wide" onClick={() => window.open(data.modelConfig?.docs_url ?? "", "_blank", "noopener,noreferrer")} type="button">
@@ -2673,6 +2698,66 @@ function SettingsScreen({
               <button className="primaryAction wide" onClick={onReset} type="button">
                 <RefreshCcw size={18} />
                 Refresh status
+              </button>
+            </aside>
+          </>
+        )}
+
+        {tab === "Display" && (
+          <>
+            <section className="detailStack">
+              <section className="panel settingsPanel">
+                <h2>Motion preference</h2>
+                <p className="mutedText" style={{ marginBottom: "16px" }}>Control animation speed across the console. Reduced motion uses simpler transitions and disables staggered reveals.</p>
+                <div style={{ display: "grid", gap: "12px" }}>
+                  {([
+                    ["no", "No motion", "Instant transitions, no animations, no staggered reveals."],
+                    ["reduced", "Reduced", "Quick fades only. Staggered entrance animations are disabled."],
+                    ["standard", "Standard", "Full motion system with staggered stat cards and press feedback."],
+                    ["enhanced", "Enhanced", "Longer, more expressive transitions throughout the console."]
+                  ] as const).map(([value, label, description]) => (
+                    <label
+                      key={value}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "auto minmax(0, 1fr)",
+                        alignItems: "center",
+                        gap: "14px",
+                        minHeight: "52px",
+                        padding: "10px 16px",
+                        border: motionPreference === value ? "1px solid rgba(79, 140, 255, 0.62)" : "1px solid var(--border)",
+                        borderRadius: "var(--radius-lg)",
+                        background: motionPreference === value ? "rgba(79, 140, 255, 0.08)" : "rgba(10, 15, 21, 0.5)",
+                        cursor: "pointer"
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="motion"
+                        value={value}
+                        checked={motionPreference === value}
+                        onChange={() => setMotionPreference(value)}
+                        style={{ accentColor: "var(--blue)", width: "18px", height: "18px", cursor: "pointer" }}
+                      />
+                      <span>
+                        <strong style={{ display: "block", fontSize: "14px" }}>{label}</strong>
+                        <small style={{ display: "block", marginTop: "4px", color: "var(--text-2)", fontSize: "12px" }}>{description}</small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            </section>
+            <aside className="panel contextPanel">
+              <h2>Motion status</h2>
+              <div className="statusHero">
+                <CheckCircle2 size={32} />
+                <strong>{motionPreference === "no" ? "No motion" : motionPreference === "reduced" ? "Reduced" : motionPreference === "enhanced" ? "Enhanced" : "Standard"} active</strong>
+              </div>
+              <p className="mutedText">System preference (prefers-reduced-motion) is always respected and overrides this setting.</p>
+              <button className="ghostAction wide" onClick={() => { setMotionPreference("standard"); }} type="button">
+                <RefreshCcw size={18} />
+                Reset to standard
               </button>
             </aside>
           </>
@@ -2880,6 +2965,13 @@ function ModelProviderForm({
     return (
       <section className="panel settingsPanel">
         <h2>Inference providers</h2>
+        <p className="mutedText" style={{ marginBottom: "16px" }}>
+          The catalog is unavailable, so live provider setup is disabled. When configured, live model calls may send prompts, issue/PR context, selected repository snippets, and embedding inputs to the selected provider.
+        </p>
+        <div className="securityNotes">
+          <InfoLine icon={KeyRound} label="Write-only key" value="Saved API keys are never returned to the browser." />
+          <InfoLine icon={Eye} label="External data transfer" value="Repository chunks stay local unless live embeddings are enabled with source-transfer consent." />
+        </div>
         <EmptyState text="The model provider catalog is unavailable." />
       </section>
     );
@@ -2891,7 +2983,8 @@ function ModelProviderForm({
         <span className="githubSyncIcon"><Sparkles size={24} /></span>
         <span>
           <h2>Inference provider</h2>
-          <p>Select a real provider model from the verified catalog. API keys are write-only and saved in encrypted local storage.</p>
+          <p>Select the provider used for live model calls. API keys are write-only and saved in encrypted local storage.</p>
+          <p>Live model calls may send issue text, prompts, selected repository context, and model outputs to the configured provider; provider-backed embeddings require explicit source-transfer opt-in.</p>
         </span>
         <Badge tone={config?.status === "configured" ? "success" : "warning"}>{config?.status === "configured" ? "Configured" : "API key required"}</Badge>
       </div>
@@ -2992,9 +3085,11 @@ function ModelProviderForm({
       </div>
 
       <div className="securityNotes">
-        <InfoLine icon={Database} label="Verified catalog" value="Provider and model IDs are served by the backend catalog instead of display-only UI state." />
+        <InfoLine icon={Database} label="Backend catalog" value="Provider and model IDs come from the backend catalog. This does not verify provider privacy terms or data handling." />
         <InfoLine icon={KeyRound} label="Write-only key" value="API keys are never returned to the browser after saving." />
-        <InfoLine icon={Shield} label="Encrypted storage" value="Provider settings and keys are saved through the runtime secret store." />
+        <InfoLine icon={Shield} label="Encrypted storage" value="Provider settings and API keys are saved in encrypted local storage through the runtime secret store." />
+        <InfoLine icon={Eye} label="External data transfer" value="Live runs may send prompts, repository source snippets, issue/PR context, and embedding inputs to the selected provider." />
+        <InfoLine icon={Database} label="Explicit source transfer" value="Repository chunks stay local unless live embeddings are enabled with source-transfer consent." />
       </div>
 
       {error ? <div className="connectNotice">{error}</div> : null}
@@ -3358,8 +3453,8 @@ function ProfileScreen({ data, onGithub }: { data: ConsoleState; onGithub: () =>
         </section>
         <section className="panel profilePanel dangerZone">
           <h2>Danger zone</h2>
-          <button className="dangerAction" disabled type="button">Revoke access unavailable</button>
-          <button className="dangerAction" disabled type="button">Delete data unavailable</button>
+          <button className="dangerAction" disabled title="Revoke access is not available in the current environment." type="button">Revoke access unavailable</button>
+          <button className="dangerAction" disabled title="Data deletion is not available in the current environment." type="button">Delete data unavailable</button>
         </section>
       </div>
     </div>
@@ -3975,14 +4070,14 @@ function nextRunAction(state?: string) {
 
 function agentName(stepName: string) {
   const step = stepName.toLowerCase();
-  if (step.includes("triage")) return "Triage Agent";
-  if (step.includes("context") || step.includes("retrieve")) return "Context Agent";
-  if (step.includes("plan")) return "Planning Agent";
-  if (step.includes("security")) return "Security Agent";
-  if (step.includes("test") || step.includes("validation")) return "Test Agent";
-  if (step.includes("pr")) return "PR Agent";
-  if (step.includes("ci")) return "CI Agent";
-  return "Execution Agent";
+  if (step.includes("triage")) return "Triage step";
+  if (step.includes("context") || step.includes("retrieve")) return "Context step";
+  if (step.includes("plan")) return "Planning step";
+  if (step.includes("security")) return "Security step";
+  if (step.includes("test") || step.includes("validation")) return "Validation step";
+  if (step.includes("pr")) return "PR step";
+  if (step.includes("ci")) return "CI step";
+  return "Execution step";
 }
 
 function summaryFromOutput(value: Record<string, unknown> | null) {
