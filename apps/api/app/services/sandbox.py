@@ -12,6 +12,7 @@ from repopilot_contracts import PolicyDecisionType, SandboxCommandRequest, Sandb
 
 from app.core.config import settings
 from app.services.policy import PolicyEngine
+from app.services.security_envelope import redact_text
 
 WORKSPACE_ROOT = Path("/tmp/repopilot-agent-workspaces")
 
@@ -138,8 +139,8 @@ class SandboxRunner:
                 status=ValidationStatus.FAILED,
                 exit_code=None,
                 duration_ms=int((time.monotonic() - started) * 1000),
-                stdout=exc.stdout or "",
-                stderr=exc.stderr or "Command timed out.",
+                stdout=redact_text(_decode_output(exc.stdout)),
+                stderr=redact_text(_decode_output(exc.stderr) or "Command timed out."),
             )
 
         return SandboxCommandResult(
@@ -147,8 +148,8 @@ class SandboxRunner:
             status=ValidationStatus.PASSED if completed.returncode == 0 else ValidationStatus.FAILED,
             exit_code=completed.returncode,
             duration_ms=int((time.monotonic() - started) * 1000),
-            stdout=completed.stdout[-8000:],
-            stderr=completed.stderr[-8000:],
+            stdout=redact_text(completed.stdout)[-8000:],
+            stderr=redact_text(completed.stderr)[-8000:],
         )
 
     def _safe_env(self) -> dict[str, str]:
@@ -160,3 +161,11 @@ class SandboxRunner:
         safe_env["TMPDIR"] = "/tmp"
         safe_env["PYTHONDONTWRITEBYTECODE"] = "1"
         return safe_env
+
+
+def _decode_output(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="ignore")
+    return value

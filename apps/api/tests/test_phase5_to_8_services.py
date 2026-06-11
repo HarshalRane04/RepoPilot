@@ -487,7 +487,7 @@ def test_policy_escalates_high_risk_files() -> None:
     plan = ImplementationPlan(
         plan_id="plan-1",
         issue_id="issue-1",
-        files_to_modify=[".github/workflows/ci.yml"],
+        files_to_modify=[".github/workflows/ci.yml", ".npmrc", "private.pem"],
         commands_to_run=["pytest"],
         rollback_plan="Close the PR.",
     )
@@ -496,6 +496,8 @@ def test_policy_escalates_high_risk_files() -> None:
 
     assert decision.decision == "escalate"
     assert decision.required_approvals == ["maintainer"]
+    assert ".npmrc" in decision.blocked_patterns
+    assert "private.pem" in decision.blocked_patterns
 
 
 def test_policy_denies_blocked_command() -> None:
@@ -535,3 +537,25 @@ def test_sandbox_safe_env_preserves_current_python_bin(monkeypatch, tmp_path: Pa
     env = SandboxRunner()._safe_env()
 
     assert env["PATH"].split(":")[0] == str(venv_bin)
+
+
+def test_sandbox_redacts_stdout_and_stderr_before_return(tmp_path: Path) -> None:
+    runner = SandboxRunner(backend="local")
+    secret = "sk-live-secret-value-1234567890"
+    result = runner._execute(
+        command="python -m pytest",
+        args=[
+            sys.executable,
+            "-c",
+            "import sys; print('token=sk-live-secret-value-1234567890'); print('stderr sk-live-secret-value-1234567890', file=sys.stderr)",
+        ],
+        cwd=tmp_path,
+        timeout_seconds=5,
+        env=runner._safe_env(),
+    )
+
+    assert result.status == "passed"
+    assert secret not in result.stdout
+    assert secret not in result.stderr
+    assert "[REDACTED_SECRET]" in result.stdout
+    assert "[REDACTED_SECRET]" in result.stderr

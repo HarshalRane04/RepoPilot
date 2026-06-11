@@ -162,6 +162,131 @@ def test_executor_runs_read_file_tool_and_records_success() -> None:
     assert any(getattr(item, "step_name", "") == "TOOL_CALL:repo.read_file" for item in db.added)
 
 
+def test_repo_read_tools_filter_sensitive_workspace_files() -> None:
+    run = AgentRun(id=uuid4(), state=AgentRunState.WAIT_FOR_APPROVAL.value)
+    workspace = WORKSPACE_ROOT / str(run.id)
+    shutil.rmtree(workspace, ignore_errors=True)
+    workspace.mkdir(parents=True)
+    (workspace / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    (workspace / ".env.local").write_text("MODEL_API_KEY=sk-live-secret-value-1234567890\n", encoding="utf-8")
+    (workspace / ".npmrc").write_text("//registry.example/:_authToken=npm-secret-token\n", encoding="utf-8")
+    (workspace / "id_ed25519").write_text("-----BEGIN OPENSSH PRIVATE KEY-----\n", encoding="utf-8")
+    (workspace / "secrets").mkdir()
+    (workspace / "secrets" / "config.json").write_text('{"token":"ghp_live_secret_value"}\n', encoding="utf-8")
+    db = FakeDb(run=run)
+
+    try:
+        listed = asyncio.run(
+            ToolExecutor().execute(
+                db,
+                request=ToolCallRequest(
+                    run_id=run.id,
+                    state=AgentRunState.WAIT_FOR_APPROVAL,
+                    tool_name="repo.list_files",
+                    actor="agent",
+                    arguments={"workspace_path": str(workspace)},
+                ),
+            )
+        )
+        grep = asyncio.run(
+            ToolExecutor().execute(
+                db,
+                request=ToolCallRequest(
+                    run_id=run.id,
+                    state=AgentRunState.WAIT_FOR_APPROVAL,
+                    tool_name="repo.grep",
+                    actor="agent",
+                    arguments={"workspace_path": str(workspace), "query": "secret"},
+                ),
+            )
+        )
+        tree = asyncio.run(
+            ToolExecutor().execute(
+                db,
+                request=ToolCallRequest(
+                    run_id=run.id,
+                    state=AgentRunState.WAIT_FOR_APPROVAL,
+                    tool_name="repo.summarize_tree",
+                    actor="agent",
+                    arguments={"workspace_path": str(workspace)},
+                ),
+            )
+        )
+        read_secret = asyncio.run(
+            ToolExecutor().execute(
+                db,
+                request=ToolCallRequest(
+                    run_id=run.id,
+                    state=AgentRunState.WAIT_FOR_APPROVAL,
+                    tool_name="repo.read_file",
+                    actor="agent",
+                    arguments={"workspace_path": str(workspace), "path": ".env.local"},
+                ),
+            )
+        )
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+    assert listed.status == "succeeded"
+    assert [item["path"] for item in listed.output["files"]] == ["app.py"]
+    assert grep.status == "succeeded"
+    assert grep.output["matches"] == []
+    assert tree.status == "succeeded"
+    assert tree.output["entries"] == ["app.py"]
+    assert read_secret.status == "blocked"
+    assert "sensitive file" in (read_secret.blocked_reason or "")
+
+
+def test_workspace_create_run_copy_excludes_sensitive_files(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(settings, "repository_workspace_root", str(tmp_path))
+    plan_id = uuid4()
+    issue_id = uuid4()
+    run = AgentRun(id=uuid4(), plan_id=plan_id, state=AgentRunState.CREATE_BRANCH.value)
+    plan = Plan(
+        id=plan_id,
+        issue_id=issue_id,
+        approval_status=PlanApprovalStatus.APPROVED.value,
+        plan_json=approved_plan_payload(plan_id=plan_id, issue_id=issue_id, files_to_modify=["app.py"]),
+    )
+    source = tmp_path / "repo"
+    source.mkdir()
+    (source / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    (source / ".env.local").write_text("MODEL_API_KEY=sk-live-secret-value-1234567890\n", encoding="utf-8")
+    (source / ".pypirc").write_text("password = pypi-secret\n", encoding="utf-8")
+    (source / "private.pem").write_text("-----BEGIN PRIVATE KEY-----\n", encoding="utf-8")
+    (source / "secrets").mkdir()
+    (source / "secrets" / "config.json").write_text('{"token":"ghp_live_secret_value"}\n', encoding="utf-8")
+    target = WORKSPACE_ROOT / str(run.id)
+    shutil.rmtree(target, ignore_errors=True)
+    db = FakeDb(run=run, plan=plan)
+
+    try:
+        result = asyncio.run(
+            ToolExecutor().execute(
+                db,
+                request=ToolCallRequest(
+                    run_id=run.id,
+                    state=AgentRunState.CREATE_BRANCH,
+                    tool_name="workspace.create_run_copy",
+                    actor="agent",
+                    arguments={"run_id": str(run.id), "source_workspace": str(source)},
+                ),
+            )
+        )
+
+        assert result.status == "succeeded"
+        assert (target / "app.py").is_file()
+        assert not (target / ".env.local").exists()
+        assert not (target / ".pypirc").exists()
+        assert not (target / "private.pem").exists()
+        assert not (target / "secrets").exists()
+        baseline = target / ".repopilot" / "baseline.json"
+        assert baseline.is_file()
+        assert "sk-live-secret" not in baseline.read_text(encoding="utf-8")
+    finally:
+        shutil.rmtree(target, ignore_errors=True)
+
+
 def test_executor_blocks_write_tool_without_approved_plan(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()

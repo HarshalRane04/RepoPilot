@@ -48,7 +48,7 @@ from app.services.implementation_agent import IGNORED_WORKSPACE_DIRS
 from app.services.observability import ObservabilityService
 from app.services.planning import PlanningService, approved_plan_hash_matches, implementation_plan_from_db
 from app.services.policy import PolicyEngine
-from app.services.repo_indexer import IGNORED_DIRS, TEXT_EXTENSIONS, RepositoryIndexer
+from app.services.repo_indexer import IGNORED_DIRS, SENSITIVE_FILE_NAMES, SENSITIVE_SUFFIXES, TEXT_EXTENSIONS, RepositoryIndexer
 from app.services.sandbox import SandboxRunner
 from app.services.security_envelope import redact_data, redact_text, stable_json_hash
 from app.services.security_scanner import SecurityScanner
@@ -61,6 +61,7 @@ INTERNAL_DIR = ".repopilot"
 MAX_READ_BYTES = 200_000
 MAX_DIFF_BYTES = 40_000
 IGNORED_TOOL_DIRS = set(IGNORED_DIRS) | set(IGNORED_WORKSPACE_DIRS) | {INTERNAL_DIR}
+SENSITIVE_TOOL_DIR_NAMES = {"secrets", ".secrets"}
 
 
 class ToolBlocked(ValueError):
@@ -614,6 +615,9 @@ async def _repo_read_file(_db: AsyncSession, request: ToolCallRequest, payload: 
     args = _cast(payload, RepoReadFileInput)
     workspace = _isolated_workspace(request.run_id, args.workspace_path)
     path = _child_path(workspace, args.path)
+    relative = path.relative_to(workspace).as_posix()
+    if _is_sensitive_workspace_path(relative):
+        raise ToolBlocked(f"Refusing to read sensitive file: {relative}")
     if not path.is_file():
         raise ToolBlocked(f"File not found: {args.path}")
     if path.stat().st_size > MAX_READ_BYTES:
@@ -1602,7 +1606,7 @@ def _looks_like_directory_target(path: str) -> bool:
 
 
 def _copy_ignore(_directory: str, names: list[str]) -> set[str]:
-    return {name for name in names if name in IGNORED_TOOL_DIRS}
+    return {name for name in names if name in IGNORED_TOOL_DIRS or _is_sensitive_workspace_path(name)}
 
 
 def _iter_workspace_files(workspace: Path) -> list[Path]:
@@ -1613,6 +1617,8 @@ def _iter_workspace_files(workspace: Path) -> list[Path]:
         relative = path.relative_to(workspace)
         if any(part in IGNORED_TOOL_DIRS for part in relative.parts):
             continue
+        if _is_sensitive_workspace_path(relative.as_posix()):
+            continue
         files.append(path)
     return sorted(files)
 
@@ -1620,6 +1626,19 @@ def _iter_workspace_files(workspace: Path) -> list[Path]:
 def _is_test_file(path: str) -> bool:
     lowered = path.lower()
     return "/test" in lowered or lowered.startswith("test") or ".test." in lowered or ".spec." in lowered or lowered.endswith("_test.py")
+
+
+def _is_sensitive_workspace_path(relative_path: str) -> bool:
+    path = PurePosixPath(relative_path.replace("\\", "/"))
+    lowered_parts = {part.lower() for part in path.parts}
+    if lowered_parts.intersection(SENSITIVE_TOOL_DIR_NAMES):
+        return True
+    name = path.name.lower()
+    if name in SENSITIVE_FILE_NAMES:
+        return True
+    if any(name.startswith(prefix) for prefix in (".env.", "secret.", "secrets.")):
+        return True
+    return path.suffix.lower() in SENSITIVE_SUFFIXES
 
 
 def _framework_hints(corpus: str) -> list[str]:
