@@ -139,6 +139,7 @@ class ModelGateway:
         run_id: UUID | None,
         texts: list[str],
         agent_name: str = "embedding",
+        allow_live: bool = True,
     ) -> EmbeddingResponse:
         config = effective_settings(settings)
         if run_id is not None:
@@ -147,14 +148,15 @@ class ModelGateway:
         dimensions = max(1, int(config.embedding_dimensions))
         tokens = TokenUsage(prompt=sum(_estimate_tokens(text) for text in texts), completion=0, total=sum(_estimate_tokens(text) for text in texts))
         embedding_provider = provider_by_id(config.embedding_provider)
-        should_mock = config.embedding_provider == "mock" or not config.model_api_key or embedding_provider is None
+        live_blocked_by_policy = config.embedding_provider != "mock" and not allow_live
+        should_mock = config.embedding_provider == "mock" or not config.model_api_key or embedding_provider is None or live_blocked_by_policy
         if should_mock:
-            if config.embedding_provider != "mock" and not _model_fallback_allowed(config):
+            if config.embedding_provider != "mock" and not live_blocked_by_policy and not _model_fallback_allowed(config):
                 raise RuntimeError("Live embedding provider is not fully configured and model fallback is disabled.")
             response = EmbeddingResponse(
                 embeddings=[self._mock_embedding(text, dimensions=dimensions) for text in texts],
-                provider=config.embedding_provider,
-                model=config.embedding_model,
+                provider="mock" if live_blocked_by_policy else config.embedding_provider,
+                model="mock-embedding" if live_blocked_by_policy else config.embedding_model,
                 dimensions=dimensions,
                 tokens=tokens,
                 cost=0.0,
@@ -196,6 +198,8 @@ class ModelGateway:
                 "embedding_dimensions": response.dimensions,
                 "embedding_count": len(texts),
                 "embedding_mode": response.mode.value,
+                "live_embedding_allowed": allow_live,
+                "live_embedding_blocked_by_policy": live_blocked_by_policy,
             },
         )
         return response

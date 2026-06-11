@@ -94,6 +94,7 @@ def configure_mock_model(monkeypatch) -> None:
     monkeypatch.setattr(settings, "embedding_provider", "mock")
     monkeypatch.setattr(settings, "embedding_model", "mock-embedding")
     monkeypatch.setattr(settings, "embedding_dimensions", 16)
+    monkeypatch.setattr(settings, "embedding_source_transfer_enabled", False)
     monkeypatch.setattr(settings, "max_llm_calls_per_run", 40)
     monkeypatch.setattr(settings, "max_tokens_per_run", 250_000)
     monkeypatch.setattr(settings, "max_cost_per_run", 5.0)
@@ -161,7 +162,37 @@ def test_model_gateway_mock_embeddings_are_deterministic(monkeypatch) -> None:
     assert trace.provider == "mock"
     assert trace.mode == "mock"
     assert trace.response_hash
-    assert trace.metadata_json == {"embedding_count": 1, "embedding_dimensions": 16, "embedding_mode": "mock"}
+    assert trace.metadata_json == {
+        "embedding_count": 1,
+        "embedding_dimensions": 16,
+        "embedding_mode": "mock",
+        "live_embedding_allowed": True,
+        "live_embedding_blocked_by_policy": False,
+    }
+
+
+def test_model_gateway_uses_local_embeddings_when_live_source_transfer_is_not_allowed(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "embedding_provider", "openai")
+    monkeypatch.setattr(settings, "embedding_model", "text-embedding-3-small")
+    monkeypatch.setattr(settings, "embedding_dimensions", 8)
+    monkeypatch.setattr(settings, "model_api_key", "sk-test")
+    monkeypatch.setattr(settings, "model_base_url", "https://api.openai.com/v1")
+    monkeypatch.setattr(settings, "allow_model_fallback", False)
+    monkeypatch.setattr(settings, "embedding_source_transfer_enabled", False)
+    run = AgentRun(id=uuid4(), state="RETRIEVE_CONTEXT", total_tokens=0, total_cost=0.0)
+    db = FakeGatewayDb(run)
+
+    response = asyncio.run(ModelGateway().embed(db, run_id=run.id, texts=["secret source"], allow_live=False))
+
+    assert response.mode == LLMCallMode.FALLBACK
+    assert response.provider == "mock"
+    assert response.model == "mock-embedding"
+    assert response.dimensions == 8
+    trace = next(item for item in db.added if isinstance(item, LLMTrace) and item.agent_name == "embedding")
+    assert trace.provider == "openai"
+    assert trace.mode == "fallback"
+    assert trace.metadata_json["live_embedding_allowed"] is False
+    assert trace.metadata_json["live_embedding_blocked_by_policy"] is True
 
 
 def test_model_gateway_normalizes_live_embedding_dimensions() -> None:

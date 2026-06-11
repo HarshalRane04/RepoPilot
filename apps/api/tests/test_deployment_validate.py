@@ -26,6 +26,10 @@ Use managed data services.
 
 ## Secrets
 Keep GITHUB_WRITES_ENABLED=false before smoke proof.
+Keep EMBEDDING_SOURCE_TRANSFER_ENABLED=false before source transfer approval.
+
+## Provider Data Transfer
+Live providers are explicit opt-in.
 
 ## Storage And Cleanup
 Use named volumes.
@@ -62,6 +66,7 @@ Require eval and smoke proof.
                 "MODEL_PROVIDER=mock",
                 "MODEL_NAME=mock-planner",
                 "MODEL_API_KEY=",
+                "EMBEDDING_SOURCE_TRANSFER_ENABLED=false",
                 "GITHUB_WRITES_ENABLED=false",
                 "REPOPILOT_ARTIFACT_STORE_ROOT=/tmp/repopilot-artifacts",
                 "REPOPILOT_RUNTIME_SECRETS_KEY_PATH=/home/appuser/.repopilot/runtime-secrets.key",
@@ -204,6 +209,20 @@ def test_deployment_validator_reports_missing_compose_service_and_env_key(tmp_pa
     assert report.failed is True
     assert any(finding.check == "compose_service" and finding.target == "redis" for finding in report.findings)
     assert any(finding.check == "env_example_key" and finding.target == "MODEL_API_KEY" for finding in report.findings)
+
+
+def test_deployment_validator_blocks_unsafe_embedding_transfer_default(tmp_path: Path) -> None:
+    write_valid_deployment_fixture(tmp_path)
+    env_text = tmp_path.joinpath(".env.example").read_text(encoding="utf-8")
+    tmp_path.joinpath(".env.example").write_text(env_text.replace("EMBEDDING_SOURCE_TRANSFER_ENABLED=false", "EMBEDDING_SOURCE_TRANSFER_ENABLED=true"), encoding="utf-8")
+
+    report = DeploymentValidator(root=tmp_path).validate()
+
+    assert report.failed is True
+    assert any(
+        finding.check == "env_example_safe_default" and finding.target == "EMBEDDING_SOURCE_TRANSFER_ENABLED"
+        for finding in report.findings
+    )
 
 
 def test_deployment_validator_reports_missing_release_artifacts(tmp_path: Path) -> None:

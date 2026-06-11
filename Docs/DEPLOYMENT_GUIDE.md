@@ -88,6 +88,13 @@ Never commit live secrets. Required runtime secrets include:
 
 Keep `GITHUB_WRITES_ENABLED=false` until credential verification, demo-repo write smoke, validation gates, and security gates pass.
 Keep `ALLOW_MODEL_FALLBACK=false` outside local development so provider outages or unsupported adapters fail closed instead of creating deterministic mock-like evidence.
+Keep `EMBEDDING_SOURCE_TRANSFER_ENABLED=false` unless the repository owner explicitly approves sending repository paths and selected source/documentation chunks to the configured embedding provider.
+
+## Provider Data Transfer
+
+Live model and embedding modes are explicit opt-in boundaries. When live model calls are configured, RepoPilot may send issue text, selected repository context, prompts, model outputs, CI summaries, and validation/security evidence summaries to the configured provider. When `EMBEDDING_SOURCE_TRANSFER_ENABLED=true`, repository indexing may also send file paths plus selected source, test, documentation, and config chunks to the configured embedding provider.
+
+Keep mock/local embedding mode for repositories whose source must not leave the deployment. RepoPilot redacts traces and stores prompt/response hashes locally, but it cannot control external provider retention once live calls are enabled.
 
 ## Storage And Cleanup
 

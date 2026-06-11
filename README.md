@@ -57,6 +57,7 @@ RepoPilot is designed around these invariants:
 - Model actions must pass through `ToolExecutor` or an equivalent audited executor boundary.
 - Generated code is applied only inside isolated run workspaces.
 - GitHub writes stay disabled unless credentials, write mode, validation evidence, security gates, and permission checks are all satisfied.
+- Live model and embedding calls are explicit data-transfer boundaries. Keep `EMBEDDING_SOURCE_TRANSFER_ENABLED=false` unless the repository owner approves sending repository paths and selected source/context chunks to the configured embedding provider.
 - Every state transition, tool call, write action, validation result, security finding, and PR action is audited.
 
 ## Local Start

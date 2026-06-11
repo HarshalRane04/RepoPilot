@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     embedding_provider: str = Field(default="mock", alias="EMBEDDING_PROVIDER")
     embedding_model: str = Field(default="mock-embedding", alias="EMBEDDING_MODEL")
     embedding_dimensions: int = Field(default=1536, alias="EMBEDDING_DIMENSIONS")
+    embedding_source_transfer_enabled: bool = Field(default=False, alias="EMBEDDING_SOURCE_TRANSFER_ENABLED")
     max_cost_per_run: float = Field(default=5.0, alias="REPOPILOT_MAX_COST_PER_RUN")
     max_tokens_per_run: int = Field(default=250_000, alias="REPOPILOT_MAX_TOKENS_PER_RUN")
     max_llm_calls_per_run: int = Field(default=40, alias="REPOPILOT_MAX_LLM_CALLS_PER_RUN")

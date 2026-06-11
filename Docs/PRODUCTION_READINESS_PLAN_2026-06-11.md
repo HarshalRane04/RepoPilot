@@ -198,10 +198,11 @@ Use this classification before release:
 4. Dashboard secret fields must be write-only after save; status responses may show configured/missing only.
 5. Readiness and smoke artifacts must be redacted by construction.
 6. Prompt builders must redact issue/context secrets before model calls.
-7. CI logs, workflow logs, and scanner output must be bounded and redacted before model summarization.
-8. High/critical security findings block draft PR creation until resolved or explicitly reviewed according to policy.
-9. GitHub writes require verified installation credentials, write mode, collaborator permission, approved plan hash, validation evidence, clean security gates, and audit persistence.
-10. Open-source docs must tell users never to paste credentials into GitHub issues, discussions, PR comments, screenshots, or public logs.
+7. Live model and live embedding calls require explicit operator opt-in before sending issue text, selected context, CI/security summaries, or repository source chunks to external providers.
+8. CI logs, workflow logs, and scanner output must be bounded and redacted before model summarization.
+9. High/critical security findings block draft PR creation until resolved or explicitly reviewed according to policy.
+10. GitHub writes require verified installation credentials, write mode, collaborator permission, approved plan hash, validation evidence, clean security gates, and audit persistence.
+11. Open-source docs must tell users never to paste credentials into GitHub issues, discussions, PR comments, screenshots, or public logs.
 
 ## Agent Harness Efficiency Requirements
 

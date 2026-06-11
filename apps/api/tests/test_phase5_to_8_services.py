@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
-from repopilot_contracts import CodeContextChunk, CodeContextPack, ImplementationPlan, SandboxCommandRequest
+from repopilot_contracts import CodeContextChunk, CodeContextPack, EmbeddingResponse, ImplementationPlan, LLMCallMode, SandboxCommandRequest, TokenUsage
 from repopilot_policy_engine import PolicyEngine as PackagePolicyEngine
 
 from app.api.routes.plans import PlanDecisionRequest, PlanRevisionRequest, approve_plan, reject_plan, revise_plan
@@ -76,6 +76,34 @@ class FakeContextDb:
 
     async def execute(self, _statement):
         return ScalarResult(self.chunks)
+
+
+class FakeIndexDb:
+    def __init__(self, repository: Repository) -> None:
+        self.repository = repository
+        self.added: list[object] = []
+        self.commits = 0
+
+    async def get(self, model, item_id):
+        if model is Repository and self.repository.id == item_id:
+            return self.repository
+        return None
+
+    async def execute(self, _statement):
+        return ScalarResult([])
+
+    def add(self, item: object) -> None:
+        if getattr(item, "id", None) is None:
+            item.id = uuid4()
+        self.added.append(item)
+
+    async def flush(self) -> None:
+        for item in self.added:
+            if getattr(item, "id", None) is None:
+                item.id = uuid4()
+
+    async def commit(self) -> None:
+        self.commits += 1
 
 
 def test_indexer_chunks_text_with_line_citations(tmp_path: Path) -> None:
@@ -173,6 +201,63 @@ def test_indexer_skips_generated_dirs_files_and_symlink_escapes(tmp_path: Path) 
     assert [path.name for path in files] == ["app.py"]
     if symlink is not None:
         assert symlink.name not in {path.name for path in files}
+
+
+def test_index_repository_disables_live_embedding_source_transfer(monkeypatch, tmp_path: Path) -> None:
+    workspace_root = tmp_path / "repositories"
+    source_root = workspace_root / "demo"
+    source_root.mkdir(parents=True)
+    source_root.joinpath("app.py").write_text("def handle_secret():\n    return 'source chunk'\n", encoding="utf-8")
+    monkeypatch.setattr("app.services.repo_indexer.settings.repository_workspace_root", str(workspace_root))
+    monkeypatch.setattr("app.services.repo_indexer.settings.embedding_provider", "openai")
+    monkeypatch.setattr("app.services.repo_indexer.settings.embedding_model", "text-embedding-3-small")
+    monkeypatch.setattr("app.services.repo_indexer.settings.embedding_dimensions", 1536)
+    monkeypatch.setattr("app.services.repo_indexer.settings.embedding_source_transfer_enabled", False)
+    calls: list[dict[str, object]] = []
+
+    async def fake_embed(self, db, *, run_id, texts, agent_name="embedding", allow_live=True):
+        calls.append({"texts": texts, "agent_name": agent_name, "allow_live": allow_live})
+        return EmbeddingResponse(
+            embeddings=[[0.0] * 1536 for _ in texts],
+            provider="mock",
+            model="mock-embedding",
+            dimensions=1536,
+            tokens=TokenUsage(prompt=1, completion=0, total=1),
+            mode=LLMCallMode.FALLBACK,
+        )
+
+    monkeypatch.setattr("app.services.repo_indexer.ModelGateway.embed", fake_embed)
+    repository = Repository(
+        id=uuid4(),
+        installation_id=uuid4(),
+        owner="acme",
+        name="demo",
+        default_branch="main",
+    )
+    db = FakeIndexDb(repository)
+
+    result = asyncio.run(
+        RepositoryIndexer().index_repository(
+            db,
+            repository_id=repository.id,
+            request=type(
+                "Request",
+                (),
+                {"source_path": str(source_root), "max_files": 20, "max_file_bytes": 10000, "commit_sha": None},
+            )(),
+        )
+    )
+
+    assert result.chunks_indexed == 1
+    assert calls == [
+        {
+            "texts": ["app.py\ndef handle_secret():\n    return 'source chunk'"],
+            "agent_name": "repo_indexer",
+            "allow_live": False,
+        }
+    ]
+    index_record = next(item for item in db.added if item.__class__.__name__ == "RepositoryIndex")
+    assert index_record.metadata_json["embedding_source_transfer_enabled"] is False
 
 
 def test_retrieve_context_includes_score_breakdown_and_freshness(monkeypatch) -> None:

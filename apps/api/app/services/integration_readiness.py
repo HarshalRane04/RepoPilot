@@ -23,6 +23,7 @@ class IntegrationReadinessService:
             self._runtime_secret_key(),
             self._model_gateway(),
             self._model_fallback_policy(),
+            self._embedding_source_transfer_policy(),
             self._security_tools(),
             self._observability(),
             self._session_secret(),
@@ -242,6 +243,34 @@ class IntegrationReadinessService:
             mode="fallback_disabled_nonlocal",
             detail="Non-local model calls fail closed instead of silently returning deterministic fallback output.",
             next_step="Keep fallback disabled for production and use evals/smoke tests to catch provider failures.",
+        )
+
+    def _embedding_source_transfer_policy(self) -> IntegrationStatus:
+        if self.config.embedding_provider == "mock":
+            return IntegrationStatus(
+                name="Embedding source transfer policy",
+                state=IntegrationState.CONFIGURED,
+                mode="local_embeddings_only",
+                required_for_production=False,
+                detail="Repository indexing uses deterministic local embeddings and does not send source chunks to an external embedding provider.",
+                next_step="Keep EMBEDDING_SOURCE_TRANSFER_ENABLED=false unless the repository owner approves live embedding provider transfer.",
+            )
+        if self.config.embedding_source_transfer_enabled:
+            return IntegrationStatus(
+                name="Embedding source transfer policy",
+                state=IntegrationState.CONFIGURED,
+                mode="source_transfer_enabled",
+                required_for_production=False,
+                detail="Live embedding calls may send repository file paths and selected source/documentation chunks to the configured provider.",
+                next_step="Run provider retrieval evals and confirm the repository owner accepts the provider's data-retention terms.",
+            )
+        return IntegrationStatus(
+            name="Embedding source transfer policy",
+            state=IntegrationState.DISABLED,
+            mode="source_transfer_disabled",
+            required_for_production=False,
+            detail="Live embedding provider transfer is disabled; repository source chunks stay local and indexing uses deterministic embeddings.",
+            next_step="Set EMBEDDING_SOURCE_TRANSFER_ENABLED=true only after explicit repository-owner approval for external source transfer.",
         )
 
     def _security_tools(self) -> IntegrationStatus:

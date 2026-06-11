@@ -29,6 +29,7 @@ REQUIRED_ENV_KEYS = {
     "MODEL_PROVIDER",
     "MODEL_NAME",
     "MODEL_API_KEY",
+    "EMBEDDING_SOURCE_TRANSFER_ENABLED",
     "GITHUB_WRITES_ENABLED",
     "REPOPILOT_ARTIFACT_STORE_ROOT",
     "REPOPILOT_RUNTIME_SECRETS_KEY_PATH",
@@ -43,6 +44,7 @@ REQUIRED_GUIDE_SECTIONS = {
     "Storage And Cleanup",
     "Backups",
     "Observability",
+    "Provider Data Transfer",
     "Rollback",
     "Production Readiness Gate",
 }
@@ -185,6 +187,8 @@ class DeploymentValidator:
             "./apps/web:/app/apps/web": "Released-image Compose file must not bind-mount web source.",
             "web_node_modules": "Released-image Compose file must not use development web dependency volumes.",
             "web_next": "Released-image Compose file must not use development web build volumes.",
+            "EMBEDDING_SOURCE_TRANSFER_ENABLED: true": "Released-image Compose file must not enable source transfer by default.",
+            "EMBEDDING_SOURCE_TRANSFER_ENABLED=true": "Released-image Compose file must not enable source transfer by default.",
         }
         for phrase, detail in forbidden_phrases.items():
             if phrase in compose:
@@ -201,6 +205,20 @@ class DeploymentValidator:
         }
         for key in sorted(REQUIRED_ENV_KEYS.difference(keys)):
             report.findings.append(DeploymentFinding(check="env_example_key", status="failed", target=key, detail="Required env placeholder is missing."))
+        values = {
+            line.split("=", 1)[0].strip(): line.split("=", 1)[1].strip()
+            for line in env_text.splitlines()
+            if line.strip() and not line.strip().startswith("#") and "=" in line
+        }
+        if values.get("EMBEDDING_SOURCE_TRANSFER_ENABLED", "").lower() != "false":
+            report.findings.append(
+                DeploymentFinding(
+                    check="env_example_safe_default",
+                    status="failed",
+                    target="EMBEDDING_SOURCE_TRANSFER_ENABLED",
+                    detail="Live embedding source transfer must default to false in .env.example.",
+                )
+            )
 
     def validate_deployment_guide(self, report: DeploymentValidationReport) -> None:
         guide = self.read_file("Docs/DEPLOYMENT_GUIDE.md", report, check="deployment_guide")
@@ -209,7 +227,7 @@ class DeploymentValidator:
         headings = {line.removeprefix("## ").strip() for line in guide.splitlines() if line.startswith("## ")}
         for section in sorted(REQUIRED_GUIDE_SECTIONS.difference(headings)):
             report.findings.append(DeploymentFinding(check="deployment_guide_section", status="failed", target=section, detail="Required deployment guide section is missing."))
-        for phrase in ["docker compose up -d --build", "docker compose -f docker-compose.ghcr.yml pull", "alembic upgrade head", "GITHUB_WRITES_ENABLED=false", "OTEL_EXPORTER_OTLP_ENDPOINT"]:
+        for phrase in ["docker compose up -d --build", "docker compose -f docker-compose.ghcr.yml pull", "alembic upgrade head", "GITHUB_WRITES_ENABLED=false", "EMBEDDING_SOURCE_TRANSFER_ENABLED=false", "OTEL_EXPORTER_OTLP_ENDPOINT"]:
             if phrase not in guide:
                 report.findings.append(DeploymentFinding(check="deployment_guide_content", status="failed", target=phrase, detail="Required deployment instruction is missing."))
 

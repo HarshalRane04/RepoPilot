@@ -89,6 +89,8 @@ Minimum live smoke inputs:
 
 Save those values through Settings or `make configure-runtime-secrets`, not by committing source changes.
 
+Live model and embedding modes are explicit opt-in data-transfer boundaries. Keep `EMBEDDING_SOURCE_TRANSFER_ENABLED=false` unless the repository owner approves sending repository file paths and selected source/documentation chunks to the configured embedding provider. Live planning/model calls may also send issue text, selected repository context, prompts, model outputs, and CI/security evidence summaries to the configured provider.
+
 ## 5. Run Live Smoke In Safe Order
 
 Keep `GITHUB_WRITES_ENABLED=false` first.

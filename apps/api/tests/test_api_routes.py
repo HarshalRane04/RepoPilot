@@ -475,6 +475,7 @@ def test_settings_readiness_route_exposes_production_gates(monkeypatch) -> None:
     assert "production_ready" in body
     assert body["local_record_mode"] is True
     assert any(item["name"] == "GitHub App installation credentials" for item in body["integrations"])
+    assert any(item["name"] == "Embedding source transfer policy" for item in body["integrations"])
 
 
 def test_eval_run_requires_admin_or_owner_role(monkeypatch) -> None:

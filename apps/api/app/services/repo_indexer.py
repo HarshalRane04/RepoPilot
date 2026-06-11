@@ -176,6 +176,7 @@ class RepositoryIndexer:
             run_id=None,
             texts=[f"{chunk.file_path}\n{chunk.text}" for chunk in chunks],
             agent_name="repo_indexer",
+            allow_live=settings.embedding_source_transfer_enabled,
         )
         embeddings = [self._normalize_embedding(vector) for vector in embedding_response.embeddings]
         for chunk, embedding in zip(chunks, embeddings, strict=True):
@@ -213,6 +214,7 @@ class RepositoryIndexer:
                 "max_files": request.max_files,
                 "max_file_bytes": request.max_file_bytes,
                 "embedding_mode": embedding_response.mode.value,
+                "embedding_source_transfer_enabled": settings.embedding_source_transfer_enabled,
             },
         )
         db.add(index_record)
@@ -233,6 +235,7 @@ class RepositoryIndexer:
                 "content_fingerprint": content_fingerprint,
                 "embedding_model": embedding_response.model,
                 "embedding_mode": embedding_response.mode.value,
+                "embedding_source_transfer_enabled": settings.embedding_source_transfer_enabled,
                 "chunker_version": CHUNKER_VERSION,
             },
         )
@@ -278,6 +281,7 @@ class RepositoryIndexer:
             run_id=None,
             texts=[query],
             agent_name="repo_retrieval",
+            allow_live=settings.embedding_source_transfer_enabled,
         )
         query_embedding = self._normalize_embedding(query_embedding_response.embeddings[0]) if query_embedding_response.embeddings else self._embed_text(query)
 
