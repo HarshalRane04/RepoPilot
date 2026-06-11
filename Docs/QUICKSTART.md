@@ -8,6 +8,8 @@ RepoPilot is safe-by-default: local mode can run without live GitHub writes or l
 
 - Docker Desktop or a compatible Docker daemon.
 - Git.
+- `make`.
+- `uv`, when running host-side eval/provider/developer targets.
 - Python 3.12 if running helper scripts outside containers.
 - Node.js 22 if running the web app outside containers.
 - A disposable GitHub repository for live smoke tests.
@@ -37,11 +39,23 @@ For non-local deployments, set `REPOPILOT_RUNTIME_SECRETS_KEY` through the host 
 
 ## 2. Start The Local Stack
 
+For source-build development:
+
 ```bash
 make up
 make migrate
 make sandbox-image
 ```
+
+For published GHCR images, set `REPOPILOT_IMAGE_TAG` in `.env` to a release tag such as `v1.0.0`, `latest`, or a digest-pinned override through `REPOPILOT_API_IMAGE`/`REPOPILOT_WEB_IMAGE`/`REPOPILOT_SANDBOX_IMAGE`, then run:
+
+```bash
+make ghcr-pull
+make ghcr-up
+make ghcr-migrate
+```
+
+The GHCR path uses `docker-compose.ghcr.yml` and does not bind-mount local source into API, worker, beat, or web containers.
 
 Open:
 

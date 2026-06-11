@@ -15,6 +15,7 @@ def write_valid_deployment_fixture(root: Path) -> None:
 
 ## Local Docker Compose
 docker compose up -d --build
+docker compose -f docker-compose.ghcr.yml pull
 alembic upgrade head
 
 ## Single-VM Deployment
@@ -54,6 +55,10 @@ Require eval and smoke proof.
                 "GITHUB_INSTALLATION_ID=",
                 "GITHUB_CLIENT_ID=",
                 "GITHUB_CLIENT_SECRET=",
+                "REPOPILOT_IMAGE_TAG=latest",
+                "REPOPILOT_API_IMAGE=",
+                "REPOPILOT_WEB_IMAGE=",
+                "REPOPILOT_SANDBOX_IMAGE=",
                 "MODEL_PROVIDER=mock",
                 "MODEL_NAME=mock-planner",
                 "MODEL_API_KEY=",
@@ -109,6 +114,42 @@ volumes:
   agent_artifacts:
   web_node_modules:
   web_next:
+""",
+        encoding="utf-8",
+    )
+    root.joinpath("docker-compose.ghcr.yml").write_text(
+        """
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+  redis:
+    image: redis:7-alpine
+  api:
+    image: ghcr.io/harshalrane04/repopilot-api:latest
+    volumes:
+      - ./.local/repopilot-secrets:/home/appuser/.repopilot
+      - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - agent_artifacts:/tmp/repopilot-artifacts
+  worker:
+    image: ghcr.io/harshalrane04/repopilot-api:latest
+    volumes:
+      - ./.local/repopilot-secrets:/home/appuser/.repopilot
+      - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - agent_artifacts:/tmp/repopilot-artifacts
+  beat:
+    image: ghcr.io/harshalrane04/repopilot-api:latest
+    volumes:
+      - ./.local/repopilot-secrets:/home/appuser/.repopilot
+      - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - agent_artifacts:/tmp/repopilot-artifacts
+  web:
+    image: ghcr.io/harshalrane04/repopilot-web:latest
+  sandbox-image:
+    image: ghcr.io/harshalrane04/repopilot-sandbox:latest
+volumes:
+  postgres_data:
+  agent_workspaces:
+  agent_artifacts:
 """,
         encoding="utf-8",
     )
@@ -173,6 +214,50 @@ def test_deployment_validator_reports_missing_release_artifacts(tmp_path: Path) 
 
     assert report.failed is True
     assert any(finding.check == "release_artifact" and finding.target == "Docs/eval-reports/v1-local-latest.md" for finding in report.findings)
+
+
+def test_deployment_validator_blocks_dev_only_ghcr_compose(tmp_path: Path) -> None:
+    write_valid_deployment_fixture(tmp_path)
+    tmp_path.joinpath("docker-compose.ghcr.yml").write_text(
+        """
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+  redis:
+    image: redis:7-alpine
+  api:
+    build: .
+    command: uvicorn app.main:app --reload
+    volumes:
+      - ./apps/api:/app/apps/api
+  worker:
+    image: ghcr.io/harshalrane04/repopilot-api:latest
+  beat:
+    image: ghcr.io/harshalrane04/repopilot-api:latest
+  web:
+    image: ghcr.io/harshalrane04/repopilot-web:latest
+    command: npm run dev
+    volumes:
+      - ./apps/web:/app/apps/web
+      - web_node_modules:/app/apps/web/node_modules
+      - web_next:/app/apps/web/.next
+  sandbox-image:
+    image: ghcr.io/harshalrane04/repopilot-sandbox:latest
+volumes:
+  postgres_data:
+  agent_workspaces:
+  agent_artifacts:
+  web_node_modules:
+  web_next:
+""",
+        encoding="utf-8",
+    )
+
+    report = DeploymentValidator(root=tmp_path).validate()
+
+    assert report.failed is True
+    assert any(finding.check == "ghcr_compose_release_boundary" and finding.target == "build:" for finding in report.findings)
+    assert any(finding.check == "ghcr_compose_release_boundary" and finding.target == "npm run dev" for finding in report.findings)
 
 
 def test_deployment_validator_requires_release_gifs(tmp_path: Path) -> None:

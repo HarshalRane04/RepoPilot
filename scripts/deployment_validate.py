@@ -22,6 +22,10 @@ REQUIRED_ENV_KEYS = {
     "GITHUB_INSTALLATION_ID",
     "GITHUB_CLIENT_ID",
     "GITHUB_CLIENT_SECRET",
+    "REPOPILOT_IMAGE_TAG",
+    "REPOPILOT_API_IMAGE",
+    "REPOPILOT_WEB_IMAGE",
+    "REPOPILOT_SANDBOX_IMAGE",
     "MODEL_PROVIDER",
     "MODEL_NAME",
     "MODEL_API_KEY",
@@ -113,6 +117,7 @@ class DeploymentValidator:
     def validate(self, *, check_runtime: bool = False) -> DeploymentValidationReport:
         report = DeploymentValidationReport(root=str(self.root))
         self.validate_compose(report)
+        self.validate_ghcr_compose(report)
         self.validate_env_example(report)
         self.validate_deployment_guide(report)
         self.validate_release_artifacts(report)
@@ -161,6 +166,30 @@ class DeploymentValidator:
                         )
                     )
 
+    def validate_ghcr_compose(self, report: DeploymentValidationReport) -> None:
+        compose = self.read_file("docker-compose.ghcr.yml", report, check="ghcr_compose_file")
+        if compose is None:
+            return
+        services = self.extract_mapping_keys(compose, section="services")
+        for service in sorted(REQUIRED_SERVICES.difference(services)):
+            report.findings.append(DeploymentFinding(check="ghcr_compose_service", status="failed", target=service, detail="Required released-image Compose service is missing."))
+        for image in ["repopilot-api", "repopilot-web", "repopilot-sandbox"]:
+            if f"ghcr.io/harshalrane04/{image}" not in compose:
+                report.findings.append(DeploymentFinding(check="ghcr_compose_image", status="failed", target=image, detail="Released-image Compose file must reference the documented GHCR image."))
+        forbidden_phrases = {
+            "build:": "Released-image Compose file must not build local source.",
+            "--reload": "Released-image Compose file must not run a reload development server.",
+            "npm run dev": "Released-image Compose file must not run the Next.js dev server.",
+            "./apps/api:/app/apps/api": "Released-image Compose file must not bind-mount API source.",
+            "./packages:/app/packages": "Released-image Compose file must not bind-mount package source.",
+            "./apps/web:/app/apps/web": "Released-image Compose file must not bind-mount web source.",
+            "web_node_modules": "Released-image Compose file must not use development web dependency volumes.",
+            "web_next": "Released-image Compose file must not use development web build volumes.",
+        }
+        for phrase, detail in forbidden_phrases.items():
+            if phrase in compose:
+                report.findings.append(DeploymentFinding(check="ghcr_compose_release_boundary", status="failed", target=phrase, detail=detail))
+
     def validate_env_example(self, report: DeploymentValidationReport) -> None:
         env_text = self.read_file(".env.example", report, check="env_example")
         if env_text is None:
@@ -180,7 +209,7 @@ class DeploymentValidator:
         headings = {line.removeprefix("## ").strip() for line in guide.splitlines() if line.startswith("## ")}
         for section in sorted(REQUIRED_GUIDE_SECTIONS.difference(headings)):
             report.findings.append(DeploymentFinding(check="deployment_guide_section", status="failed", target=section, detail="Required deployment guide section is missing."))
-        for phrase in ["docker compose up -d --build", "alembic upgrade head", "GITHUB_WRITES_ENABLED=false", "OTEL_EXPORTER_OTLP_ENDPOINT"]:
+        for phrase in ["docker compose up -d --build", "docker compose -f docker-compose.ghcr.yml pull", "alembic upgrade head", "GITHUB_WRITES_ENABLED=false", "OTEL_EXPORTER_OTLP_ENDPOINT"]:
             if phrase not in guide:
                 report.findings.append(DeploymentFinding(check="deployment_guide_content", status="failed", target=phrase, detail="Required deployment instruction is missing."))
 

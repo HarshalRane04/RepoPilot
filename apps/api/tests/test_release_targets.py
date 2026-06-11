@@ -59,6 +59,15 @@ def test_up_target_starts_compose_detached() -> None:
     assert "up -d --build" in body
 
 
+def test_ghcr_targets_use_released_image_compose_file() -> None:
+    text = makefile_text()
+
+    assert "COMPOSE_GHCR ?= $(COMPOSE) -f docker-compose.ghcr.yml" in text
+    assert "$(COMPOSE_GHCR) pull" in target_body(text, "ghcr-pull")
+    assert "$(COMPOSE_GHCR) up -d" in target_body(text, "ghcr-up")
+    assert "$(COMPOSE_GHCR) exec api alembic upgrade head" in target_body(text, "ghcr-migrate")
+
+
 def test_release_hygiene_strict_runs_without_warning_or_failure_placeholder_flags() -> None:
     body = target_body(makefile_text(), "release-hygiene-strict")
 

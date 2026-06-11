@@ -62,6 +62,7 @@ def test_release_workflow_uploads_local_evidence_bundle_before_images() -> None:
     workflow = ROOT.joinpath(".github/workflows/release.yml").read_text(encoding="utf-8")
 
     assert "workflow_dispatch:" in workflow
+    assert "publish_images:" in workflow
     assert "release-evidence:" in workflow
     assert "python -m repopilot_evals.report" in workflow
     assert 'if [[ "${GITHUB_REF}" != refs/tags/* ]]; then' in workflow
@@ -73,3 +74,12 @@ def test_release_workflow_uploads_local_evidence_bundle_before_images() -> None:
     assert "scripts/deployment_validate.py" in workflow
     assert "release-evidence-${{ github.run_id }}" in workflow
     assert "needs: release-evidence" in workflow
+    assert "docker/login-action@v3" in workflow
+    assert "docker/metadata-action@v5" in workflow
+    assert "docker/build-push-action@v6" in workflow
+    assert "ghcr.io/${owner_lc}/repopilot-api" in workflow
+    assert "ghcr.io/${owner_lc}/repopilot-web" in workflow
+    assert "ghcr.io/${owner_lc}/repopilot-sandbox" in workflow
+    assert "push: ${{ startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish_images == true) }}" in workflow
+    assert "release-images-${{ github.run_id }}" in workflow
+    assert "steps.api-build.outputs.digest" in workflow

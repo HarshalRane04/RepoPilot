@@ -23,6 +23,17 @@ docker compose exec api alembic upgrade head
 
 For local demos, `make init-local-env` writes git-ignored local-only values into `.env` and leaves live GitHub/model credentials blank. For live or production-like deployments, load secrets from a restricted `.env` outside source control or a secret manager; avoid placing live secrets directly in shell commands where they can be captured by shell history, process listings, or terminal logs.
 
+Released-image install path:
+
+```bash
+make init-local-env
+REPOPILOT_IMAGE_TAG=v1.0.0 docker compose -f docker-compose.ghcr.yml pull
+REPOPILOT_IMAGE_TAG=v1.0.0 docker compose -f docker-compose.ghcr.yml up -d
+docker compose -f docker-compose.ghcr.yml exec api alembic upgrade head
+```
+
+The GHCR Compose file pulls `ghcr.io/harshalrane04/repopilot-api`, `ghcr.io/harshalrane04/repopilot-web`, and `ghcr.io/harshalrane04/repopilot-sandbox` without source bind mounts or development server commands. For immutable production rollouts, set `REPOPILOT_API_IMAGE`, `REPOPILOT_WEB_IMAGE`, and `REPOPILOT_SANDBOX_IMAGE` to digest-pinned references from the release image evidence artifact.
+
 Health checks:
 
 ```bash
@@ -45,8 +56,8 @@ make deployment-smoke
    - `https://<host>/` or a dashboard subdomain to web port `3000` inside the container.
 4. Store `.env` outside source control with restrictive permissions, or use a host secret manager for live values.
    Set `REPOPILOT_RELEASE_PROFILE=production` for release candidates so readiness blocks demo-only local-record and fallback paths.
-5. Run `docker compose up -d --build`.
-6. Run `docker compose exec api alembic upgrade head`.
+5. For source builds, run `docker compose up -d --build`; for released images, run `docker compose -f docker-compose.ghcr.yml pull` and `docker compose -f docker-compose.ghcr.yml up -d`.
+6. Run `docker compose exec api alembic upgrade head` for source builds or `docker compose -f docker-compose.ghcr.yml exec api alembic upgrade head` for released images.
 7. Verify `/settings/readiness` before enabling writes.
 
 ## Managed Postgres And Redis
@@ -108,7 +119,7 @@ Do not back up transient run workspaces unless debugging an incident; they may c
 
 1. Set `GITHUB_WRITES_ENABLED=false`.
 2. Stop worker and beat if tasks are causing impact.
-3. Revert to the previous container image.
+3. Revert to the previous container image tag or digest. For GHCR deployments, prefer the previous digest from the `release-images-*` workflow artifact.
 4. Run Alembic downgrade only if the migration has an explicitly tested downgrade path.
 5. Re-enable services after `/health`, `/settings/readiness`, and a local smoke test pass.
 

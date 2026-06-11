@@ -77,6 +77,16 @@ For a step-by-step self-hosted install path, use [Docs/QUICKSTART.md](Docs/QUICK
    make up
    ```
 
+   To run published containers instead of source-building API/web images, set `REPOPILOT_IMAGE_TAG` in `.env` and use the GHCR targets:
+
+   ```bash
+   make ghcr-pull
+   make ghcr-up
+   make ghcr-migrate
+   ```
+
+   The released-image path uses `docker-compose.ghcr.yml` and pulls `ghcr.io/harshalrane04/repopilot-api`, `ghcr.io/harshalrane04/repopilot-web`, and `ghcr.io/harshalrane04/repopilot-sandbox`.
+
 3. Run migrations:
 
    ```bash

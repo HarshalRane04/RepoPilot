@@ -1,4 +1,5 @@
 COMPOSE ?= docker compose
+COMPOSE_GHCR ?= $(COMPOSE) -f docker-compose.ghcr.yml
 PYTHON ?= python3
 PROVIDER ?= openrouter
 MODEL ?= gemma-4-31b-it:free
@@ -7,7 +8,7 @@ API_KEY_ENV ?=
 BASE_URL ?=
 LOCAL_RUNTIME_SECRET_ENV = REPOPILOT_RUNTIME_SECRETS_KEY_PATH=.local/repopilot-secrets/runtime-secrets.key REPOPILOT_RUNTIME_SECRETS_STORE_PATH=.local/repopilot-secrets/runtime-secrets.json
 
-.PHONY: init-local-env up down logs migrate migration-verify api-test web-typecheck sandbox-image configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval provider-applied-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke credential-smoke credential-smoke-strict source-boundary-manifest readiness-snapshot security-scanner-snapshot security-scanner-snapshot-strict release-gifs release-hygiene release-hygiene-strict deployment-validate deployment-validate-strict deployment-smoke deployment-smoke-strict release-verify
+.PHONY: init-local-env up down logs migrate migration-verify api-test web-typecheck sandbox-image ghcr-config ghcr-pull ghcr-up ghcr-down ghcr-logs ghcr-migrate configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval provider-applied-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke credential-smoke credential-smoke-strict source-boundary-manifest readiness-snapshot security-scanner-snapshot security-scanner-snapshot-strict release-gifs release-hygiene release-hygiene-strict deployment-validate deployment-validate-strict deployment-smoke deployment-smoke-strict release-verify
 
 init-local-env:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/init_local_env.py
@@ -35,6 +36,24 @@ web-typecheck:
 
 sandbox-image:
 	$(COMPOSE) --profile tools build sandbox-image
+
+ghcr-config:
+	$(COMPOSE_GHCR) config --quiet
+
+ghcr-pull:
+	$(COMPOSE_GHCR) pull
+
+ghcr-up:
+	$(COMPOSE_GHCR) up -d
+
+ghcr-down:
+	$(COMPOSE_GHCR) down
+
+ghcr-logs:
+	$(COMPOSE_GHCR) logs -f
+
+ghcr-migrate:
+	$(COMPOSE_GHCR) exec api alembic upgrade head
 
 configure-runtime-secrets:
 	PYTHONDONTWRITEBYTECODE=1 $(LOCAL_RUNTIME_SECRET_ENV) $(PYTHON) scripts/configure_runtime_secrets.py

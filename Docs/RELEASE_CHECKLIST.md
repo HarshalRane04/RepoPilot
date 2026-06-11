@@ -27,6 +27,8 @@ RepoPilot v1.0 is release-ready only when local controls, credentialed GitHub pr
 - Deployment validation report is generated with `make deployment-validate`; the latest report lives at `Docs/release-artifacts/deployment-validation.md`.
 - Local runtime deployment smoke report is generated with `make deployment-smoke`; the latest report lives at `Docs/release-artifacts/deployment-runtime-smoke.md`.
 - Release workflow evidence uploads include deterministic eval, source-boundary, credential-smoke, and deployment-validation artifacts before image builds.
+- Release workflow image artifacts include GHCR image names, tags, source SHA, workflow URL, and API/web/sandbox digests.
+- GHCR packages are visible to intended installers, and a fresh host can run `make ghcr-pull`, `make ghcr-up`, and `make ghcr-migrate` with the selected release tag.
 - Strict release verification is run with `make release-verify` after credentials and runtime services are available; this gate must fail if credential smoke is blocked, runtime smoke fails, scanner blockers remain, or hygiene/deployment validation reports warnings or failures.
 
 ## Required Credentialed Evidence
@@ -73,6 +75,7 @@ make release-hygiene
 make release-gifs
 make deployment-validate
 make deployment-smoke
+REPOPILOT_IMAGE_TAG=v1.0.0 make ghcr-config
 ```
 
 Strict release gate after live credentials and Docker runtime are ready:
@@ -89,6 +92,7 @@ make release-verify
 - `apps/web/node_modules` and `apps/web/.next` may appear while the web service is running; they must be ignored Docker mount points backed by named volumes.
 - `.dockerignore` excludes local secrets, generated web artifacts, dependency folders, docs/images, and local tool artifacts.
 - Local `agent_artifacts` storage is either intentionally retained for review or governed by a documented cleanup/retention step before release packaging.
+- Released-image rollbacks use the previous GHCR digest from the `release-images-*` artifact, not an unverified mutable tag.
 - `README 2.md` removal is recorded in `Docs/SOURCE_BOUNDARY_DECISIONS.md`; no stale duplicate README remains in the source boundary.
 - A deliberate baseline commit exists before the v1.0 tag.
 
