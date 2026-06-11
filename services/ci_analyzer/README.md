@@ -1,6 +1,8 @@
 # CI Analyzer Service
 
-Status: service scaffold. Runtime implementation currently lives in `apps/api/app/services/ci_analyzer.py`; this directory is reserved for future extraction of GitHub Actions log retrieval and CI analysis workers.
+Status: scaffold only. This is a planned extraction boundary, not a separate deployable service in v1.
+
+Runtime implementation currently lives in `apps/api/app/services/ci_analyzer.py`; this directory is reserved for future extraction of GitHub Actions log retrieval and CI analysis workers.
 
 Phase 10 is implemented in `apps/api/app/services/ci_analyzer.py`, the `/prs/{pr_id}/ci` route, and PR-linked `workflow_run` webhook normalization.
 

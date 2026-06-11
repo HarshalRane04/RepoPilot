@@ -24,10 +24,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/repopilot-release-evidence/eval-reports
-          PYTHONDONTWRITEBYTECODE=1 python -m repopilot_evals.report \
-            --out-dir /tmp/repopilot-release-evidence/eval-reports \
-            --report-name v1-local-latest \
-            --allow-failed-gates
+          args=(
+            --out-dir /tmp/repopilot-release-evidence/eval-reports
+            --report-name v1-local-latest
+          )
+          if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+            args+=(--allow-failed-gates)
+          fi
+          PYTHONDONTWRITEBYTECODE=1 python -m repopilot_evals.report "${args[@]}"
       - name: Build source-boundary manifest
         run: |
           set -euo pipefail
@@ -38,10 +42,14 @@ jobs:
       - name: Build credential smoke summary
         run: |
           set -euo pipefail
-          PYTHONDONTWRITEBYTECODE=1 python scripts/credential_smoke.py \
-            --json-out /tmp/repopilot-release-evidence/release-artifacts/credential-smoke-summary.json \
-            --md-out /tmp/repopilot-release-evidence/release-artifacts/credential-smoke-summary.md \
-            --allow-blocked
+          args=(
+            --json-out /tmp/repopilot-release-evidence/release-artifacts/credential-smoke-summary.json
+            --md-out /tmp/repopilot-release-evidence/release-artifacts/credential-smoke-summary.md
+          )
+          if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+            args+=(--allow-blocked)
+          fi
+          PYTHONDONTWRITEBYTECODE=1 python scripts/credential_smoke.py "${args[@]}"
       - name: Validate deployment docs and topology
         run: |
           set -euo pipefail

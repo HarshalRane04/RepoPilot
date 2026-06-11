@@ -1,6 +1,8 @@
 # Agent Orchestrator Service
 
-Status: service scaffold. Runtime orchestration currently lives in `apps/api/app/services/`, the API routes, and the Celery worker; this directory is reserved for future extraction of a standalone orchestrator service.
+Status: scaffold only. This is a planned extraction boundary, not a separate deployable service in v1.
+
+Runtime orchestration currently lives in `apps/api/app/services/`, the API routes, and the Celery worker; this directory is reserved for future extraction of a standalone orchestrator service.
 
 The first persisted orchestration slice is implemented in `apps/api/app/services/planning.py`, `apps/api/app/services/implementation_agent.py`, and the `/issues`, `/plans`, and `/runs` routes.
 

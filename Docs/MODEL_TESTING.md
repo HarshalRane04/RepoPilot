@@ -76,16 +76,13 @@ make provider-planning-eval PROVIDER=google MODEL=gemini-2.5-pro TASK_COUNT=5
 
 ## Runtime Gateway Smoke
 
-To test the API model gateway locally, place provider settings in `.env`:
+To test the API model gateway locally, save provider settings through the dashboard Settings screen or encrypted runtime secret helper:
 
 ```bash
-MODEL_PROVIDER=openrouter
-MODEL_NAME=gemma-4-31b-it:free
-MODEL_API_KEY=...
-MODEL_BASE_URL=https://openrouter.ai/api/v1
+make configure-runtime-secrets
 ```
 
-Restart the API and open the dashboard settings page. The readiness panel should show the model gateway as configured only after a verification run records the selected provider and model. LLM traces should store provider, model, call mode, hashes, token/cost metadata when available, and redacted metadata only.
+Restart the API if it was already running, then open the dashboard settings page and run model verification. The readiness panel should show the model gateway as configured only after a verification run records the selected provider and model. LLM traces should store provider, model, call mode, hashes, token/cost metadata when available, and redacted metadata only.
 
 ## Guardrails
 

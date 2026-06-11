@@ -31,27 +31,44 @@ Subscribe to events:
 
 `issues`, RepoPilot `issue_comment` commands, and PR-linked `workflow_run` events are actively normalized. Other event types are safe to receive because unsupported events are stored and marked ignored by the worker.
 
-## Local Environment
+## Local Environment And Runtime Secrets
 
-Set these values in `.env` if you are not using the defaults:
+Use `.env` for local service wiring and non-secret defaults. Store live GitHub, OAuth, model, and session secrets through the dashboard Settings screen or RepoPilot's encrypted runtime secret store. Do not commit live credentials and do not paste them into public issues, PR comments, screenshots, or logs.
+
+For local Compose, the encrypted store lives under `.local/repopilot-secrets/` and is mounted into the API, worker, and beat containers at `/home/appuser/.repopilot`. The helper below prompts with hidden input for secret values and writes encrypted values locally:
+
+```bash
+make configure-runtime-secrets
+```
+
+The dashboard Settings screen writes to the same store. Use GitHub Actions repository secrets only for GitHub-hosted workflows that need provider keys, such as provider eval workflows.
+
+Set only local placeholders and non-secret toggles in `.env` if you are not using the defaults. The following values are local-only placeholders and must not be used for live smoke tests or production-like deployments:
 
 ```bash
 GITHUB_WEBHOOK_SECRET=change-me-local-dev
-GITHUB_APP_ID=<app-id>
-GITHUB_INSTALLATION_ID=<installation-id>
-GITHUB_APP_PRIVATE_KEY=<private-key-with-newlines-escaped-as-\n>
-GITHUB_PRIVATE_KEY_PATH=<path-to-private-key.pem>
-GITHUB_CLIENT_ID=<oauth-client-id>
-GITHUB_CLIENT_SECRET=<oauth-client-secret>
 GITHUB_OAUTH_CALLBACK_URL=http://localhost:8000/auth/github/callback
 WEB_APP_URL=http://localhost:3001
-SESSION_SECRET_KEY=<long-random-secret>
+SESSION_SECRET_KEY=change-me-session-secret
 MODEL_PROVIDER=mock
 MODEL_NAME=mock-planner
 MODEL_API_KEY=
 GITHUB_WRITES_ENABLED=false
 ENABLE_QUEUE_DISPATCH=true
 ```
+
+Save these values through Settings or `make configure-runtime-secrets` before live smoke tests:
+
+- `GITHUB_APP_ID`
+- `GITHUB_INSTALLATION_ID`
+- `GITHUB_APP_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_PATH`
+- `GITHUB_WEBHOOK_SECRET`
+- `GITHUB_CLIENT_ID`
+- `GITHUB_CLIENT_SECRET`
+- `SESSION_SECRET_KEY`
+- `MODEL_PROVIDER`
+- `MODEL_NAME`
+- `MODEL_API_KEY`
 
 Check readiness:
 

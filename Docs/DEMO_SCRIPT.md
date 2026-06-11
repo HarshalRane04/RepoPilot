@@ -53,7 +53,7 @@ pytest
 
 Run this only after the user supplies GitHub App credentials, an installation ID, and a disposable demo repository.
 
-1. Configure secrets through `.env` or the runtime secret store:
+1. Configure live secrets through the dashboard Settings screen or encrypted runtime secret store:
    - `GITHUB_APP_ID`
    - `GITHUB_INSTALLATION_ID`
    - `GITHUB_APP_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_PATH`
@@ -61,13 +61,13 @@ Run this only after the user supplies GitHub App credentials, an installation ID
    - `GITHUB_CLIENT_ID`
    - `GITHUB_CLIENT_SECRET`
    - `SESSION_SECRET_KEY`
-   - `GITHUB_WRITES_ENABLED=true`
-2. Verify installation-token creation through Settings or `/settings/github/app/verify`.
-3. Send a real GitHub issue event from the demo repository.
-4. Use `/repopilot status` and `/repopilot approve` comments to prove collaborator permission checks.
-5. Run an approved, low-risk issue through branch creation, commit creation, and draft PR creation.
-6. Confirm the draft PR body contains only stored evidence: plan, changed files, validation, security, CI status, trace/cost, and rollback notes.
-7. Disable `GITHUB_WRITES_ENABLED` and show that writes fail closed.
+2. Keep `GITHUB_WRITES_ENABLED=false` until read-only GitHub App verification, repository sync, webhook delivery, and model verification pass. Enable `GITHUB_WRITES_ENABLED=true` only for the disposable demo repository smoke test.
+3. Verify installation-token creation through Settings or `/settings/github/app/verify`.
+4. Send a real GitHub issue event from the demo repository.
+5. Use `/repopilot status` and `/repopilot approve` comments to prove collaborator permission checks.
+6. Run an approved, low-risk issue through branch creation, commit creation, and draft PR creation.
+7. Confirm the draft PR body contains only stored evidence: plan, changed files, validation, security, CI status, trace/cost, and rollback notes.
+8. Disable `GITHUB_WRITES_ENABLED` and show that writes fail closed.
 
 ## Recording Checklist
 

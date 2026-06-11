@@ -1,6 +1,8 @@
 # Security Scanner Service
 
-Status: service scaffold. Runtime implementation currently lives in `apps/api/app/services/security_scanner.py`; this directory is reserved for future extraction of Semgrep, dependency-audit, CodeQL, and secret-scanning adapters.
+Status: scaffold only. This is a planned extraction boundary, not a separate deployable service in v1.
+
+Runtime implementation currently lives in `apps/api/app/services/security_scanner.py`; this directory is reserved for future extraction of Semgrep, dependency-audit, CodeQL, and secret-scanning adapters.
 
 Phase 11 is implemented in `apps/api/app/services/security_scanner.py` and the `/runs/{run_id}/security-scan` route.
 

@@ -62,8 +62,8 @@ RepoPilot is not yet v1.0 release-ready. This candidate is a local, single-tenan
 
 ### Known Limitations
 
-- Real GitHub App write readiness is not production-proven until the user supplies credentials and a disposable demo repository for branch/commit/draft-PR smoke testing.
-- Live model and live embedding quality are not production-proven until provider keys are supplied and provider-backed planning, patch-attempt, retrieval, and applied-patch evals run.
+- Real GitHub App write readiness is not production-proven until credentials and a disposable demo repository prove branch/commit/draft-PR smoke testing.
+- One ad hoc live-provider prompt smoke produced redacted trace rows; this is connectivity evidence only, not provider-quality or production-readiness proof. Live model and live embedding quality are not production-proven until provider-backed planning, patch-attempt, retrieval, and applied-patch evals run.
 - Semgrep, dependency-audit, and CodeQL scanner paths are implemented locally, and the CodeQL workflow file is present. CI now uploads Semgrep/dependency-audit posture evidence, but release-grade CodeQL proof remains incomplete until a code-scanning-enabled repository produces SARIF/alert evidence.
 - Artifact storage currently uses local filesystem-backed Docker volume storage; production object storage, retention policy, and signed artifact retrieval are pending deployment work.
 - Full browser visual QA remains partially pending: core static screenshots and local visual-flow GIFs are captured, but live credentialed write/CI states still need release captures.

@@ -6,7 +6,7 @@ Use this handoff when you are ready to prove the live GitHub/model paths.
 
 ## Local Runtime Secret Store
 
-For local testing, store real credentials in RepoPilot's encrypted runtime secret store, not in `.env` and not in GitHub Actions. The local store defaults to:
+For local testing, store real credentials in RepoPilot's encrypted runtime secret store, not in `.env`. Use GitHub Actions repository secrets only for GitHub-hosted workflows that need provider credentials. The local store defaults to:
 
 | File | Purpose |
 |---|---|

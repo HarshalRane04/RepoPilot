@@ -33,6 +33,21 @@ The controlling execution idea is:
 build the control plane first -> prove safe planning -> prove safe patching -> prove real GitHub writes -> prove quality with evals -> package release evidence
 ```
 
+## June 11 Open-Source Production Readiness Sprint
+
+The next planning layer for making RepoPilot open-source ready by Sunday, June 14, 2026 is captured in `Docs/PRODUCTION_READINESS_PLAN_2026-06-11.md`.
+
+That plan narrows this ledger into a release-candidate path focused on:
+
+- Safe first-run installation from GitHub.
+- Runtime-secret-only credential handling.
+- Credentialed GitHub App and model-provider proof.
+- Strict release gates that fail on blocked smoke evidence.
+- Dead/scaffold feature decisions before public release.
+- Security, privacy, dashboard, and agent-harness evidence required before production claims.
+
+The current conclusion is that RepoPilot is a strong local control plane and a credible self-hosted release candidate once credentialed proof is captured, but it is not yet production `v1.0.0` until live GitHub write smoke, provider-backed evals, refreshed runtime smoke, and strict release gates pass.
+
 ---
 
 ## Current-State Evidence

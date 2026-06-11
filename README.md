@@ -61,20 +61,22 @@ RepoPilot is designed around these invariants:
 
 ## Local Start
 
-1. Copy the environment template and set required secrets:
+For a step-by-step self-hosted install path, use [Docs/QUICKSTART.md](Docs/QUICKSTART.md). The short path is:
+
+1. Copy the environment template for local service wiring:
 
    ```bash
    cp .env.example .env
    ```
 
-   At minimum set:
+   For local development, set local-only placeholder values for:
 
    - `POSTGRES_PASSWORD`
    - `REDIS_PASSWORD`
    - `GITHUB_WEBHOOK_SECRET`
    - `SESSION_SECRET_KEY`
 
-   For a credentialed GitHub App smoke test, also set `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, and either `GITHUB_APP_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_PATH`. Keep `GITHUB_WRITES_ENABLED=false` until `/settings/readiness` reports `github_mode=read_only_verified` and a disposable demo repository has passed the write smoke test.
+   Treat real database, Redis, webhook, session, OAuth, GitHub App, and model values as secrets. For a credentialed GitHub App smoke test, save `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_PATH`, OAuth credentials, and model-provider keys through the dashboard Settings screen or `make configure-runtime-secrets`. Keep `GITHUB_WRITES_ENABLED=false` until `/settings/readiness` reports `github_mode=read_only_verified` and a disposable demo repository has passed the write smoke test.
 
 2. Start the local stack:
 
@@ -115,6 +117,12 @@ make security-scanner-snapshot
 make release-hygiene
 make deployment-validate
 make deployment-smoke
+```
+
+After live credentials and runtime services are configured, the strict release gate is:
+
+```bash
+make release-verify
 ```
 
 For live model testing from GitHub, add the provider key as a repository secret and run the manual **Provider Planning Eval** workflow. See [Docs/MODEL_TESTING.md](Docs/MODEL_TESTING.md).

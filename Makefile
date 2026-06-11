@@ -7,7 +7,7 @@ API_KEY_ENV ?=
 BASE_URL ?=
 LOCAL_RUNTIME_SECRET_ENV = REPOPILOT_RUNTIME_SECRETS_KEY_PATH=.local/repopilot-secrets/runtime-secrets.key REPOPILOT_RUNTIME_SECRETS_STORE_PATH=.local/repopilot-secrets/runtime-secrets.json
 
-.PHONY: up down logs migrate migration-verify api-test web-typecheck sandbox-image configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval provider-applied-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke credential-smoke source-boundary-manifest readiness-snapshot security-scanner-snapshot release-gifs release-hygiene deployment-validate deployment-smoke
+.PHONY: up down logs migrate migration-verify api-test web-typecheck sandbox-image configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval provider-applied-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke credential-smoke credential-smoke-strict source-boundary-manifest readiness-snapshot security-scanner-snapshot security-scanner-snapshot-strict release-gifs release-hygiene release-hygiene-strict deployment-validate deployment-validate-strict deployment-smoke deployment-smoke-strict release-verify
 
 up:
 	$(COMPOSE) up --build
@@ -63,6 +63,9 @@ github-oauth-smoke:
 credential-smoke:
 	PYTHONDONTWRITEBYTECODE=1 $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python scripts/credential_smoke.py --allow-blocked
 
+credential-smoke-strict:
+	PYTHONDONTWRITEBYTECODE=1 $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python scripts/credential_smoke.py
+
 source-boundary-manifest:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/source_boundary_manifest.py
 
@@ -72,14 +75,28 @@ readiness-snapshot:
 security-scanner-snapshot:
 	PYTHONDONTWRITEBYTECODE=1 SEMGREP_ENABLED=true DEPENDENCY_AUDIT_ENABLED=true CODEQL_ENABLED=true uv run --with semgrep --with pip-audit python scripts/security_scanner_snapshot.py --allow-warnings --allow-blockers
 
+security-scanner-snapshot-strict:
+	PYTHONDONTWRITEBYTECODE=1 SEMGREP_ENABLED=true DEPENDENCY_AUDIT_ENABLED=true CODEQL_ENABLED=true uv run --with semgrep --with pip-audit python scripts/security_scanner_snapshot.py
+
 release-gifs:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/release_gifs.py
 
 release-hygiene:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/release_hygiene.py --json-out Docs/release-artifacts/source-boundary-hygiene.json --md-out Docs/release-artifacts/source-boundary-hygiene.md --allow-warnings --allow-failures
 
+release-hygiene-strict:
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/release_hygiene.py --json-out Docs/release-artifacts/source-boundary-hygiene.json --md-out Docs/release-artifacts/source-boundary-hygiene.md
+
 deployment-validate:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/deployment_validate.py --json-out Docs/release-artifacts/deployment-validation.json --md-out Docs/release-artifacts/deployment-validation.md --allow-warnings --allow-failures
 
+deployment-validate-strict:
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/deployment_validate.py --json-out Docs/release-artifacts/deployment-validation.json --md-out Docs/release-artifacts/deployment-validation.md
+
 deployment-smoke:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/deployment_validate.py --check-runtime --json-out Docs/release-artifacts/deployment-runtime-smoke.json --md-out Docs/release-artifacts/deployment-runtime-smoke.md --allow-warnings --allow-failures
+
+deployment-smoke-strict:
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/deployment_validate.py --check-runtime --json-out Docs/release-artifacts/deployment-runtime-smoke.json --md-out Docs/release-artifacts/deployment-runtime-smoke.md
+
+release-verify: source-boundary-manifest release-hygiene-strict credential-smoke-strict security-scanner-snapshot-strict deployment-validate-strict deployment-smoke-strict

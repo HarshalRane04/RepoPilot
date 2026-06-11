@@ -18,7 +18,7 @@ from app.db.models import AgentRun, Installation, Issue, PullRequest, Repository
 from app.db.session import get_db
 from app.services.audit import record_audit
 from app.services.auth import CurrentUser, get_current_user
-from app.services.authorization import require_run_access
+from app.services.authorization import require_run_access, require_security_finding_access
 from app.services.github_app import GitHubApiClient, GitHubIntegrationError
 from app.services.security_scanner import SecurityScanner
 
@@ -173,18 +173,23 @@ async def fetch_codeql_alerts(
 @router.get("/findings", response_model=list[SecurityFindingDetailResponse])
 async def list_security_findings(
     limit: int = Query(default=200, ge=1, le=500),
+    current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, object]]:
     result = await db.execute(select(SecurityFinding).limit(limit))
     findings = result.scalars().all()
+    for finding in findings:
+        await require_run_access(db, run_id=finding.run_id, current_user=current_user, action="read")
     return [await _finding_response(finding, db) for finding in findings]
 
 
 @router.get("/findings/{finding_id}", response_model=SecurityFindingDetailResponse)
-async def get_security_finding(finding_id: UUID, db: AsyncSession = Depends(get_db)) -> dict[str, object]:
-    finding = await db.get(SecurityFinding, finding_id)
-    if finding is None:
-        raise HTTPException(status_code=404, detail="Security finding not found")
+async def get_security_finding(
+    finding_id: UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    finding = await require_security_finding_access(db, finding_id=finding_id, current_user=current_user, action="read")
     return await _finding_response(finding, db)
 
 

@@ -20,6 +20,8 @@ POSTGRES_PASSWORD=<password> REDIS_PASSWORD=<password> GITHUB_WEBHOOK_SECRET=<se
 docker compose exec api alembic upgrade head
 ```
 
+For local demos, use placeholder values from `.env.example`. For live or production-like deployments, load secrets from a restricted `.env` outside source control or a secret manager; avoid placing live secrets directly in shell commands where they can be captured by shell history, process listings, or terminal logs.
+
 Health checks:
 
 ```bash
@@ -40,7 +42,7 @@ make deployment-smoke
    - `https://<host>/webhooks/github` to API port `8000`.
    - `https://<host>/auth/github/callback` to API port `8000`.
    - `https://<host>/` or a dashboard subdomain to web port `3000` inside the container.
-4. Store `.env` outside source control with restrictive permissions.
+4. Store `.env` outside source control with restrictive permissions, or use a host secret manager for live values.
 5. Run `docker compose up -d --build`.
 6. Run `docker compose exec api alembic upgrade head`.
 7. Verify `/settings/readiness` before enabling writes.

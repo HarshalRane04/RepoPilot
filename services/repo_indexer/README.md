@@ -1,6 +1,8 @@
 # Repository Indexer Service
 
-Status: service scaffold. Runtime implementation currently lives in `apps/api/app/services/repo_indexer.py`; this directory is reserved for future service extraction once indexing workers are split from the API process.
+Status: scaffold only. This is a planned extraction boundary, not a separate deployable service in v1.
+
+Runtime implementation currently lives in `apps/api/app/services/repo_indexer.py`; this directory is reserved for future service extraction once indexing workers are split from the API process.
 
 Phase 5 is implemented in `apps/api/app/services/repo_indexer.py`.
 

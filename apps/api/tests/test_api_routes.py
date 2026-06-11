@@ -42,7 +42,8 @@ def test_health_route() -> None:
     assert response.json()["status"] == "ok"
 
 
-def test_protected_route_requires_authenticated_user() -> None:
+def test_protected_route_requires_authenticated_user(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "dev_header_auth_enabled", False)
     client = TestClient(app)
 
     response = client.get("/settings/readiness")
@@ -474,6 +475,19 @@ def test_settings_readiness_route_exposes_production_gates(monkeypatch) -> None:
     assert "production_ready" in body
     assert body["local_record_mode"] is True
     assert any(item["name"] == "GitHub App installation credentials" for item in body["integrations"])
+
+
+def test_eval_run_requires_admin_or_owner_role(monkeypatch) -> None:
+    enable_dev_header_auth(monkeypatch)
+    client = TestClient(app)
+
+    response = client.post(
+        "/evals/run",
+        json={"benchmark_version": "v1-local", "task_count": 1},
+        headers=authenticated({"X-RepoPilot-Role": "viewer"}),
+    )
+
+    assert response.status_code == 403
 
 
 def test_webhook_route_rejects_bad_signature() -> None:

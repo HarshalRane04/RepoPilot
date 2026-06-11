@@ -1,5 +1,7 @@
 # Sandbox Runner Service
 
+Status: scaffold only. This is a planned extraction boundary, not a separate deployable service in v1.
+
 Phase 8 is implemented by `apps/api/app/services/sandbox.py`, the `/runs/{run_id}/sandbox` route, and this local sandbox image.
 
 Current scope:

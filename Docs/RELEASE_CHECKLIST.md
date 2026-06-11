@@ -26,6 +26,7 @@ RepoPilot v1.0 is release-ready only when local controls, credentialed GitHub pr
 - Deployment validation report is generated with `make deployment-validate`; the latest report lives at `Docs/release-artifacts/deployment-validation.md`.
 - Local runtime deployment smoke report is generated with `make deployment-smoke`; the latest report lives at `Docs/release-artifacts/deployment-runtime-smoke.md`.
 - Release workflow evidence uploads include deterministic eval, source-boundary, credential-smoke, and deployment-validation artifacts before image builds.
+- Strict release verification is run with `make release-verify` after credentials and runtime services are available; this gate must fail if credential smoke is blocked, runtime smoke fails, scanner blockers remain, or hygiene/deployment validation reports warnings or failures.
 
 ## Required Credentialed Evidence
 
@@ -69,6 +70,12 @@ make release-hygiene
 make release-gifs
 make deployment-validate
 make deployment-smoke
+```
+
+Strict release gate after live credentials and Docker runtime are ready:
+
+```bash
+make release-verify
 ```
 
 ## Hygiene Gates
