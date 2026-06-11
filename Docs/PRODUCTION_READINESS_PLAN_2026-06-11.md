@@ -59,6 +59,9 @@ These are the blockers that prevent "anyone can install and use this for actual 
 | Security findings | Security finding list/detail reads now resolve run access before returning finding details. | The current single-tenant object model is still role-based; deeper per-installation authorization can follow live GitHub smoke. |
 | Release workflow | Manual release workflow dispatch remains diagnostic, but tag-triggered runs now fail on failed eval gates or blocked credential smoke. | Tag release still needs credentialed GitHub/model evidence before it can pass. |
 | Service scaffolds | `services/*/README.md` now labels each directory as scaffold-only/planned extraction, not a separate deployable service in v1. | Deeper service extraction remains future architecture work. |
+| Release profile | `REPOPILOT_RELEASE_PROFILE=production` makes readiness block local-record GitHub write mode instead of treating disabled writes as acceptable demo posture. | Credentialed write smoke is still required before a production profile can be considered ready. |
+| Runtime secret key | Non-local readiness now requires `REPOPILOT_RUNTIME_SECRETS_KEY` or an external deployment secret manager instead of accepting the local managed key file. | Secret rotation and backup remain deployment-owner responsibilities. |
+| Model fallback | Non-local model calls now fail closed when `ALLOW_MODEL_FALLBACK=false`; deterministic fallback remains available for local/offline demos. | Provider-backed planning, retrieval, patch, and applied-patch evals still need live credentials and published thresholds. |
 
 ## Four-Day Release-Candidate Sprint
 
@@ -100,7 +103,7 @@ Tasks:
 3. Verify GitHub App installation-token creation.
 4. Save model provider credentials through runtime secrets.
 5. Verify selected provider/model.
-6. Run `make credential-smoke` in strict mode after secrets are present.
+6. Set `REPOPILOT_RELEASE_PROFILE=production`, provide `REPOPILOT_RUNTIME_SECRETS_KEY` through the deployment secret manager, keep `ALLOW_MODEL_FALLBACK=false`, and run `make credential-smoke` in strict mode after secrets are present.
 7. Sync a disposable demo repository from the GitHub installation.
 8. Deliver a signed issue webhook and verify it is stored, queued, normalized, and visible in Activity.
 

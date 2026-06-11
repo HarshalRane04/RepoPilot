@@ -23,6 +23,8 @@ cp .env.example .env
 
 Edit `.env` only for local service wiring, callback URLs, feature toggles, and local-only placeholder passwords. Treat real database, Redis, webhook, session, OAuth, GitHub App, and model values as secrets. Do not commit `.env`.
 
+Keep `REPOPILOT_RELEASE_PROFILE=oss-demo` for local portfolio demos. Switch to `REPOPILOT_RELEASE_PROFILE=production` only when preparing a credentialed release candidate; production profile blocks local-record GitHub write mode, managed-file runtime encryption keys, and non-local model fallback from being reported as ready.
+
 For live GitHub/model credentials, use the dashboard Settings screen or the encrypted runtime secret helper:
 
 ```bash
@@ -30,6 +32,8 @@ make configure-runtime-secrets
 ```
 
 The local encrypted store is `.local/repopilot-secrets/`, which is git-ignored and bind-mounted into the API, worker, and beat containers.
+
+For non-local deployments, set `REPOPILOT_RUNTIME_SECRETS_KEY` through the host secret manager. The managed key file is intended for local development only.
 
 ## 2. Start The Local Stack
 
@@ -95,6 +99,8 @@ issue -> triage -> retrieve context -> generate plan -> human approval -> implem
 ```
 
 Turn write mode back off after the smoke test unless continuing controlled validation.
+
+Keep `ALLOW_MODEL_FALLBACK=false` outside local development. Local mode can use deterministic fallback for repeatable tests, but production should fail closed when a live provider is missing, unreachable, or unsupported.
 
 ## 6. Release Verification
 

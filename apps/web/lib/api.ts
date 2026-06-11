@@ -110,6 +110,7 @@ export type IntegrationStatus = {
 
 export type ReadinessResponse = {
   environment: string;
+  release_profile: string;
   production_ready: boolean;
   github_writes_enabled: boolean;
   local_record_mode: boolean;

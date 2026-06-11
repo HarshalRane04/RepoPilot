@@ -35,6 +35,8 @@ The web service bind-mounts `apps/web` for local iteration and uses Docker named
 
 Runtime secrets entered through the dashboard are encrypted under `.local/repopilot-secrets`, which Docker Compose bind-mounts to `/home/appuser/.repopilot` for `api`, `worker`, and `beat`. Keep this directory out of git; it is intentionally ignored and excluded from the Docker build context.
 
+Local mode may use the managed Fernet key file generated under `.local/repopilot-secrets`. Non-local and release-candidate deployments must provide `REPOPILOT_RUNTIME_SECRETS_KEY` through the host secret manager so `/settings/readiness` does not treat the deployment as using a local-only key.
+
 Build the sandbox image used by the default Docker backend:
 
 ```bash
@@ -63,6 +65,8 @@ Stored records include artifact type, storage backend, storage key, URI, SHA-256
 
 The repository includes `.env.example` with placeholders for GitHub App, OAuth, model, observability, and security-tool settings. Local mode is expected to show readiness blockers until real values are provided.
 
+Use `REPOPILOT_RELEASE_PROFILE=oss-demo` for local demos and `REPOPILOT_RELEASE_PROFILE=production` for release candidates. Production profile turns local-record GitHub write mode into a readiness blocker. Keep `ALLOW_MODEL_FALLBACK=false` outside local development so live-provider failures fail closed.
+
 Use `Docs/CREDENTIAL_HANDOFF.md` when you are ready to collect live GitHub/model inputs and run the credentialed smoke sequence.
 
 Do not set `GITHUB_WRITES_ENABLED=true` until all of these are configured for a demo repository:
@@ -87,6 +91,8 @@ Readiness modes to check before live operation:
 - `model_mode=mock_model`: deterministic local model mode.
 - `model_mode=live_model_unverified`: provider key is configured but provider verification has not passed.
 - `model_mode=live_model_verified`: provider verification passed for the configured provider/model.
+- `Runtime secret key` integration mode `managed_file_key_nonlocal`: a non-local deployment is still relying on the local managed key file and must set `REPOPILOT_RUNTIME_SECRETS_KEY`.
+- `Model fallback policy` integration mode `fallback_enabled_nonlocal`: deterministic fallback is enabled outside local mode and must be disabled before production claims.
 
 ## Webhook Smoke Test
 

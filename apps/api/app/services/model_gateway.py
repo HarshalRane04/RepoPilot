@@ -54,6 +54,8 @@ class ModelGateway:
         provider = provider_by_id(config.model_provider)
         should_mock = config.model_provider == "mock" or not config.model_api_key or provider is None
         if should_mock:
+            if config.model_provider != "mock" and not _model_fallback_allowed(config):
+                raise RuntimeError("Live model provider is not fully configured and model fallback is disabled.")
             response = self._mock_completion(
                 model=config.model_name,
                 prompt_hash=prompt_hash,
@@ -76,6 +78,7 @@ class ModelGateway:
                 timeout_seconds=config.model_request_timeout_seconds,
                 max_retries=config.model_request_max_retries,
                 retry_backoff_seconds=config.model_request_retry_backoff_seconds,
+                allow_fallback=_model_fallback_allowed(config),
             )
 
         await self._record_trace(
@@ -146,6 +149,8 @@ class ModelGateway:
         embedding_provider = provider_by_id(config.embedding_provider)
         should_mock = config.embedding_provider == "mock" or not config.model_api_key or embedding_provider is None
         if should_mock:
+            if config.embedding_provider != "mock" and not _model_fallback_allowed(config):
+                raise RuntimeError("Live embedding provider is not fully configured and model fallback is disabled.")
             response = EmbeddingResponse(
                 embeddings=[self._mock_embedding(text, dimensions=dimensions) for text in texts],
                 provider=config.embedding_provider,
@@ -169,6 +174,7 @@ class ModelGateway:
                 timeout_seconds=config.model_request_timeout_seconds,
                 max_retries=config.model_request_max_retries,
                 retry_backoff_seconds=config.model_request_retry_backoff_seconds,
+                allow_fallback=_model_fallback_allowed(config),
             )
         await self._record_trace(
             db,
@@ -208,9 +214,12 @@ class ModelGateway:
         timeout_seconds: int,
         max_retries: int,
         retry_backoff_seconds: float,
+        allow_fallback: bool = True,
     ) -> EmbeddingResponse:
         openai_compatible = provider_id in {"openai", "mistral", "groq", "xai", "deepseek", "perplexity", "together", "cerebras"}
         if not openai_compatible:
+            if not allow_fallback:
+                raise RuntimeError(f"{provider_id} does not support live embeddings and model fallback is disabled.")
             return EmbeddingResponse(
                 embeddings=[self._mock_embedding(text, dimensions=dimensions) for text in texts],
                 provider=provider_id,
@@ -231,7 +240,9 @@ class ModelGateway:
                     max_retries=max_retries,
                     retry_backoff_seconds=retry_backoff_seconds,
                 )
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            if not allow_fallback:
+                raise RuntimeError(f"Provider embedding call failed and model fallback is disabled: {exc.__class__.__name__}.") from exc
             return EmbeddingResponse(
                 embeddings=[self._mock_embedding(text, dimensions=dimensions) for text in texts],
                 provider=provider_id,
@@ -311,8 +322,11 @@ class ModelGateway:
         timeout_seconds: int,
         max_retries: int,
         retry_backoff_seconds: float,
+        allow_fallback: bool = True,
     ) -> LLMResponse:
         if provider_id == "cohere":
+            if not allow_fallback:
+                raise RuntimeError(f"{provider_id} requires a provider-specific live adapter and model fallback is disabled.")
             return self._fallback_completion(model=model, prompt_hash=prompt_hash, started=started, reason=f"{provider_id} requires a provider-specific live adapter; deterministic fallback was used.")
         try:
             request = _completion_request(
@@ -335,6 +349,8 @@ class ModelGateway:
                     retry_backoff_seconds=retry_backoff_seconds,
                 )
         except httpx.HTTPError as exc:
+            if not allow_fallback:
+                raise RuntimeError(f"Provider call failed and model fallback is disabled: {exc.__class__.__name__}.") from exc
             return self._fallback_completion(model=model, prompt_hash=prompt_hash, started=started, reason=f"Provider call failed: {exc.__class__.__name__}.")
 
         payload = response.json()
@@ -424,6 +440,12 @@ class ModelGateway:
 def re_split_words(text: str) -> list[str]:
     cleaned = "".join(char.lower() if char.isalnum() or char == "_" else " " for char in text)
     return cleaned.split()
+
+
+def _model_fallback_allowed(config: Any) -> bool:
+    return bool(getattr(config, "allow_model_fallback", False)) or (
+        str(getattr(config, "environment", "")).strip().lower() == "local"
+    )
 
 
 async def _post_json_with_retries(

@@ -619,6 +619,7 @@ class RuntimeReadiness(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     environment: str
+    release_profile: str = "oss-demo"
     production_ready: bool
     github_writes_enabled: bool
     local_record_mode: bool

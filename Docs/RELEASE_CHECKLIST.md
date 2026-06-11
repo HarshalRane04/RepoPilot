@@ -19,6 +19,7 @@ RepoPilot v1.0 is release-ready only when local controls, credentialed GitHub pr
 - Fixture-backed eval report contains at least 20 tasks with per-task outcomes plus observed plan-quality, context-precision, patch-quality, human-edit-distance, and provider-comparison gate status. The local baseline lives at `Docs/eval-reports/v1-local-latest.md` and can be regenerated with `make eval-report`.
 - Source-boundary manifest is generated with `make source-boundary-manifest`; the latest manifest lives at `Docs/release-artifacts/source-boundary-manifest.md`.
 - Credential readiness snapshot is generated with `make readiness-snapshot`; the latest snapshot lives at `Docs/release-artifacts/credential-readiness-snapshot.md`.
+- Release readiness is checked with `REPOPILOT_RELEASE_PROFILE=production`; this profile must not report ready while GitHub write mode is disabled, while the runtime secret store uses the local managed key file, or while model fallback is enabled outside local mode.
 - Aggregate credential smoke summary is generated with `make credential-smoke`; the latest summary lives at `Docs/release-artifacts/credential-smoke-summary.md`.
 - Security scanner posture snapshot is generated with `make security-scanner-snapshot`; the latest snapshot lives at `Docs/release-artifacts/security-scanner-snapshot.md`.
 - Source-boundary hygiene report is generated with `make release-hygiene`; the latest report lives at `Docs/release-artifacts/source-boundary-hygiene.md`.
@@ -33,6 +34,8 @@ RepoPilot v1.0 is release-ready only when local controls, credentialed GitHub pr
 - GitHub App installation-token verification succeeds.
 - Live credential collection follows `Docs/CREDENTIAL_HANDOFF.md`.
 - `make credential-smoke` passes after runtime secrets are saved, proving GitHub OAuth, GitHub App, and model-provider smoke gates together.
+- `REPOPILOT_RUNTIME_SECRETS_KEY` is supplied by the deployment secret manager, not the local managed key file.
+- `ALLOW_MODEL_FALLBACK=false` for non-local release candidates so missing, failing, or unsupported live model providers fail closed.
 - Repository sync uses a real installation.
 - `/repopilot status` and `/repopilot approve` enforce collaborator permissions.
 - A disposable demo issue produces a real branch, commit, and draft PR.

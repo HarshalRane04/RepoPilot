@@ -43,6 +43,7 @@ make deployment-smoke
    - `https://<host>/auth/github/callback` to API port `8000`.
    - `https://<host>/` or a dashboard subdomain to web port `3000` inside the container.
 4. Store `.env` outside source control with restrictive permissions, or use a host secret manager for live values.
+   Set `REPOPILOT_RELEASE_PROFILE=production` for release candidates so readiness blocks demo-only local-record and fallback paths.
 5. Run `docker compose up -d --build`.
 6. Run `docker compose exec api alembic upgrade head`.
 7. Verify `/settings/readiness` before enabling writes.
@@ -71,8 +72,10 @@ Never commit live secrets. Required runtime secrets include:
 - `GITHUB_CLIENT_ID`
 - `GITHUB_CLIENT_SECRET`
 - `MODEL_API_KEY`
+- `REPOPILOT_RUNTIME_SECRETS_KEY`
 
 Keep `GITHUB_WRITES_ENABLED=false` until credential verification, demo-repo write smoke, validation gates, and security gates pass.
+Keep `ALLOW_MODEL_FALLBACK=false` outside local development so provider outages or unsupported adapters fail closed instead of creating deterministic mock-like evidence.
 
 ## Storage And Cleanup
 

@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     environment: str = Field(default="local", alias="REPOPILOT_ENV")
+    release_profile: str = Field(default="oss-demo", alias="REPOPILOT_RELEASE_PROFILE")
     api_host: str = Field(default="0.0.0.0", alias="REPOPILOT_API_HOST")
     api_port: int = Field(default=8000, alias="REPOPILOT_API_PORT")
 
@@ -68,6 +69,7 @@ class Settings(BaseSettings):
     model_request_timeout_seconds: int = Field(default=60, alias="MODEL_REQUEST_TIMEOUT_SECONDS")
     model_request_max_retries: int = Field(default=1, alias="MODEL_REQUEST_MAX_RETRIES")
     model_request_retry_backoff_seconds: float = Field(default=0.5, alias="MODEL_REQUEST_RETRY_BACKOFF_SECONDS")
+    allow_model_fallback: bool = Field(default=False, alias="ALLOW_MODEL_FALLBACK")
     embedding_provider: str = Field(default="mock", alias="EMBEDDING_PROVIDER")
     embedding_model: str = Field(default="mock-embedding", alias="EMBEDDING_MODEL")
     embedding_dimensions: int = Field(default=1536, alias="EMBEDDING_DIMENSIONS")

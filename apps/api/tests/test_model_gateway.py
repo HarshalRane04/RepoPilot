@@ -6,7 +6,7 @@ from uuid import uuid4
 import httpx
 import pytest
 from pydantic import BaseModel
-from repopilot_contracts import LLMCallMode
+from repopilot_contracts import LLMCallMode, TokenUsage
 from repopilot_llm_client import provider_catalog as package_provider_catalog
 
 from app.core.config import settings
@@ -345,6 +345,58 @@ def test_provider_retry_helper_caps_configured_retry_count() -> None:
 
     assert _bounded_retry_count(99) == 3
     assert client.calls == 4
+
+
+def test_model_gateway_blocks_completion_fallback_when_disabled(monkeypatch) -> None:
+    async def fake_post_json_with_retries(_client, **_kwargs) -> FakeProviderResponse:
+        raise httpx.TransportError("provider unavailable")
+
+    monkeypatch.setattr("app.services.model_gateway._post_json_with_retries", fake_post_json_with_retries)
+
+    with pytest.raises(RuntimeError, match="model fallback is disabled"):
+        asyncio.run(
+            ModelGateway()._complete_live_or_fallback(
+                provider_id="openai",
+                model="gpt-5.5",
+                api_key="sk-test",
+                base_url="https://api.openai.com",
+                prompt_hash="prompt-hash",
+                started=0.0,
+                system_prompt="Return JSON.",
+                user_prompt="Plan a patch.",
+                temperature=0.0,
+                max_tokens=1024,
+                timeout_seconds=10,
+                max_retries=0,
+                retry_backoff_seconds=0,
+                allow_fallback=False,
+            )
+        )
+
+
+def test_model_gateway_blocks_embedding_fallback_when_disabled(monkeypatch) -> None:
+    async def fake_post_json_with_retries(_client, **_kwargs) -> FakeProviderResponse:
+        raise httpx.TransportError("provider unavailable")
+
+    monkeypatch.setattr("app.services.model_gateway._post_json_with_retries", fake_post_json_with_retries)
+
+    with pytest.raises(RuntimeError, match="model fallback is disabled"):
+        asyncio.run(
+            ModelGateway()._embed_live_or_fallback(
+                provider_id="openai",
+                model="text-embedding-3-small",
+                api_key="sk-test",
+                base_url="https://api.openai.com",
+                texts=["index this"],
+                dimensions=4,
+                started=0.0,
+                timeout_seconds=10,
+                max_retries=0,
+                retry_backoff_seconds=0,
+                fallback_tokens=TokenUsage(prompt=2, completion=0, total=2),
+                allow_fallback=False,
+            )
+        )
 
 
 def test_model_gateway_enforces_run_budget(monkeypatch) -> None:

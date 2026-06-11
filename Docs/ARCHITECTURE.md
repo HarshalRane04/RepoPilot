@@ -65,7 +65,9 @@ The default sandbox backend runs allowlisted commands through Docker with `--net
 - GitHub App ID/private-key status.
 - GitHub OAuth client/session-secret status.
 - GitHub write mode.
+- Runtime secret encryption key posture.
 - LLM model gateway status.
+- Non-local model fallback policy.
 - External security-tool status.
 - OpenTelemetry exporter status.
 

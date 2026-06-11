@@ -20,12 +20,14 @@ class IntegrationReadinessService:
             self._github_app_credentials(),
             self._github_oauth_credentials(),
             self._github_write_mode(),
+            self._runtime_secret_key(),
             self._model_gateway(),
+            self._model_fallback_policy(),
             self._security_tools(),
             self._observability(),
             self._session_secret(),
         ]
-        blocker_states = {IntegrationState.MISSING, IntegrationState.PLACEHOLDER, IntegrationState.UNVERIFIED}
+        blocker_states = {IntegrationState.MISSING, IntegrationState.PLACEHOLDER, IntegrationState.UNVERIFIED, IntegrationState.DISABLED}
         blockers = [
             f"{item.name}: {item.next_step}"
             for item in integrations
@@ -38,6 +40,7 @@ class IntegrationReadinessService:
         ]
         return RuntimeReadiness(
             environment=self.config.environment,
+            release_profile=self.config.release_profile,
             production_ready=not blockers,
             github_writes_enabled=self.config.github_writes_enabled,
             local_record_mode=not self.config.github_writes_enabled,
@@ -102,6 +105,7 @@ class IntegrationReadinessService:
         )
 
     def _github_write_mode(self) -> IntegrationStatus:
+        production_profile = self._production_profile()
         if self.config.github_writes_enabled:
             if self._configured(self.config.github_write_smoke_verified_at):
                 state = IntegrationState.VERIFIED
@@ -117,9 +121,13 @@ class IntegrationReadinessService:
         else:
             state = IntegrationState.DISABLED
             detail = "Local record mode is active; branch and PR operations stay in the database."
-            next_step = "Set GITHUB_WRITES_ENABLED=true only after GitHub App credentials are configured."
+            next_step = (
+                "Set GITHUB_WRITES_ENABLED=true and run the demo-repository write smoke test before production release."
+                if production_profile
+                else "Set GITHUB_WRITES_ENABLED=true only after GitHub App credentials are configured."
+            )
             mode = "local_record_mode"
-            required_for_production = False
+            required_for_production = production_profile
         return IntegrationStatus(
             name="GitHub write mode",
             state=state,
@@ -127,6 +135,32 @@ class IntegrationReadinessService:
             required_for_production=required_for_production,
             detail=detail,
             next_step=next_step,
+        )
+
+    def _runtime_secret_key(self) -> IntegrationStatus:
+        if self._local_environment():
+            return IntegrationStatus(
+                name="Runtime secret key",
+                state=IntegrationState.CONFIGURED,
+                mode="managed_file_allowed_local",
+                required_for_production=False,
+                detail="Local mode may use the managed Fernet key file for the encrypted runtime secret store.",
+                next_step="Use REPOPILOT_RUNTIME_SECRETS_KEY or a deployment secret manager outside local development.",
+            )
+        if self._configured(self.config.runtime_secrets_key):
+            return IntegrationStatus(
+                name="Runtime secret key",
+                state=IntegrationState.CONFIGURED,
+                mode="external_key_configured",
+                detail="Runtime secret encryption key is supplied through the environment or deployment secret manager.",
+                next_step="Keep the key outside source control and rotate it according to the deployment runbook.",
+            )
+        return IntegrationStatus(
+            name="Runtime secret key",
+            state=IntegrationState.UNVERIFIED,
+            mode="managed_file_key_nonlocal",
+            detail="The encrypted runtime secret store would use a managed local key file outside local mode.",
+            next_step="Set REPOPILOT_RUNTIME_SECRETS_KEY or use an external secret manager before production deployment.",
         )
 
     def _model_gateway(self) -> IntegrationStatus:
@@ -182,6 +216,32 @@ class IntegrationReadinessService:
             mode=mode,
             detail=f"Provider configured as {provider.name}/{self.config.model_name} at {base_url}.",
             next_step="Set MODEL_API_KEY and run provider verification before live planning/code-generation claims.",
+        )
+
+    def _model_fallback_policy(self) -> IntegrationStatus:
+        if self._local_environment():
+            return IntegrationStatus(
+                name="Model fallback policy",
+                state=IntegrationState.CONFIGURED,
+                mode="fallback_allowed_local",
+                required_for_production=False,
+                detail="Local mode may use deterministic fallback for repeatable tests and offline demos.",
+                next_step="Disable fallback outside local mode unless running a diagnostic environment.",
+            )
+        if self.config.allow_model_fallback:
+            return IntegrationStatus(
+                name="Model fallback policy",
+                state=IntegrationState.UNVERIFIED,
+                mode="fallback_enabled_nonlocal",
+                detail="Live provider failures can fall back to deterministic output outside local mode.",
+                next_step="Unset ALLOW_MODEL_FALLBACK before production release claims.",
+            )
+        return IntegrationStatus(
+            name="Model fallback policy",
+            state=IntegrationState.CONFIGURED,
+            mode="fallback_disabled_nonlocal",
+            detail="Non-local model calls fail closed instead of silently returning deterministic fallback output.",
+            next_step="Keep fallback disabled for production and use evals/smoke tests to catch provider failures.",
         )
 
     def _security_tools(self) -> IntegrationStatus:
@@ -267,3 +327,9 @@ class IntegrationReadinessService:
 
     def _configured(self, value: str | None) -> bool:
         return self._secret_state(value) == IntegrationState.CONFIGURED
+
+    def _local_environment(self) -> bool:
+        return self.config.environment.strip().lower() == "local"
+
+    def _production_profile(self) -> bool:
+        return self.config.release_profile.strip().lower() == "production"
