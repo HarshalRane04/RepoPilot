@@ -97,6 +97,7 @@ def test_release_verify_depends_on_all_strict_release_targets() -> None:
     assert dependencies == [
         "source-boundary-manifest",
         "release-hygiene-strict",
+        "ui-truth-guard",
         "credential-smoke-strict",
         "security-scanner-snapshot-strict",
         "deployment-validate-strict",
