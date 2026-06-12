@@ -37,37 +37,48 @@ class SecurityFindingStatusRequest(BaseModel):
 CODEQL_WORKFLOW = """name: CodeQL
 
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches: [main]
+    branches:
+      - main
+  pull_request:
   schedule:
-    - cron: "24 3 * * 1"
+    - cron: "24 3 * * 2"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
 
 jobs:
   analyze:
-    name: Analyze
+    name: Analyze (${{ matrix.language }})
+    if: ${{ github.event.repository.private == false || vars.CODEQL_ENABLED == 'true' }}
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      packages: read
-      actions: read
-      contents: read
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        language: [python, javascript-typescript]
+        language:
+          - javascript-typescript
+          - python
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
+          queries: security-and-quality
+
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/autobuild@v4
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
 """
 
 

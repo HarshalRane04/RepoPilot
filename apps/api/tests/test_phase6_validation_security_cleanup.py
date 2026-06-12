@@ -221,7 +221,9 @@ def test_codeql_recommendation_exposes_workflow(monkeypatch) -> None:
 
     assert response["enabled"] is True
     assert response["workflow_path"] == ".github/workflows/codeql.yml"
-    assert "github/codeql-action/analyze" in response["workflow_yaml"]
+    assert "github/codeql-action/init@v4" in response["workflow_yaml"]
+    assert "github/codeql-action/analyze@v4" in response["workflow_yaml"]
+    assert "vars.CODEQL_ENABLED == 'true'" in response["workflow_yaml"]
 
 
 def test_codeql_alert_fetch_route_skips_when_disabled(monkeypatch) -> None:
