@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
+from app.services.runtime_secrets import runtime_secret_store
 from app.services.security_envelope import rate_limiter
 
 DEV_AUTH_HEADERS = {"X-RepoPilot-User": "harshal", "X-RepoPilot-Role": "owner"}
@@ -263,6 +264,38 @@ def test_github_app_verify_persists_verified_read_only_state(monkeypatch, tmp_pa
     assert readiness["github_mode"] == "read_only_verified"
 
 
+def test_github_app_config_save_clears_stale_verification_markers(monkeypatch, tmp_path) -> None:
+    isolate_runtime_secret_store(monkeypatch, tmp_path)
+    enable_dev_header_auth(monkeypatch)
+    runtime_secret_store().save_values(
+        {
+            "GITHUB_APP_VERIFIED_AT": "2026-06-11T00:00:00+00:00",
+            "GITHUB_APP_VERIFIED_INSTALLATION_ID": "old-installation",
+            "GITHUB_WRITE_SMOKE_VERIFIED_AT": "2026-06-11T00:05:00+00:00",
+        }
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/settings/github/app",
+        json={
+            "github_webhook_secret": "runtime-webhook-secret-0123456789",
+            "github_app_id": "12345",
+            "github_private_key": "-----BEGIN PRIVATE KEY-----\\nfake\\n-----END PRIVATE KEY-----",
+            "github_installation_id": "67890",
+        },
+        headers=authenticated({"X-RepoPilot-Intent": "save-github-app-secrets"}),
+    )
+
+    assert response.status_code == 200
+    values = runtime_secret_store().load_values()
+    assert values["GITHUB_APP_VERIFIED_AT"] == ""
+    assert values["GITHUB_APP_VERIFIED_INSTALLATION_ID"] == ""
+    assert values["GITHUB_WRITE_SMOKE_VERIFIED_AT"] == ""
+    readiness = client.get("/settings/readiness", headers=authenticated()).json()
+    assert readiness["github_mode"] == "credentials_unverified"
+
+
 def test_model_catalog_exposes_verified_provider_models(monkeypatch) -> None:
     enable_dev_header_auth(monkeypatch)
     client = TestClient(app)
@@ -348,6 +381,40 @@ def test_model_config_save_is_encrypted_and_updates_readiness(monkeypatch, tmp_p
     assert model_gate["state"] == "unverified"
     assert model_gate["mode"] == "live_model_unverified"
     assert "claude-sonnet-4-6" in model_gate["detail"]
+
+
+def test_model_config_save_clears_stale_verification_markers(monkeypatch, tmp_path) -> None:
+    isolate_runtime_secret_store(monkeypatch, tmp_path)
+    enable_dev_header_auth(monkeypatch)
+    runtime_secret_store().save_values(
+        {
+            "MODEL_PROVIDER": "openai",
+            "MODEL_NAME": "gpt-5.5",
+            "MODEL_API_KEY": "sk-old-runtime-secret",
+            "MODEL_PROVIDER_VERIFIED_AT": "2026-06-11T00:00:00+00:00",
+            "MODEL_PROVIDER_VERIFIED_MODEL": "openai:gpt-5.5",
+        }
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/settings/models/config",
+        json={
+            "provider": "openai",
+            "model": "gpt-5.5",
+            "model_api_key": "sk-new-runtime-secret",
+        },
+        headers=authenticated({"X-RepoPilot-Intent": "save-model-provider"}),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["verified"] is False
+    values = runtime_secret_store().load_values()
+    assert values["MODEL_PROVIDER_VERIFIED_AT"] == ""
+    assert values["MODEL_PROVIDER_VERIFIED_MODEL"] == ""
+    readiness = client.get("/settings/readiness", headers=authenticated()).json()
+    model_gate = next(item for item in readiness["integrations"] if item["name"] == "LLM model gateway")
+    assert model_gate["state"] == "unverified"
 
 
 def test_model_config_save_rejects_unsupported_reasoning_level(monkeypatch, tmp_path) -> None:
@@ -489,6 +556,53 @@ def test_model_provider_verify_calls_provider_without_returning_secret(monkeypat
     assert response.json()["ok"] is True
     assert response.json()["model"] == "gpt-5.5"
     assert "sk-runtime-secret" not in response.text
+
+
+def test_model_provider_verify_does_not_persist_when_model_is_unconfirmed(monkeypatch, tmp_path) -> None:
+    isolate_runtime_secret_store(monkeypatch, tmp_path)
+    enable_dev_header_auth(monkeypatch)
+    monkeypatch.setattr(settings, "model_provider", "mock")
+    monkeypatch.setattr(settings, "model_name", "mock-planner")
+    monkeypatch.setattr(settings, "model_api_key", None)
+    monkeypatch.setattr(settings, "model_base_url", None)
+    client = TestClient(app)
+    client.post(
+        "/settings/models/config",
+        json={
+            "provider": "openai",
+            "model": "gpt-5.5",
+            "model_api_key": "sk-runtime-secret",
+        },
+        headers=authenticated({"X-RepoPilot-Intent": "save-model-provider"}),
+    )
+
+    async def fake_verify_model_provider(**kwargs):
+        return type(
+            "Result",
+            (),
+            {
+                "ok": False,
+                "checked_at": "2026-05-24T00:00:00+00:00",
+                "as_dict": lambda self: {
+                    "ok": False,
+                    "provider": kwargs["provider"].id,
+                    "model": kwargs["model"],
+                    "detail": "Provider responded; model list did not explicitly include the selected model.",
+                    "checked_at": "2026-05-24T00:00:00+00:00",
+                    "latency_ms": 12,
+                },
+            },
+        )()
+
+    monkeypatch.setattr("app.api.routes.settings.verify_model_provider", fake_verify_model_provider)
+
+    response = client.post("/settings/models/verify", headers=authenticated())
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    values = runtime_secret_store().load_values()
+    assert values["MODEL_PROVIDER_VERIFIED_AT"] == ""
+    assert values["MODEL_PROVIDER_VERIFIED_MODEL"] == ""
 
 
 def test_settings_readiness_route_exposes_production_gates(monkeypatch) -> None:

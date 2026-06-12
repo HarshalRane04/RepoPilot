@@ -239,8 +239,10 @@ async def save_github_app_config(
         "GITHUB_INSTALLATION_ID": request.github_installation_id,
     }
     values.update({key: value for key, value in optional_values.items() if value})
-    runtime_secret_store().save_values(values)
-    return runtime_secret_store().summary(set(GITHUB_APP_RUNTIME_SECRET_FIELDS))
+    store = runtime_secret_store()
+    store.delete_values({"GITHUB_APP_VERIFIED_AT", "GITHUB_APP_VERIFIED_INSTALLATION_ID", "GITHUB_WRITE_SMOKE_VERIFIED_AT"})
+    store.save_values(values)
+    return store.summary(set(GITHUB_APP_RUNTIME_SECRET_FIELDS))
 
 
 @router.post("/github/app/verify")
@@ -339,7 +341,9 @@ async def save_model_provider_config(
         values["MODEL_REASONING_LEVEL"] = request.model_reasoning_level
     if request.model_api_key:
         values["MODEL_API_KEY"] = request.model_api_key
-    runtime_secret_store().save_values(values)
+    store = runtime_secret_store()
+    store.delete_values({"MODEL_PROVIDER_VERIFIED_AT", "MODEL_PROVIDER_VERIFIED_MODEL"})
+    store.save_values(values)
     return await _model_provider_status()
 
 

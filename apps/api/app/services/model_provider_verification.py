@@ -55,8 +55,12 @@ async def verify_model_provider(
         return _result(False, provider.id, model, f"Provider returned HTTP {response.status_code}.", checked_at, started)
 
     found = _response_mentions_model(response=response, model=model)
-    detail = "Provider responded and selected model was present in the model list." if found else "Provider responded; model list did not explicitly include the selected model."
-    return _result(True, provider.id, model, detail, checked_at, started)
+    detail = (
+        "Provider responded and selected model was present in the model list."
+        if found
+        else "Provider responded; model list did not explicitly include the selected model."
+    )
+    return _result(found, provider.id, model, detail, checked_at, started)
 
 
 def _models_endpoint(*, provider_id: str, base_url: str) -> str:

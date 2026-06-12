@@ -81,7 +81,13 @@ class RuntimeSecretStore:
         data = self._read_store()
         encrypted_values = data.get("values", {})
         if not isinstance(encrypted_values, dict):
-            return {}
+            encrypted_values = {}
+        cleared_values = data.get("cleared", [])
+        cleared = {
+            key
+            for key in cleared_values
+            if isinstance(key, str) and key in RUNTIME_SECRET_FIELDS
+        } if isinstance(cleared_values, list) else set()
         fernet = self._fernet()
         values: dict[str, str] = {}
         for key, encrypted in encrypted_values.items():
@@ -91,22 +97,41 @@ class RuntimeSecretStore:
                 values[key] = fernet.decrypt(encrypted.encode("utf-8")).decode("utf-8")
             except (InvalidToken, ValueError):
                 continue
+        for key in cleared:
+            values.setdefault(key, "")
         return values
 
     def save_values(self, values: dict[str, str]) -> None:
         clean_values = {key: value.strip() for key, value in values.items() if key in RUNTIME_SECRET_FIELDS and value.strip()}
         current = self.load_values()
         current.update(clean_values)
+        cleared = self._cleared_values() - set(clean_values)
+        self._write_values(current, cleared=cleared)
+
+    def delete_values(self, keys: set[str]) -> None:
+        valid_keys = {key for key in keys if key in RUNTIME_SECRET_FIELDS}
+        if not valid_keys:
+            return
+        current = self.load_values()
+        for key in valid_keys:
+            current.pop(key, None)
+        self._write_values(current, cleared=self._cleared_values() | valid_keys)
+
+    def _write_values(self, values: dict[str, str], *, cleared: set[str] | None = None) -> None:
+        clean_values = {key: value.strip() for key, value in values.items() if key in RUNTIME_SECRET_FIELDS and value.strip()}
+        clean_cleared = sorted((cleared or set()) - set(clean_values))
         fernet = self._fernet()
         encrypted = {
             key: fernet.encrypt(value.encode("utf-8")).decode("utf-8")
-            for key, value in sorted(current.items())
+            for key, value in sorted(clean_values.items())
         }
         payload = {
             "version": 1,
             "updated_at": datetime.now(UTC).isoformat(),
             "values": encrypted,
         }
+        if clean_cleared:
+            payload["cleared"] = clean_cleared
         self._atomic_write(self._store_path(), json.dumps(payload, sort_keys=True, indent=2).encode("utf-8"))
 
     def summary(self, field_names: set[str] | None = None) -> dict[str, Any]:
@@ -147,6 +172,12 @@ class RuntimeSecretStore:
             return json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return {}
+
+    def _cleared_values(self) -> set[str]:
+        cleared = self._read_store().get("cleared", [])
+        if not isinstance(cleared, list):
+            return set()
+        return {key for key in cleared if isinstance(key, str) and key in RUNTIME_SECRET_FIELDS}
 
     def _fernet(self) -> Fernet:
         return Fernet(self._key_material())
@@ -218,6 +249,6 @@ def effective_settings(config: Settings | None = None) -> Settings:
     updates = {
         attr_name: stored[env_name]
         for env_name, attr_name in RUNTIME_SECRET_FIELDS.items()
-        if stored.get(env_name)
+        if env_name in stored
     }
     return base.model_copy(update=updates)
