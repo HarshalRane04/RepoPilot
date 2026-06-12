@@ -502,10 +502,15 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
   }
 
   async function indexRepository(repo: RepositoryResponse) {
-    const sourcePath = window.prompt("Local source path to index", "/Users/harshalrane/Documents/RepoPilot");
+    const previousSourcePath = window.localStorage.getItem("repopilot:last-index-source-path") ?? "";
+    const sourcePath = window.prompt(
+      "Absolute source path to index. The API container must be able to reach this path through its configured mounts.",
+      previousSourcePath
+    );
     if (!sourcePath) {
       return;
     }
+    window.localStorage.setItem("repopilot:last-index-source-path", sourcePath);
     setNotice(null);
     try {
       await fetchJson(`/repos/${repo.id}/index`, {

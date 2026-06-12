@@ -9,6 +9,8 @@ RepoPilot is safe-by-default: local mode can run without live GitHub writes or l
 - Docker Desktop or a compatible Docker daemon.
 - Git.
 - `make`.
+- `curl`, for local health/readiness smoke checks.
+- `jq` and `openssl`, when running the manual webhook smoke commands in `Docs/RUNBOOK.md`.
 - `uv`, when running host-side eval/provider/developer targets.
 - Python 3.12 if running helper scripts outside containers.
 - Node.js 22 if running the web app outside containers.
@@ -20,10 +22,10 @@ RepoPilot is safe-by-default: local mode can run without live GitHub writes or l
 ```bash
 git clone https://github.com/HarshalRane04/RepoPilot.git
 cd RepoPilot
-make init-local-env
+make start-local
 ```
 
-`make init-local-env` creates `.env` from `.env.example`, fills only local-safe Compose values, keeps `GITHUB_WRITES_ENABLED=false`, enables local header auth for the dashboard, and leaves live GitHub/model credentials blank. Edit `.env` only for local service wiring, callback URLs, feature toggles, and local-only placeholder passwords. Treat real database, Redis, webhook, session, OAuth, GitHub App, and model values as secrets. Do not commit `.env`.
+`make start-local` creates `.env` from `.env.example`, fills only local-safe Compose values, builds/starts the Docker Compose stack, applies migrations, and builds the sandbox image used for isolated validation. It keeps `GITHUB_WRITES_ENABLED=false`, enables local header auth for the dashboard, and leaves live GitHub/model credentials blank. Edit `.env` only for local service wiring, callback URLs, feature toggles, and local-only placeholder passwords. Treat real database, Redis, webhook, session, OAuth, GitHub App, and model values as secrets. Do not commit `.env`.
 
 Keep `REPOPILOT_RELEASE_PROFILE=oss-demo` for local portfolio demos. Switch to `REPOPILOT_RELEASE_PROFILE=production` only when preparing a credentialed release candidate; production profile blocks local-record GitHub write mode, managed-file runtime encryption keys, and non-local model fallback from being reported as ready.
 
@@ -37,11 +39,12 @@ The local encrypted store is `.local/repopilot-secrets/`, which is git-ignored a
 
 For non-local deployments, set `REPOPILOT_RUNTIME_SECRETS_KEY` through the host secret manager. The managed key file is intended for local development only.
 
-## 2. Start The Local Stack
+## 2. Manual Local Stack Fallback
 
-For source-build development:
+If you need to run the source-build steps one at a time:
 
 ```bash
+make init-local-env
 make up
 make migrate
 make sandbox-image
@@ -57,11 +60,15 @@ make ghcr-migrate
 
 The GHCR path uses `docker-compose.ghcr.yml` and does not bind-mount local source into API, worker, beat, or web containers.
 
+Keep the GHCR path marked release-candidate until a fresh-host smoke proves the published images are public and runnable.
+
 Open:
 
 - Dashboard: `http://localhost:3001`
 - API health: `http://localhost:8000/health`
 - API docs: `http://localhost:8000/docs`
+
+Local prompt/demo mode does not require live GitHub writes. Use the dashboard Prompt view to submit a prompt, create a local tracked issue/run, review the generated plan, approve it, execute sandbox validation, and inspect the local PR record. Real GitHub branches and draft PRs stay disabled until the Settings readiness checks and write smoke are proven.
 
 ## 3. Check Local Readiness
 

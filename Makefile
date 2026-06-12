@@ -8,10 +8,18 @@ API_KEY_ENV ?=
 BASE_URL ?=
 LOCAL_RUNTIME_SECRET_ENV = REPOPILOT_RUNTIME_SECRETS_KEY_PATH=.local/repopilot-secrets/runtime-secrets.key REPOPILOT_RUNTIME_SECRETS_STORE_PATH=.local/repopilot-secrets/runtime-secrets.json
 
-.PHONY: init-local-env up down logs migrate migration-verify api-test web-typecheck ui-truth-guard sandbox-image ghcr-config ghcr-pull ghcr-up ghcr-down ghcr-logs ghcr-migrate configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval provider-applied-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke credential-smoke credential-smoke-strict source-boundary-manifest readiness-snapshot security-scanner-snapshot security-scanner-snapshot-strict release-gifs release-hygiene release-hygiene-strict deployment-validate deployment-validate-strict deployment-smoke deployment-smoke-strict release-verify
+.PHONY: init-local-env start-local bootstrap up down logs migrate migration-verify api-test web-typecheck ui-truth-guard sandbox-image ghcr-config ghcr-pull ghcr-up ghcr-down ghcr-logs ghcr-migrate configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval provider-applied-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke credential-smoke credential-smoke-strict source-boundary-manifest readiness-snapshot security-scanner-snapshot security-scanner-snapshot-strict release-gifs release-hygiene release-hygiene-strict deployment-validate deployment-validate-strict deployment-smoke deployment-smoke-strict release-verify
 
 init-local-env:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/init_local_env.py
+
+start-local: init-local-env up migrate sandbox-image
+	@printf "\nRepoPilot local stack is ready.\n"
+	@printf "Dashboard: http://localhost:3001\n"
+	@printf "API health: http://localhost:8000/health\n"
+	@printf "API docs: http://localhost:8000/docs\n\n"
+
+bootstrap: start-local
 
 up:
 	$(COMPOSE) up -d --build

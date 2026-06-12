@@ -64,55 +64,48 @@ RepoPilot is designed around these invariants:
 
 For a step-by-step self-hosted install path, use [Docs/QUICKSTART.md](Docs/QUICKSTART.md). The short path is:
 
-1. Create a local environment file for Docker Compose:
+1. Clone the repo and start the local stack:
 
    ```bash
-   make init-local-env
+   git clone https://github.com/HarshalRane04/RepoPilot.git
+   cd RepoPilot
+   make start-local
    ```
 
-   This writes git-ignored local-only values for Compose startup, keeps real GitHub/model credentials blank, and leaves `GITHUB_WRITES_ENABLED=false`. Treat real database, Redis, webhook, session, OAuth, GitHub App, and model values as secrets. For a credentialed GitHub App smoke test, save `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_PATH`, OAuth credentials, and model-provider keys through the dashboard Settings screen or `make configure-runtime-secrets`. Keep `GITHUB_WRITES_ENABLED=false` until `/settings/readiness` reports `github_mode=read_only_verified` and a disposable demo repository has passed the write smoke test.
+   This runs `make init-local-env`, builds/starts Docker Compose, applies migrations, and builds the sandbox image. The generated `.env` uses git-ignored local-only values for Compose startup, keeps real GitHub/model credentials blank, and leaves `GITHUB_WRITES_ENABLED=false`. Treat real database, Redis, webhook, session, OAuth, GitHub App, and model values as secrets. For a credentialed GitHub App smoke test, save `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_PATH`, OAuth credentials, and model-provider keys through the dashboard Settings screen or `make configure-runtime-secrets`. Keep `GITHUB_WRITES_ENABLED=false` until `/settings/readiness` reports `github_mode=read_only_verified` and a disposable demo repository has passed the write smoke test.
 
-2. Start the local stack:
-
-   ```bash
-   make up
-   ```
-
-   To run published containers instead of source-building API/web images, set `REPOPILOT_IMAGE_TAG` in `.env` and use the GHCR targets:
-
-   ```bash
-   make ghcr-pull
-   make ghcr-up
-   make ghcr-migrate
-   ```
-
-   The released-image path uses `docker-compose.ghcr.yml` and pulls `ghcr.io/harshalrane04/repopilot-api`, `ghcr.io/harshalrane04/repopilot-web`, and `ghcr.io/harshalrane04/repopilot-sandbox`.
-
-3. Run migrations:
-
-   ```bash
-   make migrate
-   ```
-
-4. Build the sandbox image:
-
-   ```bash
-   make sandbox-image
-   ```
-
-5. Open:
+2. Open:
 
    - API health: http://localhost:8000/health
    - API docs: http://localhost:8000/docs
    - Dashboard: http://localhost:3001
 
+Manual source-build fallback:
+
+```bash
+make init-local-env
+make up
+make migrate
+make sandbox-image
+```
+
+To run published containers instead of source-building API/web images, set `REPOPILOT_IMAGE_TAG` in `.env` and use the GHCR targets:
+
+```bash
+make ghcr-pull
+make ghcr-up
+make ghcr-migrate
+```
+
+The released-image path uses `docker-compose.ghcr.yml` and pulls `ghcr.io/harshalrane04/repopilot-api`, `ghcr.io/harshalrane04/repopilot-web`, and `ghcr.io/harshalrane04/repopilot-sandbox`. Keep this path marked release-candidate until a fresh-host GHCR smoke proves the published images are public and runnable.
+
 ## Common Checks
 
 ```bash
 docker compose config
-docker compose run --rm api pytest apps/api/tests -q
-docker compose run --rm web npm run typecheck
-docker compose --profile tools build sandbox-image
+make api-test
+make web-typecheck
+make sandbox-image
 make eval-report
 make provider-planning-eval
 make source-boundary-manifest
