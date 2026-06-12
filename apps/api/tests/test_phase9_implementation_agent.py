@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 
-from repopilot_contracts import AgentRunState, ImplementationPlan, PlanApprovalStatus
+from repopilot_contracts import AgentRunState, ImplementationPlan, PlanApprovalStatus, ToolCallResult, ToolCallStatus
 
 from app.core.config import settings
 from app.db.models import AgentRun, ArtifactRecord, Issue, Plan
@@ -204,6 +204,48 @@ def test_implementation_agent_blocks_when_model_returns_no_tool_calls(monkeypatc
 
     assert result.status == "blocked"
     assert result.blocked_reason == "No safe implementation path."
+
+
+def test_implementation_agent_skips_apply_patch_diff_payload() -> None:
+    captured: list[dict[str, object]] = []
+    agent = ImplementationAgent(model_gateway=FakeGateway())
+    run = AgentRun(id=uuid4(), state=AgentRunState.IMPLEMENT_PATCH.value)
+
+    async def fake_execute_tool(*_args, **kwargs):
+        captured.append({"tool_name": kwargs["tool_name"], "arguments": kwargs["arguments"]})
+        return ToolCallResult(tool_name=kwargs["tool_name"], status=ToolCallStatus.SUCCEEDED, output={})
+
+    agent._execute_tool = fake_execute_tool  # type: ignore[method-assign]
+
+    asyncio.run(
+        agent._execute_write_tool_calls(
+            object(),
+            run=run,
+            workspace_path="/tmp/repopilot-agent-workspaces/demo",
+            tool_plan=ImplementationToolPlan(
+                summary="Apply patch.",
+                tool_calls=[
+                    ProposedImplementationToolCall(
+                        tool_name="workspace.apply_patch",
+                        arguments={"diff": "diff --git a/app.py b/app.py\n"},
+                    )
+                ],
+            ),
+            max_changed_files=4,
+        )
+    )
+
+    assert captured == [
+        {
+            "tool_name": "workspace.apply_patch",
+            "arguments": {
+                "workspace_path": "/tmp/repopilot-agent-workspaces/demo",
+                "diff": "diff --git a/app.py b/app.py\n",
+                "max_changed_files": 4,
+                "return_diff": False,
+            },
+        }
+    ]
 
 
 def test_phase9_normalizes_pytest_validation_command() -> None:

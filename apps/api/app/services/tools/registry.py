@@ -143,6 +143,7 @@ class WorkspacePathInput(ToolInput):
 class ApplyPatchInput(WorkspacePathInput):
     diff: str = Field(min_length=1, max_length=1_000_000)
     max_changed_files: int = Field(default=5, ge=1, le=20)
+    return_diff: bool = True
 
 
 class WriteFileInput(WorkspacePathInput):
@@ -769,6 +770,8 @@ async def _workspace_apply_patch(db: AsyncSession, request: ToolCallRequest, pay
     )
     if completed.returncode != 0:
         raise ToolBlocked(f"git apply failed: {completed.stderr[-1000:]}")
+    if not args.return_diff:
+        return {"changed_paths": sorted(changed_paths)}
     diff_payload = _workspace_diff_payload(workspace)
     return {"changed_paths": sorted(changed_paths), **diff_payload}
 

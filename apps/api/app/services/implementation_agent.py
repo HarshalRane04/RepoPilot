@@ -392,6 +392,7 @@ class ImplementationAgent:
             arguments["workspace_path"] = workspace_path
             if proposed.tool_name == "workspace.apply_patch":
                 arguments.setdefault("max_changed_files", max_changed_files)
+                arguments.setdefault("return_diff", False)
             results.append(
                 await self._execute_tool(
                     db,
