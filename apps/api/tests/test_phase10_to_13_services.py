@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from repopilot_contracts import DraftPullRequestRequest, SecuritySeverity
 
-from app.db.models import AgentRun, AgentStep, Issue, LLMTrace, Plan, SecurityFinding, ValidationResult
+from app.db.models import AgentRun, AgentStep, Branch, Issue, LLMTrace, Plan, PullRequest, Repository, SecurityFinding, ValidationResult
 from app.services.ci_analyzer import CIAnalyzer, CISummarySuggestion
 from app.services.draft_pr import DraftPullRequestService
 from app.services.eval_runner import EvalRunner
@@ -172,6 +172,21 @@ def test_draft_pr_branch_names_are_deterministic_and_scoped() -> None:
 
     assert branch.startswith("repopilot/42-fix-repository-list-issue-count-display-")
     assert str(run.id)[:8] in branch
+
+
+def test_draft_pr_local_result_is_not_a_github_url() -> None:
+    run_id = uuid4()
+    service = DraftPullRequestService()
+    repository = Repository(owner="octo", name="demo", default_branch="main")
+    pr = PullRequest(id=uuid4(), run_id=run_id, pr_number=7, url=service._pr_url(repository=repository, pr_number=7), status="draft")
+    branch = Branch(run_id=run_id, branch_name="repopilot/7-demo", base_sha="local-base", head_sha="patch-sha")
+
+    result = service._result(pr=pr, branch=branch, summary="Local record created.")
+
+    assert result.url == "local://repopilot/draft-pr/7"
+    assert result.pr_mode == "local_record"
+    assert result.is_local_record is True
+    assert result.github_url is None
 
 
 def test_draft_pr_default_body_includes_evidence_hashes_and_redacted_security_details() -> None:

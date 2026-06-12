@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from repopilot_contracts import (
@@ -84,6 +85,37 @@ def test_key_operator_response_contracts_are_exported() -> None:
     assert CodeQLSarifIngestionRequest.__name__ == "CodeQLSarifIngestionRequest"
     assert CodeQLAlertFetchRequest.__name__ == "CodeQLAlertFetchRequest"
     assert CodeQLRecommendationResponse.__name__ == "CodeQLRecommendationResponse"
+
+
+def test_pull_request_summary_contract_distinguishes_local_records() -> None:
+    local = PullRequestSummaryResponse(
+        pr_id=str(uuid4()),
+        run_id=str(uuid4()),
+        pr_number=1,
+        url="local://repopilot/draft-pr/1",
+        status="draft",
+        risk_score=0,
+        created_at=datetime.now(UTC),
+    )
+    real = PullRequestSummaryResponse(
+        pr_id=str(uuid4()),
+        run_id=str(uuid4()),
+        pr_number=2,
+        url="https://github.example.com/acme/demo/pull/2",
+        pr_mode="real_github",
+        is_local_record=False,
+        github_url="https://github.example.com/acme/demo/pull/2",
+        status="draft",
+        risk_score=0,
+        created_at=datetime.now(UTC),
+    )
+
+    assert local.pr_mode == "local_record"
+    assert local.is_local_record is True
+    assert local.github_url is None
+    assert real.pr_mode == "real_github"
+    assert real.is_local_record is False
+    assert real.github_url == real.url
 
 
 def test_openapi_uses_typed_operator_response_models() -> None:

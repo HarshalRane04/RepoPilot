@@ -28,6 +28,7 @@ class ObservabilityService:
             )
         ).scalars().all()
         llm_traces = (await db.execute(select(LLMTrace).where(LLMTrace.agent_run_id == run.id))).scalars().all()
+        pr_modes = self._pr_modes_from_steps(steps)
 
         return {
             "run": {
@@ -73,6 +74,12 @@ class ObservabilityService:
                     "id": str(pr.id),
                     "number": pr.pr_number,
                     "url": pr.url,
+                    "pr_mode": pr_modes.get(str(pr.id), pr_modes.get(str(pr.pr_number), "local_record")),
+                    "is_local_record": pr_modes.get(str(pr.id), pr_modes.get(str(pr.pr_number), "local_record")) == "local_record",
+                    "github_url": pr.url
+                    if pr_modes.get(str(pr.id), pr_modes.get(str(pr.pr_number), "local_record")) == "real_github"
+                    and pr.url.startswith(("https://", "http://"))
+                    else None,
                     "status": pr.status,
                     "ci_status": pr.ci_status,
                 }
@@ -103,3 +110,17 @@ class ObservabilityService:
                 for trace in llm_traces
             ],
         }
+
+    def _pr_modes_from_steps(self, steps: list[AgentStep]) -> dict[str, str]:
+        modes: dict[str, str] = {}
+        for step in steps:
+            if step.step_name != "OPEN_DRAFT_PR" or not isinstance(step.output_json, dict):
+                continue
+            mode = "real_github" if step.output_json.get("mode") == "real_github_write" else "local_record"
+            pr_id = step.output_json.get("pr_id")
+            pr_number = step.output_json.get("pr_number")
+            if pr_id is not None:
+                modes[str(pr_id)] = mode
+            if pr_number is not None:
+                modes[str(pr_number)] = mode
+        return modes

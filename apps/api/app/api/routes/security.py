@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.db.models import AgentRun, Installation, Issue, PullRequest, Repository, SecurityFinding, utc_now
+from app.db.models import AgentRun, AgentStep, Installation, Issue, PullRequest, Repository, SecurityFinding, utc_now
 from app.db.session import get_db
 from app.services.audit import record_audit
 from app.services.auth import CurrentUser, get_current_user
@@ -233,6 +233,7 @@ async def _finding_response(finding: SecurityFinding, db: AsyncSession) -> dict[
     repository = await db.get(Repository, issue.repository_id) if issue else None
     pr_result = await db.execute(select(PullRequest).where(PullRequest.run_id == finding.run_id).limit(1))
     pr = pr_result.scalars().first()
+    pr_mode = await _pr_mode(pr, db) if pr else "local_record"
     return {
         "id": str(finding.id),
         "run_id": str(finding.run_id),
@@ -271,12 +272,33 @@ async def _finding_response(finding: SecurityFinding, db: AsyncSession) -> dict[
             "id": str(pr.id),
             "number": pr.pr_number,
             "url": pr.url,
+            "pr_mode": pr_mode,
+            "is_local_record": pr_mode == "local_record",
+            "github_url": pr.url if pr_mode == "real_github" and pr.url.startswith(("https://", "http://")) else None,
             "status": pr.status,
             "ci_status": pr.ci_status,
         }
         if pr
         else None,
     }
+
+
+async def _pr_mode(pr: PullRequest, db: AsyncSession) -> str:
+    result = await db.execute(
+        select(AgentStep)
+        .where(AgentStep.run_id == pr.run_id, AgentStep.step_name == "OPEN_DRAFT_PR")
+        .order_by(AgentStep.created_at.desc())
+        .limit(1)
+    )
+    step = result.scalar_one_or_none()
+    mode = step.output_json.get("mode") if step and isinstance(step.output_json, dict) else None
+    if mode == "real_github_write":
+        return "real_github"
+    if mode == "local_record" or pr.url.startswith("local://"):
+        return "local_record"
+    if pr.url.startswith(("https://", "http://")):
+        return "real_github"
+    return "local_record"
 
 
 async def _run_repository_installation(db: AsyncSession, run: AgentRun) -> tuple[Repository, Installation]:

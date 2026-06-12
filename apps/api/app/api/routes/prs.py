@@ -6,7 +6,7 @@ from repopilot_contracts import CIAnalysisRequest, CIAnalysisResult, PullRequest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AgentRun, Issue, Plan, PullRequest, Repository, SecurityFinding, ValidationResult
+from app.db.models import AgentRun, AgentStep, Issue, Plan, PullRequest, Repository, SecurityFinding, ValidationResult
 from app.db.session import get_db
 from app.services.auth import CurrentUser, get_current_user
 from app.services.authorization import require_pr_access
@@ -47,6 +47,8 @@ async def _pr_summary(pr: PullRequest, db: AsyncSession) -> dict[str, object]:
     plan = await db.get(Plan, run.plan_id) if run and run.plan_id else None
     validations = (await db.execute(select(ValidationResult).where(ValidationResult.run_id == pr.run_id))).scalars().all()
     findings = (await db.execute(select(SecurityFinding).where(SecurityFinding.run_id == pr.run_id))).scalars().all()
+    pr_mode = await _pr_mode(pr, db)
+    github_url = pr.url if pr_mode == "real_github" and pr.url.startswith(("https://", "http://")) else None
     plan_json = plan.plan_json if plan is not None else {}
     changed_files = _string_list(plan_json.get("files_to_modify")) + _string_list(plan_json.get("tests_to_add"))
     return {
@@ -54,6 +56,9 @@ async def _pr_summary(pr: PullRequest, db: AsyncSession) -> dict[str, object]:
         "run_id": str(pr.run_id),
         "pr_number": pr.pr_number,
         "url": pr.url,
+        "pr_mode": pr_mode,
+        "is_local_record": pr_mode == "local_record",
+        "github_url": github_url,
         "status": pr.status,
         "ci_status": pr.ci_status,
         "risk_score": pr.risk_score,
@@ -115,6 +120,26 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+async def _pr_mode(pr: PullRequest, db: AsyncSession) -> str:
+    result = await db.execute(
+        select(AgentStep)
+        .where(AgentStep.run_id == pr.run_id, AgentStep.step_name == "OPEN_DRAFT_PR")
+        .order_by(AgentStep.created_at.desc())
+        .limit(1)
+    )
+    step = result.scalar_one_or_none()
+    mode = step.output_json.get("mode") if step and isinstance(step.output_json, dict) else None
+    if mode == "real_github_write":
+        return "real_github"
+    if mode == "local_record":
+        return "local_record"
+    if pr.url.startswith("local://"):
+        return "local_record"
+    if pr.url.startswith(("https://", "http://")):
+        return "real_github"
+    return "local_record"
 
 
 @router.post("/{pr_id}/ci", response_model=CIAnalysisResult)

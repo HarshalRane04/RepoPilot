@@ -162,6 +162,9 @@ export type PullRequestSummary = {
   run_id: string;
   pr_number: number;
   url: string;
+  pr_mode: "local_record" | "real_github";
+  is_local_record: boolean;
+  github_url: string | null;
   status: string;
   ci_status: string | null;
   risk_score: number;
@@ -238,6 +241,9 @@ export type SecurityFindingResponse = {
     id: string;
     number: number;
     url: string;
+    pr_mode: "local_record" | "real_github";
+    is_local_record: boolean;
+    github_url: string | null;
     status: string;
     ci_status: string | null;
   } | null;

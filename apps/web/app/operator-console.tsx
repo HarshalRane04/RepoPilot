@@ -114,6 +114,9 @@ type TraceData = {
     id: string;
     number: number;
     url: string;
+    pr_mode?: "local_record" | "real_github";
+    is_local_record?: boolean;
+    github_url?: string | null;
     status: string;
     ci_status: string | null;
   }>;
@@ -1854,7 +1857,7 @@ function PullRequestsScreen({
   onPr: (pr: PullRequestSummary) => void;
 }) {
   const filtered = prs.filter((pr) => {
-    if (!searchable(`${pr.pr_number} ${pr.issue?.title ?? ""} ${pr.repository?.name ?? ""} ${pr.status}`, query)) return false;
+    if (!searchable(`${pr.pr_number} ${pr.issue?.title ?? ""} ${pr.repository?.name ?? ""} ${pr.status} ${prModeLabel(pr)}`, query)) return false;
     if (repositoryFilter !== "all" && pr.repository?.id !== repositoryFilter) return false;
     if (statusFilter !== "all" && pr.status !== statusFilter) return false;
     if (riskFilter !== "all" && riskBucket(pr.risk_score) !== riskFilter) return false;
@@ -1905,6 +1908,7 @@ function PullRequestsScreen({
                 <th scope="col">PR</th>
                 <th scope="col">Title</th>
                 <th scope="col">Linked issue</th>
+                <th scope="col">Mode</th>
                 <th scope="col">Status</th>
                 <th scope="col">Risk</th>
                 <th scope="col">CI</th>
@@ -1918,6 +1922,7 @@ function PullRequestsScreen({
                   <td><span className="prNumberBadge mono">#{pr.pr_number}</span></td>
                   <td>{pr.issue?.title ?? `PR #${pr.pr_number}`}</td>
                   <td>{pr.issue ? `#${pr.issue.number}` : "Unavailable"}</td>
+                  <td><Badge tone={pr.is_local_record ? "warning" : "success"}>{prModeLabel(pr)}</Badge></td>
                   <td><Badge tone={statusTone(pr.status)}>{labelize(pr.status)}</Badge></td>
                   <td><Badge tone={riskTone(pr.risk_score)}>{riskLabel(pr.risk_score)}</Badge></td>
                   <td><Badge tone={statusTone(pr.ci_status ?? "unknown")}>{labelize(pr.ci_status ?? "unknown")}</Badge></td>
@@ -1931,7 +1936,7 @@ function PullRequestsScreen({
         </section>
         <aside className="panel summaryPanel">
           <h2>PR Summary</h2>
-          <SummaryItem icon={FileText} label="Draft PRs" value={filtered.filter((pr) => pr.status === "draft").length} tone="violet" />
+          <SummaryItem icon={FileText} label="Tracked draft PR records" value={filtered.filter((pr) => pr.status === "draft").length} tone="violet" />
           <SummaryItem icon={Eye} label="Ready for review" value={filtered.filter((pr) => pr.status === "ready_for_review").length} tone="info" />
           <SummaryItem icon={X} label="Blocked" value={filtered.filter((pr) => pr.status === "blocked").length} tone="danger" />
           <SummaryItem icon={AlertCircle} label="CI failing" value={filtered.filter((pr) => pr.ci_status === "failed").length} tone="danger" />
@@ -1964,6 +1969,7 @@ function PullRequestDetailScreen({
       <Breadcrumb trail={["Pull Requests", `#${pr.pr_number}`]} />
       <div className="titleRow">
         <ScreenHeader title={`PR #${pr.pr_number} ${pr.issue?.title ?? ""}`} subtitle="This tracked PR record includes RepoPilot evidence for human review." />
+        <Badge tone={pr.is_local_record ? "warning" : "success"}>{prModeLabel(pr)}</Badge>
         <Badge tone={statusTone(pr.status)}>{labelize(pr.status)}</Badge>
         <Badge tone={riskTone(pr.risk_score)}>{riskLabel(pr.risk_score)}</Badge>
         <Badge tone={statusTone(pr.ci_status ?? "unknown")}>CI {labelize(pr.ci_status ?? "unknown")}</Badge>
@@ -2009,6 +2015,7 @@ function PullRequestDetailScreen({
         </section>
         <aside className="panel contextPanel">
           <h2>Reviewer Checklist</h2>
+          <Field label="Record mode" value={prModeDetail(pr)} tone={pr.is_local_record ? "warning" : "success"} />
           {reviewChecklist(pr).map((item) => (
             <label className="checkRow" key={item}>
               <input type="checkbox" />
@@ -2031,9 +2038,9 @@ function PullRequestDetailScreen({
             <Shield size={18} />
             Run security review
           </button>
-          <button className="ghostAction wide" onClick={() => window.open(pr.url, "_blank", "noopener,noreferrer")} type="button">
+          <button className="ghostAction wide" disabled={!prGithubUrl(pr)} onClick={() => { const url = prGithubUrl(pr); if (url) window.open(url, "_blank", "noopener,noreferrer"); }} title={pr.is_local_record ? "This is a local RepoPilot PR record. No real GitHub PR has been opened yet." : "Open the real GitHub pull request."} type="button">
             <Github size={18} />
-            Open in GitHub
+            {pr.is_local_record ? "Local PR record" : "Open in GitHub"}
           </button>
         </aside>
       </div>
@@ -2080,7 +2087,7 @@ function CiDebuggerScreen({ pr, onAnalyzeCi }: { pr: PullRequestSummary | null; 
         <button className="primaryAction" onClick={() => onAnalyzeCi(pr)} type="button"><Sparkles size={18} /> Analyze supplied CI evidence</button>
         <span className="mutedText"><CheckCircle2 size={18} style={{ marginRight: 8 }} />Approve fix not available</span>
         <span className="mutedText"><X size={18} style={{ marginRight: 8 }} />Dismiss not available</span>
-        <button className="ghostAction" onClick={() => window.open(pr.url, "_blank", "noopener,noreferrer")} type="button"><Github size={18} /> Open PR in GitHub</button>
+        <button className="ghostAction" disabled={!prGithubUrl(pr)} onClick={() => { const url = prGithubUrl(pr); if (url) window.open(url, "_blank", "noopener,noreferrer"); }} title={pr.is_local_record ? "This is a local RepoPilot PR record. No real GitHub PR has been opened yet." : "Open the real GitHub pull request."} type="button"><Github size={18} /> {pr.is_local_record ? "Local PR record" : "Open PR in GitHub"}</button>
       </div>
     </div>
   );
@@ -2191,8 +2198,17 @@ function SecurityDetailScreen({
           <button className="ghostAction wide" onClick={() => onUpdateStatus(finding, "fixed")} type="button">Mark fixed</button>
           <button className="dangerAction wide" onClick={() => onUpdateStatus(finding, "open")} type="button">Reopen</button>
           {finding.pull_request ? (
-            <button className="ghostAction wide" onClick={() => window.open(finding.pull_request?.url, "_blank", "noopener,noreferrer")} type="button">
-              <Github size={18} /> Open in GitHub
+            <button
+              className="ghostAction wide"
+              disabled={finding.pull_request.is_local_record}
+              onClick={() => {
+                const url = finding.pull_request?.github_url ?? finding.pull_request?.url;
+                if (url && !finding.pull_request?.is_local_record) window.open(url, "_blank", "noopener,noreferrer");
+              }}
+              title={finding.pull_request.is_local_record ? "This linked item is a local RepoPilot PR record, not a real GitHub PR." : "Open the real GitHub pull request."}
+              type="button"
+            >
+              <Github size={18} /> {finding.pull_request.is_local_record ? "Local PR record" : "Open in GitHub"}
             </button>
           ) : null}
           <h2>Policy triggered</h2>
@@ -4131,9 +4147,24 @@ function numberMetric(value: unknown) {
   return { label: String(Math.round(numeric)), value: numeric };
 }
 
+function prModeLabel(pr: PullRequestSummary) {
+  return pr.is_local_record ? "Local record" : "GitHub PR";
+}
+
+function prModeDetail(pr: PullRequestSummary) {
+  return pr.is_local_record
+    ? "Local RepoPilot record; no real GitHub PR has been opened."
+    : "Real GitHub pull request opened by the configured GitHub App.";
+}
+
+function prGithubUrl(pr: PullRequestSummary) {
+  return pr.is_local_record ? null : pr.github_url ?? (pr.url.startsWith("http://") || pr.url.startsWith("https://") ? pr.url : null);
+}
+
 function reviewChecklist(pr: PullRequestSummary) {
   const files = pr.changed_files;
   const checks = ["Confirm implementation matches linked issue"];
+  if (pr.is_local_record) checks.push("Confirm this local record before creating a real GitHub PR");
   if (files.some((file) => file.includes("auth"))) checks.push("Confirm token expiry policy");
   if (files.some((file) => file.includes(".github/workflows"))) checks.push("Confirm workflow permission changes");
   if (pr.validation_results.length) checks.push("Confirm validation results");

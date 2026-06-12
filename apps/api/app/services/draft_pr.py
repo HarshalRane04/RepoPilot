@@ -451,16 +451,18 @@ class DraftPullRequestService:
         return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:48] or "task"
 
     def _pr_url(self, *, repository: Repository | None, pr_number: int) -> str:
-        if repository:
-            return f"https://github.com/{repository.owner}/{repository.name}/pull/{pr_number}"
         return f"local://repopilot/draft-pr/{pr_number}"
 
     def _result(self, *, pr: PullRequest, branch: Branch | None, summary: str) -> DraftPullRequestResult:
+        is_real_github_pr = pr.url.startswith(("https://", "http://"))
         return DraftPullRequestResult(
             pr_id=str(pr.id),
             run_id=str(pr.run_id),
             pr_number=pr.pr_number,
             url=pr.url,
+            pr_mode="real_github" if is_real_github_pr else "local_record",
+            is_local_record=not is_real_github_pr,
+            github_url=pr.url if is_real_github_pr else None,
             status=pr.status,
             branch_name=branch.branch_name if branch else "unknown",
             ci_status=pr.ci_status,

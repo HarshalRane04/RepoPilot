@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -456,6 +456,9 @@ class DraftPullRequestResult(BaseModel):
     run_id: str
     pr_number: int = Field(ge=1)
     url: str
+    pr_mode: Literal["local_record", "real_github"] = "local_record"
+    is_local_record: bool = True
+    github_url: str | None = None
     status: str
     branch_name: str
     ci_status: str | None = None
@@ -598,6 +601,9 @@ class PullRequestSummary(BaseModel):
 
     pr_number: int
     url: str
+    pr_mode: Literal["local_record", "real_github"] = "local_record"
+    is_local_record: bool = True
+    github_url: str | None = None
     status: str
     risk_score: int = Field(ge=0, le=100)
     validation_results: list[ValidationResult] = Field(default_factory=list)
@@ -746,6 +752,9 @@ class RunTracePullRequest(BaseModel):
     id: str
     number: int = Field(ge=1)
     url: str
+    pr_mode: Literal["local_record", "real_github"] = "local_record"
+    is_local_record: bool = True
+    github_url: str | None = None
     status: str
     ci_status: str | None = None
 
@@ -859,6 +868,9 @@ class PullRequestSummaryResponse(BaseModel):
     run_id: str
     pr_number: int = Field(ge=1)
     url: str
+    pr_mode: Literal["local_record", "real_github"] = "local_record"
+    is_local_record: bool = True
+    github_url: str | None = None
     status: str
     ci_status: str | None = None
     risk_score: int = Field(ge=0, le=100)
@@ -886,6 +898,9 @@ class SecurityFindingPullRequestSummary(BaseModel):
     id: str
     number: int = Field(ge=1)
     url: str
+    pr_mode: Literal["local_record", "real_github"] = "local_record"
+    is_local_record: bool = True
+    github_url: str | None = None
     status: str
     ci_status: str | None = None
 
