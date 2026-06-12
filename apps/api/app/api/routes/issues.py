@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import AgentRun, Issue, Plan, Repository
 from app.db.session import get_db
 from app.services.auth import CurrentUser, get_current_user
-from app.services.authorization import require_issue_access
+from app.services.authorization import require_issue_access, require_role
 from app.services.planning import PlanningService
 from app.services.security_envelope import rate_limit
 from app.services.triage import TriageService
@@ -23,8 +23,10 @@ class TriageRequest(BaseModel):
 @router.get("")
 async def list_issues(
     limit: int = Query(default=200, ge=1, le=500),
+    current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, object]]:
+    require_role(current_user, "viewer")
     result = await db.execute(select(Issue).order_by(Issue.created_at.desc()).limit(limit))
     issues = result.scalars().all()
     response: list[dict[str, object]] = []
@@ -58,10 +60,12 @@ async def generate_issue_plan(
 
 
 @router.get("/{issue_id}")
-async def get_issue(issue_id: UUID, db: AsyncSession = Depends(get_db)) -> dict[str, object]:
-    issue = await db.get(Issue, issue_id)
-    if issue is None:
-        raise HTTPException(status_code=404, detail="Issue not found")
+async def get_issue(
+    issue_id: UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    issue = await require_issue_access(db, issue_id=issue_id, current_user=current_user, action="read")
     repository = await db.get(Repository, issue.repository_id)
     plan = await _latest_plan_for_issue(db, issue)
     run = await _latest_run_for_issue(db, issue)
@@ -72,11 +76,10 @@ async def get_issue(issue_id: UUID, db: AsyncSession = Depends(get_db)) -> dict[
 async def triage_issue(
     issue_id: UUID,
     request: TriageRequest,
+    current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
-    issue = await db.get(Issue, issue_id)
-    if issue is None:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = await require_issue_access(db, issue_id=issue_id, current_user=current_user, action="write")
 
     run = await _latest_run_for_issue(db, issue)
     if run is not None:

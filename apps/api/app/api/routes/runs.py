@@ -22,7 +22,7 @@ from app.db.session import get_db
 from app.services.artifacts import ArtifactStore
 from app.services.draft_pr import DraftPullRequestService
 from app.services.auth import CurrentUser, get_current_user
-from app.services.authorization import require_run_access
+from app.services.authorization import require_role, require_run_access
 from app.services.implementation_agent import ImplementationAgent
 from app.services.observability import ObservabilityService
 from app.services.planning import approved_plan_hash_matches
@@ -51,8 +51,10 @@ class RunToolCallBatchBody(BaseModel):
 @router.get("", response_model=list[AgentRunListItem])
 async def list_runs(
     limit: int = 50,
+    current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, object]]:
+    require_role(current_user, "viewer")
     result = await db.execute(select(AgentRun).order_by(AgentRun.started_at.desc()).limit(min(max(limit, 1), 200)))
     runs = result.scalars().all()
     response: list[dict[str, object]] = []

@@ -8,14 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import CodeChunk, Issue, Repository, RepositoryIndex
 from app.db.session import get_db
 from app.services.auth import CurrentUser, get_current_user
-from app.services.authorization import require_repository_access
+from app.services.authorization import require_repository_access, require_role
 from app.services.repo_indexer import RepositoryIndexer
 
 router = APIRouter()
 
 
 @router.get("")
-async def list_repositories(db: AsyncSession = Depends(get_db)) -> list[dict[str, object]]:
+async def list_repositories(
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict[str, object]]:
+    require_role(current_user, "viewer")
     result = await db.execute(select(Repository).order_by(Repository.created_at.desc()))
     repositories = result.scalars().all()
     response: list[dict[str, object]] = []
@@ -92,13 +96,18 @@ async def retrieve_repository_context(
 
 
 @router.get("/{repo_id}/issues")
-async def list_repository_issues(repo_id: UUID, db: AsyncSession = Depends(get_db)) -> dict[str, object]:
+async def list_repository_issues(
+    repo_id: UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    repository = await require_repository_access(db, repository_id=repo_id, current_user=current_user, action="read")
     result = await db.execute(
-        select(Issue).where(Issue.repository_id == repo_id).order_by(Issue.created_at.desc())
+        select(Issue).where(Issue.repository_id == repository.id).order_by(Issue.created_at.desc())
     )
     issues = result.scalars().all()
     return {
-        "repo_id": str(repo_id),
+        "repo_id": str(repository.id),
         "issues": [
             {
                 "id": str(issue.id),

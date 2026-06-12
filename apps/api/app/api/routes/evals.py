@@ -24,7 +24,11 @@ async def run_evaluation(
 
 
 @router.get("/reports", response_model=EvalReportsResponse)
-async def evaluation_reports(db: AsyncSession = Depends(get_db)) -> dict[str, object]:
+async def evaluation_reports(
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    require_role(current_user, "viewer")
     result = await db.execute(select(EvalRun).order_by(EvalRun.created_at.desc()))
     reports = result.scalars().all()
     return {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from uuid import uuid4
 from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
@@ -49,6 +50,32 @@ def test_protected_route_requires_authenticated_user(monkeypatch) -> None:
     response = client.get("/settings/readiness")
 
     assert response.status_code == 401
+
+
+def test_operator_data_routes_require_authenticated_user(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "dev_header_auth_enabled", False)
+    client = TestClient(app)
+    issue_id = uuid4()
+    pr_id = uuid4()
+
+    requests = [
+        ("get", "/repos", None),
+        ("get", f"/repos/{uuid4()}/issues", None),
+        ("get", "/issues", None),
+        ("get", f"/issues/{issue_id}", None),
+        ("post", f"/issues/{issue_id}/triage", {"body": "safe local triage body"}),
+        ("get", "/runs", None),
+        ("get", "/prs", None),
+        ("get", f"/prs/{pr_id}/summary", None),
+        ("get", "/evals/reports", None),
+    ]
+
+    for method, path, json_body in requests:
+        if json_body is None:
+            response = getattr(client, method)(path)
+        else:
+            response = getattr(client, method)(path, json=json_body)
+        assert response.status_code == 401, path
 
 
 def test_session_route_uses_dev_headers(monkeypatch) -> None:

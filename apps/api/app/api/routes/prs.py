@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import AgentRun, AgentStep, Issue, Plan, PullRequest, Repository, SecurityFinding, ValidationResult
 from app.db.session import get_db
 from app.services.auth import CurrentUser, get_current_user
-from app.services.authorization import require_pr_access
+from app.services.authorization import require_pr_access, require_role
 from app.services.ci_analyzer import CIAnalyzer
 from app.services.revision_planner import RevisionPlanner
 
@@ -25,18 +25,22 @@ class RevisionPlanRequest(BaseModel):
 @router.get("", response_model=list[PullRequestSummaryResponse])
 async def list_pull_requests(
     limit: int = Query(default=100, ge=1, le=300),
+    current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, object]]:
+    require_role(current_user, "viewer")
     result = await db.execute(select(PullRequest).order_by(PullRequest.created_at.desc()).limit(limit))
     prs = result.scalars().all()
     return [await _pr_summary(pr, db) for pr in prs]
 
 
 @router.get("/{pr_id}/summary", response_model=PullRequestSummaryResponse)
-async def get_pr_summary(pr_id: UUID, db: AsyncSession = Depends(get_db)) -> dict[str, object]:
-    pr = await db.get(PullRequest, pr_id)
-    if pr is None:
-        raise HTTPException(status_code=404, detail="Pull request not found")
+async def get_pr_summary(
+    pr_id: UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    pr = await require_pr_access(db, pr_id=pr_id, current_user=current_user, action="read")
     return await _pr_summary(pr, db)
 
 
