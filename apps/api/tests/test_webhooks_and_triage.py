@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 
 from app.db.models import AgentRun, LLMTrace
+from app.services.github_ingestion import store_webhook_event
 from app.services.github_webhooks import (
     GitHubEventNormalizer,
     GitHubSignatureVerifier,
@@ -31,6 +32,20 @@ class FakeTriageDb:
 
     async def scalar(self, _statement):
         return 0
+
+    def add(self, item: object) -> None:
+        self.added.append(item)
+
+    async def flush(self) -> None:
+        pass
+
+
+class FakeWebhookDb:
+    def __init__(self) -> None:
+        self.added: list[object] = []
+
+    async def scalar(self, _statement):
+        return None
 
     def add(self, item: object) -> None:
         self.added.append(item)
@@ -143,6 +158,96 @@ def test_normalizer_extracts_check_run_pr_signal() -> None:
     assert event.conclusion == "failure"
     assert event.pull_request_number == 4
     assert "tests/test_demo.py" in event.log_excerpt
+
+
+def test_webhook_storage_minimizes_and_redacts_issue_payload() -> None:
+    secret = "sk-live-secret-value-1234567890"
+    github_token = "ghp_abcdefghijklmnopqrstuvwxyz123456"
+    payload = {
+        "action": "opened",
+        "installation": {"id": 123, "access_tokens_url": "https://api.github.com/secret"},
+        "repository": {
+            "name": "demo",
+            "default_branch": "main",
+            "owner": {"login": "octo", "email": "octo@example.test"},
+            "private": True,
+        },
+        "issue": {
+            "number": 7,
+            "title": "Fix token handling",
+            "body": f"Please inspect {secret} and {github_token}",
+            "html_url": "https://github.com/octo/demo/issues/7",
+        },
+        "sender": {"login": "alice", "email": "alice@example.test"},
+        "authorization": "Bearer should-not-persist",
+    }
+    db = FakeWebhookDb()
+
+    event = asyncio.run(store_webhook_event(db, delivery_id="delivery-privacy-1", event_type="issues", payload=payload))
+
+    stored_text = json.dumps(event.payload_json, sort_keys=True)
+    assert secret not in stored_text
+    assert github_token not in stored_text
+    assert "should-not-persist" not in stored_text
+    assert "octo@example.test" not in stored_text
+    assert event.payload_json["_repopilot"]["retention"] == "minimized_redacted"
+    assert event.payload_json["_repopilot"]["raw_payload_sha256"]
+    normalized = GitHubEventNormalizer().normalize("issues", event.payload_json)
+    assert normalized.issue_number == 7
+    assert "[REDACTED_SECRET]" in normalized.issue_body
+
+
+def test_webhook_storage_minimizes_and_redacts_comment_command_payload() -> None:
+    secret = "sk-live-secret-value-1234567890"
+    payload = {
+        "action": "created",
+        "installation": {"id": 123},
+        "repository": {"name": "demo", "default_branch": "main", "owner": {"login": "octo"}},
+        "issue": {"number": 7, "title": "Fix failing pagination test", "body": "Broken"},
+        "comment": {
+            "body": f"/repopilot revise rotate leaked token {secret}",
+            "html_url": "https://github.com/octo/demo/issues/7#issuecomment-1",
+            "author_association": "OWNER",
+        },
+        "sender": {"login": "alice"},
+    }
+    db = FakeWebhookDb()
+
+    event = asyncio.run(store_webhook_event(db, delivery_id="delivery-privacy-2", event_type="issue_comment", payload=payload))
+
+    stored_text = json.dumps(event.payload_json, sort_keys=True)
+    assert secret not in stored_text
+    assert "author_association" not in stored_text
+    normalized = GitHubEventNormalizer().normalize("issue_comment", event.payload_json)
+    assert normalized.command == "revise"
+    assert "[REDACTED_SECRET]" in normalized.command_args
+
+
+def test_webhook_storage_minimizes_and_redacts_check_run_payload() -> None:
+    secret = "ghp_abcdefghijklmnopqrstuvwxyz123456"
+    payload = {
+        "action": "completed",
+        "installation": {"id": 123},
+        "repository": {"name": "demo", "default_branch": "main", "owner": {"login": "octo"}},
+        "check_run": {
+            "name": "pytest",
+            "conclusion": "failure",
+            "pull_requests": [{"number": 4, "url": "https://api.github.com/repos/octo/demo/pulls/4"}],
+            "output": {"summary": f"Failure included token {secret}"},
+            "details_url": "https://github.com/octo/demo/actions/runs/1",
+        },
+        "sender": {"login": "github-actions"},
+    }
+    db = FakeWebhookDb()
+
+    event = asyncio.run(store_webhook_event(db, delivery_id="delivery-privacy-3", event_type="check_run", payload=payload))
+
+    stored_text = json.dumps(event.payload_json, sort_keys=True)
+    assert secret not in stored_text
+    assert "details_url" not in stored_text
+    normalized = GitHubEventNormalizer().normalize("check_run", event.payload_json)
+    assert normalized.pull_request_number == 4
+    assert "[REDACTED_SECRET]" in normalized.log_excerpt
 
 
 def test_triage_detects_bug_and_acceptance_criteria() -> None:

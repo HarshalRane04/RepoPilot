@@ -25,7 +25,7 @@ from app.services.github_permissions import GitHubPermissionService
 from app.services.planning import implementation_plan_from_db
 from app.services.policy import PolicyEngine
 from app.services.runtime_secrets import effective_settings
-from app.services.security_envelope import stable_json_hash
+from app.services.security_envelope import redact_text, stable_json_hash
 from app.services.state_machine import InvalidStateTransition, transition_run
 from app.services.triage import TriageService
 
@@ -47,10 +47,11 @@ async def store_webhook_event(
     if existing is not None:
         raise DuplicateDelivery(existing)
 
+    stored_payload = _minimized_webhook_payload(event_type=event_type, payload=payload)
     event = GitHubEvent(
         delivery_id=delivery_id,
         event_type=event_type,
-        payload_json=payload,
+        payload_json=stored_payload,
         status="received",
     )
     db.add(event)
@@ -65,6 +66,84 @@ async def store_webhook_event(
         metadata={"event_type": event_type, "delivery_id": delivery_id},
     )
     return event
+
+
+def _minimized_webhook_payload(*, event_type: str, payload: dict) -> dict[str, object]:
+    repository = payload.get("repository") if isinstance(payload.get("repository"), dict) else {}
+    owner = repository.get("owner") if isinstance(repository.get("owner"), dict) else {}
+    installation = payload.get("installation") if isinstance(payload.get("installation"), dict) else {}
+    sender = payload.get("sender") if isinstance(payload.get("sender"), dict) else {}
+    base: dict[str, object] = {
+        "action": payload.get("action"),
+        "installation": _compact_dict(installation, {"id"}),
+        "repository": {
+            "name": repository.get("name"),
+            "default_branch": repository.get("default_branch"),
+            "owner": _compact_dict(owner, {"login"}),
+        },
+        "sender": _compact_dict(sender, {"login"}),
+        "_repopilot": {
+            "retention": "minimized_redacted",
+            "raw_payload_sha256": _payload_hash(payload),
+        },
+    }
+    if event_type in {"issues", "issue_comment"}:
+        issue = payload.get("issue") if isinstance(payload.get("issue"), dict) else {}
+        base["issue"] = {
+            "number": issue.get("number"),
+            "title": redact_text(str(issue.get("title") or "")),
+            "body": redact_text(str(issue.get("body") or "")),
+            "html_url": issue.get("html_url"),
+        }
+    if event_type == "issue_comment":
+        comment = payload.get("comment") if isinstance(payload.get("comment"), dict) else {}
+        base["comment"] = {
+            "body": redact_text(str(comment.get("body") or "")),
+            "html_url": comment.get("html_url"),
+        }
+    if event_type == "workflow_run":
+        workflow_run = payload.get("workflow_run") if isinstance(payload.get("workflow_run"), dict) else {}
+        base["workflow_run"] = {
+            "name": workflow_run.get("name"),
+            "conclusion": workflow_run.get("conclusion"),
+            "pull_requests": _pull_request_numbers(workflow_run.get("pull_requests")),
+            "display_title": redact_text(str(workflow_run.get("display_title") or "")),
+            "html_url": workflow_run.get("html_url"),
+        }
+    if event_type in {"check_run", "check_suite"}:
+        check_key = event_type
+        check_payload = payload.get(check_key) if isinstance(payload.get(check_key), dict) else {}
+        output = check_payload.get("output") if isinstance(check_payload.get("output"), dict) else {}
+        app = check_payload.get("app") if isinstance(check_payload.get("app"), dict) else {}
+        base[check_key] = {
+            "name": check_payload.get("name"),
+            "conclusion": check_payload.get("conclusion"),
+            "status": check_payload.get("status"),
+            "html_url": check_payload.get("html_url"),
+            "pull_requests": _pull_request_numbers(check_payload.get("pull_requests")),
+            "output": {"summary": redact_text(str(output.get("summary") or ""))},
+            "app": _compact_dict(app, {"slug"}),
+        }
+    return base
+
+
+def _compact_dict(value: object, keys: set[str]) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    return {key: value.get(key) for key in keys if value.get(key) is not None}
+
+
+def _pull_request_numbers(value: object) -> list[dict[str, int]]:
+    if not isinstance(value, list):
+        return []
+    pull_requests: list[dict[str, int]] = []
+    for item in value:
+        if isinstance(item, dict) and item.get("number") is not None:
+            try:
+                pull_requests.append({"number": int(item["number"])})
+            except (TypeError, ValueError):
+                continue
+    return pull_requests
 
 
 async def process_github_event(db: AsyncSession, *, event_id: UUID) -> dict[str, str]:
