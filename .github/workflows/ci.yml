@@ -8,8 +8,8 @@ jobs:
   hygiene:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Check generated artifacts and secret stores
@@ -25,6 +25,8 @@ jobs:
           fi
       - name: Run release hygiene scanner
         run: PYTHONDONTWRITEBYTECODE=1 python scripts/release_hygiene.py --allow-warnings
+      - name: Guard UI truth and privacy copy
+        run: PYTHONDONTWRITEBYTECODE=1 python scripts/ui_truth_guard.py
       - name: Validate deployment documentation and topology
         run: PYTHONDONTWRITEBYTECODE=1 python scripts/deployment_validate.py
 
@@ -62,8 +64,8 @@ jobs:
       ENABLE_OTEL: "false"
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/apps/api:${{ github.workspace }}/packages/shared_contracts:${{ github.workspace }}/packages/evals:${{ github.workspace }}/packages/policy_engine:${{ github.workspace }}/packages/llm_client:${{ github.workspace }}/packages/github_client
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install API dependencies
@@ -83,8 +85,8 @@ jobs:
   package-boundaries:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install package check dependencies
@@ -129,11 +131,11 @@ jobs:
   scanner-posture:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
@@ -153,7 +155,7 @@ jobs:
             --md-out /tmp/repopilot-scanner-posture/security-scanner-snapshot.md \
             --allow-warnings
       - name: Upload scanner posture evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: security-scanner-posture-${{ github.run_id }}
           path: /tmp/repopilot-scanner-posture/
@@ -162,8 +164,8 @@ jobs:
   web-typecheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
@@ -178,6 +180,6 @@ jobs:
   sandbox-image:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Build sandbox image
         run: docker build -t repopilot-sandbox:local -f services/sandbox_runner/Dockerfile .

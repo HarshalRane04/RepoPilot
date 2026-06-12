@@ -15,8 +15,37 @@ def test_ci_workflow_uploads_scanner_posture_evidence() -> None:
     assert 'CODEQL_ENABLED: "false"' in workflow
     assert "scripts/security_scanner_snapshot.py" in workflow
     assert "--allow-warnings" in workflow
-    assert "actions/upload-artifact@v4" in workflow
+    assert "actions/upload-artifact@v6" in workflow
     assert "security-scanner-posture-${{ github.run_id }}" in workflow
+
+
+def test_ci_workflow_guards_ui_truth_and_privacy_copy() -> None:
+    workflow = ROOT.joinpath(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "Guard UI truth and privacy copy" in workflow
+    assert "scripts/ui_truth_guard.py" in workflow
+
+
+def test_ci_workflow_uses_node24_backed_github_actions() -> None:
+    workflow_paths = [
+        ".github/workflows/ci.yml",
+        ".github/workflows/codeql.yml",
+        ".github/workflows/provider-applied-patch-eval.yml",
+        ".github/workflows/provider-patch-eval.yml",
+        ".github/workflows/provider-planning-eval.yml",
+        ".github/workflows/provider-retrieval-eval.yml",
+        ".github/workflows/release.yml",
+    ]
+    combined = "\n".join(ROOT.joinpath(path).read_text(encoding="utf-8") for path in workflow_paths)
+
+    assert "actions/checkout@v4" not in combined
+    assert "actions/setup-node@v4" not in combined
+    assert "actions/setup-python@v5" not in combined
+    assert "actions/upload-artifact@v4" not in combined
+    assert "actions/checkout@v5" in combined
+    assert "actions/setup-node@v6" in combined
+    assert "actions/setup-python@v6" in combined
+    assert "actions/upload-artifact@v6" in combined
 
 
 def test_ci_workflow_checks_provider_retrieval_package_boundary() -> None:

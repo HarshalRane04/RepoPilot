@@ -34,8 +34,8 @@ jobs:
       BASE_URL: ${{ inputs.base_url }}
       REPOPILOT_PROVIDER_API_KEY: ${{ secrets[inputs.api_key_secret_name] }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install API dependencies
@@ -53,7 +53,7 @@ jobs:
             env API_KEY_ENV=REPOPILOT_PROVIDER_API_KEY PROVIDER="${PROVIDER}" MODEL="${MODEL}" TASK_COUNT="${TASK_COUNT}" make provider-patch-eval
           fi
       - name: Upload provider patch eval report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: provider-patch-eval-${{ github.run_id }}
           path: |

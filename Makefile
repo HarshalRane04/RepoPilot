@@ -8,7 +8,7 @@ API_KEY_ENV ?=
 BASE_URL ?=
 LOCAL_RUNTIME_SECRET_ENV = REPOPILOT_RUNTIME_SECRETS_KEY_PATH=.local/repopilot-secrets/runtime-secrets.key REPOPILOT_RUNTIME_SECRETS_STORE_PATH=.local/repopilot-secrets/runtime-secrets.json
 
-.PHONY: init-local-env up down logs migrate migration-verify api-test web-typecheck sandbox-image ghcr-config ghcr-pull ghcr-up ghcr-down ghcr-logs ghcr-migrate configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval provider-applied-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke credential-smoke credential-smoke-strict source-boundary-manifest readiness-snapshot security-scanner-snapshot security-scanner-snapshot-strict release-gifs release-hygiene release-hygiene-strict deployment-validate deployment-validate-strict deployment-smoke deployment-smoke-strict release-verify
+.PHONY: init-local-env up down logs migrate migration-verify api-test web-typecheck ui-truth-guard sandbox-image ghcr-config ghcr-pull ghcr-up ghcr-down ghcr-logs ghcr-migrate configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval provider-applied-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke credential-smoke credential-smoke-strict source-boundary-manifest readiness-snapshot security-scanner-snapshot security-scanner-snapshot-strict release-gifs release-hygiene release-hygiene-strict deployment-validate deployment-validate-strict deployment-smoke deployment-smoke-strict release-verify
 
 init-local-env:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/init_local_env.py
@@ -33,6 +33,9 @@ api-test:
 
 web-typecheck:
 	$(COMPOSE) exec web npm run typecheck
+
+ui-truth-guard:
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/ui_truth_guard.py
 
 sandbox-image:
 	$(COMPOSE) --profile tools build sandbox-image
@@ -121,4 +124,4 @@ deployment-smoke:
 deployment-smoke-strict:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/deployment_validate.py --check-runtime --json-out Docs/release-artifacts/deployment-runtime-smoke.json --md-out Docs/release-artifacts/deployment-runtime-smoke.md
 
-release-verify: source-boundary-manifest release-hygiene-strict credential-smoke-strict security-scanner-snapshot-strict deployment-validate-strict deployment-smoke-strict
+release-verify: source-boundary-manifest release-hygiene-strict ui-truth-guard credential-smoke-strict security-scanner-snapshot-strict deployment-validate-strict deployment-smoke-strict
