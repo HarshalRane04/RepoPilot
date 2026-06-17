@@ -34,7 +34,11 @@ jobs:
             --out-dir /tmp/repopilot-release-evidence/eval-reports
             --report-name v1-local-latest
           )
-          if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+          strict_release=false
+          if [[ "${GITHUB_REF}" == refs/tags/* ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish_images }}" == "true" ]]; then
+            strict_release=true
+          fi
+          if [[ "${strict_release}" != true ]]; then
             args+=(--allow-failed-gates)
           fi
           PYTHONDONTWRITEBYTECODE=1 python -m repopilot_evals.report "${args[@]}"
@@ -52,17 +56,47 @@ jobs:
             --json-out /tmp/repopilot-release-evidence/release-artifacts/credential-smoke-summary.json
             --md-out /tmp/repopilot-release-evidence/release-artifacts/credential-smoke-summary.md
           )
-          if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+          strict_release=false
+          if [[ "${GITHUB_REF}" == refs/tags/* ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish_images }}" == "true" ]]; then
+            strict_release=true
+          fi
+          if [[ "${strict_release}" != true ]]; then
             args+=(--allow-blocked)
           fi
           PYTHONDONTWRITEBYTECODE=1 python scripts/credential_smoke.py "${args[@]}"
+      - name: Install scanner evidence tools
+        run: python -m pip install semgrep pip-audit
+      - name: Build security scanner snapshot
+        run: |
+          set -euo pipefail
+          args=(
+            --json-out /tmp/repopilot-release-evidence/release-artifacts/security-scanner-snapshot.json
+            --md-out /tmp/repopilot-release-evidence/release-artifacts/security-scanner-snapshot.md
+          )
+          strict_release=false
+          if [[ "${GITHUB_REF}" == refs/tags/* ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish_images }}" == "true" ]]; then
+            strict_release=true
+          fi
+          if [[ "${strict_release}" != true ]]; then
+            args+=(--allow-warnings --allow-blockers)
+          fi
+          PYTHONDONTWRITEBYTECODE=1 SEMGREP_ENABLED=true DEPENDENCY_AUDIT_ENABLED=true CODEQL_ENABLED=true python scripts/security_scanner_snapshot.py "${args[@]}"
       - name: Validate deployment docs and topology
         run: |
           set -euo pipefail
+          args=(
+            --json-out /tmp/repopilot-release-evidence/release-artifacts/deployment-validation.json
+            --md-out /tmp/repopilot-release-evidence/release-artifacts/deployment-validation.md
+          )
+          strict_release=false
+          if [[ "${GITHUB_REF}" == refs/tags/* ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish_images }}" == "true" ]]; then
+            strict_release=true
+          fi
+          if [[ "${strict_release}" != true ]]; then
+            args+=(--allow-warnings)
+          fi
           PYTHONDONTWRITEBYTECODE=1 python scripts/deployment_validate.py \
-            --json-out /tmp/repopilot-release-evidence/release-artifacts/deployment-validation.json \
-            --md-out /tmp/repopilot-release-evidence/release-artifacts/deployment-validation.md \
-            --allow-warnings
+            "${args[@]}"
       - name: Upload release evidence
         uses: actions/upload-artifact@v6
         with:

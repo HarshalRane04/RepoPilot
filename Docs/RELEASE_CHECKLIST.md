@@ -26,9 +26,9 @@ RepoPilot v1.0 is release-ready only when local controls, credentialed GitHub pr
 - Release GIF evidence is generated with `make release-gifs`; the latest manifest lives at `Docs/release-artifacts/release-gifs.md`.
 - Deployment validation report is generated with `make deployment-validate`; the latest report lives at `Docs/release-artifacts/deployment-validation.md`.
 - Local runtime deployment smoke report is generated with `make deployment-smoke`; the latest report lives at `Docs/release-artifacts/deployment-runtime-smoke.md`.
-- Release workflow evidence uploads include deterministic eval, source-boundary, credential-smoke, and deployment-validation artifacts before image builds.
+- Release workflow evidence uploads include deterministic eval, source-boundary, credential-smoke, scanner posture, and deployment-validation artifacts before image builds.
 - Release workflow image artifacts include GHCR image names, tags, source SHA, workflow URL, and API/web/sandbox digests.
-- GHCR packages are visible to intended installers, and a fresh host can run `make ghcr-pull`, `make ghcr-up`, and `make ghcr-migrate` with the selected release tag.
+- GHCR packages are visible to intended installers, and a fresh host can run `make ghcr-start-local` with the selected release tag.
 - Strict release verification is run with `make release-verify` after credentials and runtime services are available; this gate must fail if credential smoke is blocked, runtime smoke fails, scanner blockers remain, or hygiene/deployment validation reports warnings or failures.
 
 ## Required Credentialed Evidence

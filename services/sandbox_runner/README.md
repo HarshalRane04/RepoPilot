@@ -1,6 +1,6 @@
 # Sandbox Runner Service
 
-Status: scaffold only. This is a planned extraction boundary, not a separate deployable service in v1.
+Status: active sandbox image plus planned service extraction boundary. This directory is not a separately deployed long-running service in v1, but `Dockerfile` is used by local source builds, CI, GHCR image builds, and sandbox validation.
 
 Phase 8 is implemented by `apps/api/app/services/sandbox.py`, the `/runs/{run_id}/sandbox` route, and this local sandbox image.
 

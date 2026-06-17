@@ -92,6 +92,8 @@ class Settings(BaseSettings):
     workspace_cleanup_interval_seconds: int = Field(default=3_600, alias="WORKSPACE_CLEANUP_INTERVAL_SECONDS")
     artifact_store_root: str = Field(default="/tmp/repopilot-artifacts", alias="REPOPILOT_ARTIFACT_STORE_ROOT")
     artifact_inline_max_bytes: int = Field(default=12_000, alias="REPOPILOT_ARTIFACT_INLINE_MAX_BYTES")
+    artifact_retention_max_age_seconds: int = Field(default=2_592_000, alias="REPOPILOT_ARTIFACT_RETENTION_MAX_AGE_SECONDS")
+    artifact_retention_dry_run: bool = Field(default=True, alias="REPOPILOT_ARTIFACT_RETENTION_DRY_RUN")
 
     enable_otel: bool = Field(default=True, alias="ENABLE_OTEL")
     otel_exporter_otlp_endpoint: str | None = Field(default=None, alias="OTEL_EXPORTER_OTLP_ENDPOINT")

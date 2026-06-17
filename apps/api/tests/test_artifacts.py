@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import stat
+import time
 from uuid import uuid4
 
 from app.db.models import ArtifactRecord
@@ -39,6 +42,7 @@ def test_artifact_store_writes_file_and_database_pointer(tmp_path) -> None:
     assert record.run_id == run_id
     assert record.uri == artifact.uri
     assert record.metadata_json == {"command": "pytest"}
+    assert stat.S_IMODE(stored_path.stat().st_mode) == 0o600
 
 
 def test_maybe_externalize_json_keeps_small_payload_inline(tmp_path, monkeypatch) -> None:
@@ -69,3 +73,68 @@ def test_maybe_externalize_json_replaces_large_payload_with_artifact_pointer(tmp
     assert result["artifact_uri"].startswith(f"local://artifacts/{run_id}/")
     assert result["artifact_byte_size"] > 20
     assert len(db.added) == 1
+
+
+def test_artifact_retention_dry_run_reports_expired_files_without_deleting(tmp_path) -> None:
+    old_file = tmp_path / "run-1" / "old.txt"
+    old_file.parent.mkdir()
+    old_file.write_text("old artifact", encoding="utf-8")
+    old_time = time.time() - 3600
+    os.utime(old_file, (old_time, old_time))
+    fresh_file = tmp_path / "run-1" / "fresh.txt"
+    fresh_file.write_text("fresh artifact", encoding="utf-8")
+
+    result = ArtifactStore(root=tmp_path).plan_retention(max_age_seconds=60, dry_run=True)
+
+    assert result.dry_run is True
+    assert result.removed_count == 0
+    assert result.removed_bytes == 0
+    assert result.retained_count == 2
+    assert result.storage_keys == ["run-1/old.txt"]
+    assert old_file.exists()
+    assert fresh_file.exists()
+
+
+def test_artifact_retention_deletes_only_expired_local_files(tmp_path) -> None:
+    old_file = tmp_path / "run-1" / "old.txt"
+    old_file.parent.mkdir()
+    old_file.write_text("old artifact", encoding="utf-8")
+    old_time = time.time() - 3600
+    os.utime(old_file, (old_time, old_time))
+    fresh_file = tmp_path / "run-1" / "fresh.txt"
+    fresh_file.write_text("fresh artifact", encoding="utf-8")
+
+    result = ArtifactStore(root=tmp_path).plan_retention(max_age_seconds=60, dry_run=False)
+
+    assert result.dry_run is False
+    assert result.removed_count == 1
+    assert result.removed_bytes == len("old artifact")
+    assert result.retained_count == 1
+    assert result.storage_keys == ["run-1/old.txt"]
+    assert not old_file.exists()
+    assert fresh_file.exists()
+
+
+def test_artifact_retention_does_not_follow_symlinks_outside_root(tmp_path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-secret.txt"
+    outside.write_text("do not delete", encoding="utf-8")
+    old_time = time.time() - 3600
+    os.utime(outside, (old_time, old_time))
+    link = tmp_path / "run-1" / "outside-link.txt"
+    link.parent.mkdir()
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        outside.unlink(missing_ok=True)
+        return
+
+    try:
+        result = ArtifactStore(root=tmp_path).plan_retention(max_age_seconds=60, dry_run=False)
+
+        assert result.removed_count == 0
+        assert result.storage_keys == []
+        assert outside.exists()
+        assert link.exists()
+    finally:
+        link.unlink(missing_ok=True)
+        outside.unlink(missing_ok=True)

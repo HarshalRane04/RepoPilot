@@ -53,12 +53,10 @@ make sandbox-image
 For published GHCR images, set `REPOPILOT_IMAGE_TAG` in `.env` to a release tag such as `v1.0.0`, `latest`, or a digest-pinned override through `REPOPILOT_API_IMAGE`/`REPOPILOT_WEB_IMAGE`/`REPOPILOT_SANDBOX_IMAGE`, then run:
 
 ```bash
-make ghcr-pull
-make ghcr-up
-make ghcr-migrate
+make ghcr-start-local
 ```
 
-The GHCR path uses `docker-compose.ghcr.yml` and does not bind-mount local source into API, worker, beat, or web containers.
+`ghcr-start-local` creates local-safe `.env` values before Compose parses `docker-compose.ghcr.yml`, pulls images, starts the stack, and applies migrations. The GHCR path does not bind-mount local source into API, worker, beat, or web containers.
 
 Keep the GHCR path marked release-candidate until a fresh-host smoke proves the published images are public and runnable.
 

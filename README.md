@@ -98,15 +98,13 @@ make migrate
 make sandbox-image
 ```
 
-To run published containers instead of source-building API/web images, set `REPOPILOT_IMAGE_TAG` in `.env` and use the GHCR targets:
+To run published containers instead of source-building API/web images, set `REPOPILOT_IMAGE_TAG` in `.env` and use the GHCR bootstrap target:
 
 ```bash
-make ghcr-pull
-make ghcr-up
-make ghcr-migrate
+make ghcr-start-local
 ```
 
-The released-image path uses `docker-compose.ghcr.yml` and pulls `ghcr.io/harshalrane04/repopilot-api`, `ghcr.io/harshalrane04/repopilot-web`, and `ghcr.io/harshalrane04/repopilot-sandbox`. Keep this path marked release-candidate until a fresh-host GHCR smoke proves the published images are public and runnable.
+`ghcr-start-local` runs `make init-local-env`, pulls images, starts Compose, and applies migrations. The released-image path uses `docker-compose.ghcr.yml` and pulls `ghcr.io/harshalrane04/repopilot-api`, `ghcr.io/harshalrane04/repopilot-web`, and `ghcr.io/harshalrane04/repopilot-sandbox`. Keep this path marked release-candidate until a fresh-host GHCR smoke proves the published images are public and runnable.
 
 ## Common Checks
 

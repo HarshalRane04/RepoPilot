@@ -51,7 +51,7 @@ Canonical implemented flow:
 
 ## Data Plane
 
-PostgreSQL stores lifecycle state, raw webhook payloads, installations, repositories, issues, approvals, validation results, security findings, traces, and evaluations. The Phase 5 indexer stores lexical chunks plus deterministic mock embeddings in `code_chunks.embedding`; a real embedding provider can replace that function without changing the storage contract.
+PostgreSQL stores lifecycle state, minimized/redacted webhook processing envelopes with original payload hashes, installations, repositories, issues, approvals, validation results, security findings, traces, and evaluations. The Phase 5 indexer stores lexical chunks plus deterministic mock embeddings in `code_chunks.embedding`; a real embedding provider can replace that function without changing the storage contract.
 
 ## Sandbox Boundary
 

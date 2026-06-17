@@ -94,12 +94,16 @@ def test_release_workflow_uploads_local_evidence_bundle_before_images() -> None:
     assert "publish_images:" in workflow
     assert "release-evidence:" in workflow
     assert "python -m repopilot_evals.report" in workflow
-    assert 'if [[ "${GITHUB_REF}" != refs/tags/* ]]; then' in workflow
+    assert 'strict_release=false' in workflow
+    assert '[[ "${GITHUB_REF}" == refs/tags/* ]]' in workflow
+    assert '"${{ inputs.publish_images }}" == "true"' in workflow
     assert "scripts/source_boundary_manifest.py" in workflow
     assert "Build credential smoke summary" in workflow
     assert "scripts/credential_smoke.py" in workflow
     assert "args+=(--allow-blocked)" in workflow
     assert "args+=(--allow-failed-gates)" in workflow
+    assert "Build security scanner snapshot" in workflow
+    assert "scripts/security_scanner_snapshot.py" in workflow
     assert "scripts/deployment_validate.py" in workflow
     assert "release-evidence-${{ github.run_id }}" in workflow
     assert "needs: release-evidence" in workflow

@@ -8,7 +8,7 @@ API_KEY_ENV ?=
 BASE_URL ?=
 LOCAL_RUNTIME_SECRET_ENV = REPOPILOT_RUNTIME_SECRETS_KEY_PATH=.local/repopilot-secrets/runtime-secrets.key REPOPILOT_RUNTIME_SECRETS_STORE_PATH=.local/repopilot-secrets/runtime-secrets.json
 
-.PHONY: init-local-env start-local bootstrap up down logs migrate migration-verify api-test web-typecheck ui-truth-guard sandbox-image ghcr-config ghcr-pull ghcr-up ghcr-down ghcr-logs ghcr-migrate configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval provider-applied-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke credential-smoke credential-smoke-strict source-boundary-manifest readiness-snapshot security-scanner-snapshot security-scanner-snapshot-strict release-gifs release-hygiene release-hygiene-strict deployment-validate deployment-validate-strict deployment-smoke deployment-smoke-strict release-verify
+.PHONY: init-local-env start-local bootstrap up down logs migrate migration-verify api-test web-typecheck ui-truth-guard sandbox-image ghcr-config ghcr-pull ghcr-up ghcr-start-local ghcr-down ghcr-logs ghcr-migrate configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval provider-applied-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke credential-smoke credential-smoke-strict source-boundary-manifest readiness-snapshot security-scanner-snapshot security-scanner-snapshot-strict release-gifs release-hygiene release-hygiene-strict deployment-validate deployment-validate-strict deployment-smoke deployment-smoke-strict release-verify
 
 init-local-env:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/init_local_env.py
@@ -48,14 +48,20 @@ ui-truth-guard:
 sandbox-image:
 	$(COMPOSE) --profile tools build sandbox-image
 
-ghcr-config:
+ghcr-config: init-local-env
 	$(COMPOSE_GHCR) config --quiet
 
-ghcr-pull:
+ghcr-pull: init-local-env
 	$(COMPOSE_GHCR) pull
 
-ghcr-up:
+ghcr-up: init-local-env
 	$(COMPOSE_GHCR) up -d
+
+ghcr-start-local: init-local-env ghcr-pull ghcr-up ghcr-migrate
+	@printf "\nRepoPilot GHCR stack is ready.\n"
+	@printf "Dashboard: http://localhost:3001\n"
+	@printf "API health: http://localhost:8000/health\n"
+	@printf "API docs: http://localhost:8000/docs\n\n"
 
 ghcr-down:
 	$(COMPOSE_GHCR) down
