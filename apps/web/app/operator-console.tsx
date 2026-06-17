@@ -238,6 +238,7 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
   const [selectedRepoId, setSelectedRepoId] = useState(initialData.repositories[0]?.id ?? "");
   const [selectedIssueId, setSelectedIssueId] = useState(initialData.issues[0]?.id ?? "");
   const [selectedRunId, setSelectedRunId] = useState(initialData.runs[0]?.id ?? "");
@@ -376,6 +377,7 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
         modelCatalog: next[15],
         modelConfig: next[16]
       }));
+      setLastRefreshedAt(new Date().toISOString());
     } catch (error) {
       if (!options?.quiet) {
         setNotice(error instanceof Error ? error.message : "Refresh failed");
@@ -804,17 +806,25 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
             />
             <kbd aria-label="Keyboard shortcut Command K">⌘ K</kbd>
           </label>
-          <button className="iconOnly" disabled={isRefreshing} onClick={() => void refresh()} aria-label="Refresh live data" type="button">
+          <button
+            className="iconOnly"
+            disabled={isRefreshing}
+            onClick={() => void refresh()}
+            aria-label={`Refresh data snapshot. ${refreshStateLabel(lastRefreshedAt, isRefreshing)}`}
+            title={refreshStateLabel(lastRefreshedAt, isRefreshing)}
+            type="button"
+          >
             <RefreshCcw size={19} aria-hidden="true" className={isRefreshing ? "refreshSpinner" : ""} />
           </button>
           <button
-            className="iconOnly notify"
+            className="iconOnly"
             onClick={() => {
               setSettingsTab("Notifications");
               setView("settings");
               window.location.hash = settingsHash("Notifications");
             }}
-            aria-label="Notification settings"
+            aria-label="Open local notification settings. Delivery is not configured."
+            title="Local notification settings only. No delivery endpoint is configured."
             type="button"
           >
             <Bell size={21} aria-hidden="true" />
@@ -1192,7 +1202,7 @@ function DashboardScreen({
         <StatCard label="CI pass rate" value={ciRate} />
         <StatCard label="First-run CI" value={firstRunCiRate} />
         <StatCard label="CI after revision" value={revisionCiRate} />
-        <StatCard label="Security blocks" value={data.metrics?.blocking_security_findings ?? 0} />
+        <StatCard label="Open security findings" value={data.metrics?.blocking_security_findings ?? 0} />
         <StatCard label="Fixup attempts" value={data.metrics?.ci_revision_fixup_attempts ?? 0} />
         <StatCard label="Avg cost/task" value={formatMoney(avgCost)} />
       </section>
@@ -1943,7 +1953,7 @@ function PullRequestsScreen({
           <h2>PR Summary</h2>
           <SummaryItem icon={FileText} label="Tracked draft PR records" value={filtered.filter((pr) => pr.status === "draft").length} tone="violet" />
           <SummaryItem icon={Eye} label="Ready for review" value={filtered.filter((pr) => pr.status === "ready_for_review").length} tone="info" />
-          <SummaryItem icon={X} label="Blocked" value={filtered.filter((pr) => pr.status === "blocked").length} tone="danger" />
+          <SummaryItem icon={X} label="Blocked PR records" value={filtered.filter((pr) => pr.status === "blocked").length} tone="danger" />
           <SummaryItem icon={AlertCircle} label="CI failing" value={filtered.filter((pr) => pr.ci_status === "failed").length} tone="danger" />
         </aside>
       </div>
@@ -2035,9 +2045,9 @@ function PullRequestDetailScreen({
             <RotateCcw size={18} />
             Create CI revision plan
           </button>
-          <button className="ghostAction wide" disabled title="No explanation endpoint is configured. Open the agent trace instead." type="button">
+          <button className="ghostAction wide" disabled title="Explanation generation is not wired to a backend endpoint. Open the agent trace instead." type="button">
             <Sparkles size={18} />
-            Explanation N/A
+            Explanation unavailable
           </button>
           <button className="cyanAction wide" onClick={() => onSecurityReview(pr)} type="button">
             <Shield size={18} />
@@ -2112,14 +2122,14 @@ function SecurityScreen({
   const filtered = findings.filter((finding) => searchable(`${finding.description} ${finding.tool} ${finding.repository?.name ?? ""}`, query));
   return (
     <div className="screen">
-      <ScreenHeader title="Security" subtitle="Risk controls, blocked actions, and security findings from agent workflows." />
+      <ScreenHeader title="Security" subtitle="Risk controls, open findings, and security evidence from agent workflows." />
       <section className="statGrid six">
-        <StatCard label="High-risk changes blocked" value={filtered.filter((finding) => severityScore(finding.severity) >= 70 && finding.status === "open").length} icon={ShieldAlert} />
+        <StatCard label="Open high-risk findings" value={filtered.filter((finding) => severityScore(finding.severity) >= 70 && finding.status === "open").length} icon={ShieldAlert} />
         <StatCard label="Secrets detected" value={filtered.filter((finding) => finding.tool.toLowerCase().includes("secret")).length} icon={KeyRound} />
         <StatCard label="Dependency warnings" value={filtered.filter((finding) => finding.tool.toLowerCase().includes("dependency")).length} icon={AlertTriangle} />
         <StatCard label="CodeQL alerts" value={filtered.filter((finding) => finding.tool.toLowerCase().includes("codeql")).length} icon={Code2} />
         <StatCard label="Prompt injection attempts" value={filtered.filter((finding) => finding.tool.toLowerCase().includes("prompt")).length} icon={Shield} />
-        <StatCard label="Workflow modifications blocked" value={filtered.filter((finding) => finding.file_path?.includes(".github/workflows")).length} icon={GitBranch} />
+        <StatCard label="Workflow path findings" value={filtered.filter((finding) => finding.file_path?.includes(".github/workflows")).length} icon={GitBranch} />
       </section>
       <div className="sideGrid">
         <section className="panel tablePanel">
@@ -2240,7 +2250,7 @@ function EvaluationsScreen({
   const metrics = latest?.metrics ?? {};
   const bars = [
     ["Task pass rate", metricPercent(metrics.task_pass_rate)],
-    ["PR creation success", metricPercent(metrics.patch_success_rate)],
+    ["Patch validation success", metricPercent(metrics.patch_success_rate)],
     ["First-run CI pass rate", metricPercent(metrics.first_run_ci_pass_rate)],
     ["Fixture schema pass", metricPercent(metrics.fixture_schema_pass_rate)],
     ["Security block rate", metricPercent(metrics.security_block_rate)]
@@ -2625,7 +2635,7 @@ function SettingsScreen({
             <section className="detailStack">
               <section className="panel settingsPanel">
                 <h2>Cost Limits</h2>
-                <KeyValue label="Max cost per issue" value="N/A" />
+                <KeyValue label="Max cost per issue" value="Not configured" />
                 <KeyValue label="Max commands without approval" value={String(policy?.max_commands_without_approval ?? "Unavailable")} />
                 <KeyValue label="Max files changed without approval" value={String(policy?.max_files_changed_without_approval ?? "Unavailable")} />
               </section>
@@ -2634,7 +2644,7 @@ function SettingsScreen({
               <h2>Budget status</h2>
               <div className={policy ? "statusHero" : "statusHero warning"}>
                 {policy ? <CheckCircle2 size={32} /> : <AlertTriangle size={32} />}
-                <strong>{policy ? "Policy loaded" : "Policy N/A"}</strong>
+                <strong>{policy ? "Policy limits loaded" : "Policy unavailable"}</strong>
               </div>
               <p className="mutedText">Environment: {readiness?.environment ?? "Unavailable"}</p>
               <button className="primaryAction wide" onClick={onReset} type="button">
@@ -2699,21 +2709,21 @@ function SettingsScreen({
               <section className="panel settingsPanel">
                 <h2>Alert Channels</h2>
                 <p className="mutedText" style={{ marginBottom: "16px" }}>No notification delivery endpoint or saved notification settings are present in this backend.</p>
-                <KeyValue label="Slack" value="N/A" />
-                <KeyValue label="Discord" value="N/A" />
-                <KeyValue label="Email alerts" value="N/A" />
+                <KeyValue label="Slack" value="Not configured" />
+                <KeyValue label="Discord" value="Not configured" />
+                <KeyValue label="Email alerts" value="Not configured" />
               </section>
               <section className="panel settingsPanel">
                 <h2>Webhook Delivery</h2>
-                <KeyValue label="Target URL" value="N/A" />
-                <KeyValue label="Secret token" value="N/A" />
+                <KeyValue label="Target URL" value="Not configured" />
+                <KeyValue label="Secret token" value="Not configured" />
               </section>
             </section>
             <aside className="panel contextPanel">
               <h2>Alerts status</h2>
               <div className="statusHero warning">
                 <AlertTriangle size={32} />
-                <strong>Notifications N/A</strong>
+                <strong>Delivery not configured</strong>
               </div>
               <p className="mutedText">No notification configuration endpoint is available.</p>
               <button className="primaryAction wide" onClick={onReset} type="button">
@@ -3461,9 +3471,9 @@ function ProfileScreen({ data, onGithub }: { data: ConsoleState; onGithub: () =>
         <section className="panel profilePanel">
           <h2>Preferences</h2>
           <KeyValue label="Compact mode" value="N/A" />
-          <KeyValue label="Email notifications" value="N/A" />
-          <KeyValue label="GitHub comment notifications" value="N/A" />
-          <KeyValue label="Weekly evaluation report" value="N/A" />
+          <KeyValue label="Email notifications" value="Not configured" />
+          <KeyValue label="GitHub comment notifications" value="Not configured" />
+          <KeyValue label="Weekly evaluation report" value="Not configured" />
         </section>
         <section className="panel profilePanel">
           <h2>API and access</h2>
@@ -3627,7 +3637,7 @@ function RiskRows({ risk, onSecurity }: { risk: ReturnType<typeof riskCounts>; o
     ["Low risk", risk.low, "success"],
     ["Medium risk", risk.medium, "warning"],
     ["High risk", risk.high, "danger"],
-    ["Blocked", risk.blocked, "danger"]
+    ["Blocked issue status", risk.blocked, "danger"]
   ] as const;
   return (
     <div className="riskRows">
@@ -3994,6 +4004,12 @@ function relativeTime(value: string) {
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
+}
+
+function refreshStateLabel(lastRefreshedAt: string | null, isRefreshing: boolean) {
+  if (isRefreshing) return "Refreshing current snapshot.";
+  if (!lastRefreshedAt) return "Snapshot has not been refreshed in this session.";
+  return `Last refreshed ${relativeTime(lastRefreshedAt)}. Auto-refresh checks every 20 seconds.`;
 }
 
 function elapsed(start: string, end: string | null) {

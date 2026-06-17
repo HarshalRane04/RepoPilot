@@ -13,6 +13,7 @@ from typing import Callable, Mapping, Sequence
 
 DEFAULT_JSON_OUT = Path("Docs/release-artifacts/security-scanner-snapshot.json")
 DEFAULT_MD_OUT = Path("Docs/release-artifacts/security-scanner-snapshot.md")
+DEFAULT_CODEQL_EVIDENCE_PATH = Path("Docs/release-artifacts/codeql-run-evidence.json")
 SECURITY_ENV_KEYS = ("SEMGREP_ENABLED", "DEPENDENCY_AUDIT_ENABLED", "CODEQL_ENABLED")
 DEPENDENCY_MANIFEST_PATTERNS = ("package-lock.json", "requirements.txt", "pyproject.toml")
 
@@ -70,6 +71,7 @@ class SecurityScannerSnapshot:
     environment: dict[str, bool]
     dependency_manifests: list[str]
     codeql_workflow_present: bool
+    codeql_run_evidence_present: bool
     tool_versions: list[ToolVersion]
     scanners: list[ScannerStatus]
     warnings: list[str]
@@ -83,6 +85,7 @@ class SecurityScannerSnapshot:
             "environment": self.environment,
             "dependency_manifests": self.dependency_manifests,
             "codeql_workflow_present": self.codeql_workflow_present,
+            "codeql_run_evidence_present": self.codeql_run_evidence_present,
             "tool_versions": [tool.as_dict() for tool in self.tool_versions],
             "scanners": [scanner.as_dict() for scanner in self.scanners],
             "warnings": self.warnings,
@@ -127,6 +130,32 @@ def has_tool(tools: Mapping[str, ToolVersion], name: str) -> bool:
     return bool(tools[name].available)
 
 
+def codeql_run_evidence_path(root: Path, env: Mapping[str, str]) -> Path:
+    configured = (env.get("CODEQL_RUN_EVIDENCE_PATH") or "").strip()
+    path = Path(configured) if configured else DEFAULT_CODEQL_EVIDENCE_PATH
+    if not path.is_absolute():
+        path = root / path
+    return path
+
+
+def has_codeql_run_evidence(root: Path, env: Mapping[str, str]) -> bool:
+    path = codeql_run_evidence_path(root, env)
+    if not path.exists():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    workflow = str(payload.get("workflowName") or payload.get("workflow") or "").lower()
+    status = str(payload.get("status") or "").lower()
+    conclusion = str(payload.get("conclusion") or "").lower()
+    has_successful_workflow = "codeql" in workflow and status == "completed" and conclusion == "success"
+    alerts_verified = payload.get("codeql_alert_fetch_verified") is True or payload.get("sarif_ingestion_verified") is True
+    return has_successful_workflow or alerts_verified
+
+
 def collect_snapshot(
     *,
     root: Path,
@@ -140,6 +169,7 @@ def collect_snapshot(
     codeql_workflow_present = any((root / ".github/workflows").glob("*codeql*.yml")) or any(
         (root / ".github/workflows").glob("*codeql*.yaml")
     )
+    codeql_run_evidence_present = has_codeql_run_evidence(root, env)
 
     versions = [
         collect_tool_version("semgrep", ["semgrep", "--version"], runner=runner),
@@ -265,15 +295,18 @@ def collect_snapshot(
 
     if env_flags["CODEQL_ENABLED"]:
         if codeql_workflow_present:
-            if has_tool(tools, "codeql"):
-                detail = "CODEQL_ENABLED is true, a CodeQL workflow file is present, and the local CodeQL executable is available."
+            if codeql_run_evidence_present:
+                detail = "CODEQL_ENABLED is true, a CodeQL workflow file is present, and successful GitHub CodeQL run or ingestion evidence is recorded."
                 status = "ready"
                 next_step = None
             else:
-                detail = "CODEQL_ENABLED is true and a CodeQL workflow file is present; GitHub code-scanning run evidence is still required."
+                detail = "CODEQL_ENABLED is true and a CodeQL workflow file is present; successful GitHub CodeQL run, SARIF ingestion, or alert-fetch evidence is still required."
                 warnings.append(detail)
                 status = "workflow_ready"
-                next_step = "Run the GitHub CodeQL workflow on a code-scanning-enabled repository and capture alert/SARIF evidence."
+                next_step = (
+                    "Run the GitHub CodeQL workflow on a code-scanning-enabled repository and capture "
+                    "Docs/release-artifacts/codeql-run-evidence.json or verified alert/SARIF evidence."
+                )
         else:
             detail = "CODEQL_ENABLED is true, but no CodeQL workflow file is present under .github/workflows."
             blockers.append(detail)
@@ -324,6 +357,7 @@ def collect_snapshot(
         environment=env_flags,
         dependency_manifests=dependency_manifests,
         codeql_workflow_present=codeql_workflow_present,
+        codeql_run_evidence_present=codeql_run_evidence_present,
         tool_versions=versions,
         scanners=scanners,
         warnings=warnings,
@@ -339,6 +373,7 @@ def render_markdown(snapshot: SecurityScannerSnapshot) -> str:
         f"- Root: `{snapshot.root}`",
         f"- Release scanner proof ready: `{snapshot.release_scanner_proof_ready}`",
         f"- CodeQL workflow present: `{snapshot.codeql_workflow_present}`",
+        f"- CodeQL run evidence present: `{snapshot.codeql_run_evidence_present}`",
         f"- Dependency manifests found: `{len(snapshot.dependency_manifests)}`",
         "",
         "## Scanner Status",

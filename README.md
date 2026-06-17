@@ -64,6 +64,15 @@ RepoPilot is designed around these invariants:
 
 For a step-by-step self-hosted install path, use [Docs/QUICKSTART.md](Docs/QUICKSTART.md). The short path is:
 
+Prerequisites and common first-run gotchas:
+
+- Install Docker Desktop or another Docker daemon, and make sure it is running before `make start-local`.
+- Install `make`, Git, and a POSIX shell. The local bootstrap scripts generate `.env` values, then Docker Compose builds API/web images from source.
+- The first run can take several minutes because it builds containers, applies migrations, and builds the sandbox image.
+- If Docker Compose reports missing `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `GITHUB_WEBHOOK_SECRET`, or `SESSION_SECRET_KEY`, run `make init-local-env` before starting Compose.
+- `make init-local-env` enables local header-based dev auth for the dashboard/API so a fresh clone is usable without OAuth. Do not use that local auth posture as a production deployment setting.
+- Real GitHub, OAuth, scanner, and model-provider values should be saved through dashboard Settings or `make configure-runtime-secrets`, not committed to source.
+
 1. Clone the repo and start the local stack:
 
    ```bash

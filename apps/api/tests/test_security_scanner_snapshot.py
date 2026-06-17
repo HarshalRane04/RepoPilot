@@ -54,6 +54,11 @@ def test_scanner_snapshot_checks_dependency_audit_tools_for_manifest_types(tmp_p
 def test_scanner_snapshot_writes_markdown_and_json(tmp_path: Path, monkeypatch) -> None:
     tmp_path.joinpath(".github/workflows").mkdir(parents=True)
     tmp_path.joinpath(".github/workflows/codeql.yml").write_text("name: CodeQL\n", encoding="utf-8")
+    tmp_path.joinpath("Docs/release-artifacts").mkdir(parents=True)
+    tmp_path.joinpath("Docs/release-artifacts/codeql-run-evidence.json").write_text(
+        '{"workflowName":"CodeQL","status":"completed","conclusion":"success"}',
+        encoding="utf-8",
+    )
     tmp_path.joinpath("apps/web").mkdir(parents=True)
     tmp_path.joinpath("apps/web/package-lock.json").write_text("{}", encoding="utf-8")
     tmp_path.joinpath("apps/api").mkdir(parents=True)
@@ -77,8 +82,11 @@ def test_scanner_snapshot_writes_markdown_and_json(tmp_path: Path, monkeypatch) 
     write_outputs(snapshot=snapshot, json_out=json_out, md_out=md_out)
 
     assert snapshot.release_scanner_proof_ready is True
+    assert snapshot.codeql_run_evidence_present is True
     assert "Release scanner proof ready: `True`" in md_out.read_text(encoding="utf-8")
+    assert "CodeQL run evidence present: `True`" in md_out.read_text(encoding="utf-8")
     assert '"codeql_workflow_present": true' in json_out.read_text(encoding="utf-8")
+    assert '"codeql_run_evidence_present": true' in json_out.read_text(encoding="utf-8")
 
 
 def test_scanner_snapshot_keeps_codeql_workflow_only_proof_as_warning(tmp_path: Path, monkeypatch) -> None:
@@ -101,5 +109,93 @@ def test_scanner_snapshot_keeps_codeql_workflow_only_proof_as_warning(tmp_path: 
     )
 
     assert snapshot.release_scanner_proof_ready is False
+    assert snapshot.codeql_run_evidence_present is False
     assert any(scanner.name == "codeql" and scanner.status == "workflow_ready" for scanner in snapshot.scanners)
-    assert any("GitHub code-scanning run evidence" in warning for warning in snapshot.warnings)
+    assert any("successful GitHub CodeQL run" in warning for warning in snapshot.warnings)
+
+
+def test_scanner_snapshot_rejects_local_codeql_executable_without_run_evidence(tmp_path: Path, monkeypatch) -> None:
+    tmp_path.joinpath(".github/workflows").mkdir(parents=True)
+    tmp_path.joinpath(".github/workflows/codeql.yml").write_text("name: CodeQL\n", encoding="utf-8")
+    tmp_path.joinpath("apps/web").mkdir(parents=True)
+    tmp_path.joinpath("apps/web/package-lock.json").write_text("{}", encoding="utf-8")
+    tmp_path.joinpath("apps/api").mkdir(parents=True)
+    tmp_path.joinpath("apps/api/requirements.txt").write_text("fastapi\n", encoding="utf-8")
+
+    def fake_which(name: str) -> str:
+        return f"/usr/bin/{name}"
+
+    def fake_runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=command, returncode=0, stdout=f"{command[0]} 1.0\n", stderr="")
+
+    monkeypatch.setattr("scripts.security_scanner_snapshot.shutil.which", fake_which)
+    snapshot = collect_snapshot(
+        root=tmp_path,
+        env={"SEMGREP_ENABLED": "true", "DEPENDENCY_AUDIT_ENABLED": "true", "CODEQL_ENABLED": "true"},
+        runner=fake_runner,
+    )
+
+    assert snapshot.release_scanner_proof_ready is False
+    assert snapshot.codeql_run_evidence_present is False
+    assert any(scanner.name == "codeql" and scanner.status == "workflow_ready" for scanner in snapshot.scanners)
+    assert any("SARIF ingestion, or alert-fetch evidence is still required" in warning for warning in snapshot.warnings)
+
+
+def test_scanner_snapshot_rejects_malformed_codeql_run_evidence(tmp_path: Path, monkeypatch) -> None:
+    tmp_path.joinpath(".github/workflows").mkdir(parents=True)
+    tmp_path.joinpath(".github/workflows/codeql.yml").write_text("name: CodeQL\n", encoding="utf-8")
+    tmp_path.joinpath("apps/web").mkdir(parents=True)
+    tmp_path.joinpath("apps/web/package-lock.json").write_text("{}", encoding="utf-8")
+    tmp_path.joinpath("apps/api").mkdir(parents=True)
+    tmp_path.joinpath("apps/api/requirements.txt").write_text("fastapi\n", encoding="utf-8")
+    tmp_path.joinpath("Docs/release-artifacts").mkdir(parents=True)
+    tmp_path.joinpath("Docs/release-artifacts/codeql-run-evidence.json").write_text("{not-json", encoding="utf-8")
+
+    def fake_which(name: str) -> str:
+        return f"/usr/bin/{name}"
+
+    def fake_runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=command, returncode=0, stdout=f"{command[0]} 1.0\n", stderr="")
+
+    monkeypatch.setattr("scripts.security_scanner_snapshot.shutil.which", fake_which)
+    snapshot = collect_snapshot(
+        root=tmp_path,
+        env={"SEMGREP_ENABLED": "true", "DEPENDENCY_AUDIT_ENABLED": "true", "CODEQL_ENABLED": "true"},
+        runner=fake_runner,
+    )
+
+    assert snapshot.release_scanner_proof_ready is False
+    assert snapshot.codeql_run_evidence_present is False
+    assert any(scanner.name == "codeql" and scanner.status == "workflow_ready" for scanner in snapshot.scanners)
+
+
+def test_scanner_snapshot_accepts_codeql_evidence_path_override(tmp_path: Path, monkeypatch) -> None:
+    tmp_path.joinpath(".github/workflows").mkdir(parents=True)
+    tmp_path.joinpath(".github/workflows/codeql.yml").write_text("name: CodeQL\n", encoding="utf-8")
+    tmp_path.joinpath("apps/web").mkdir(parents=True)
+    tmp_path.joinpath("apps/web/package-lock.json").write_text("{}", encoding="utf-8")
+    tmp_path.joinpath("apps/api").mkdir(parents=True)
+    tmp_path.joinpath("apps/api/requirements.txt").write_text("fastapi\n", encoding="utf-8")
+    evidence = tmp_path / "custom-codeql-evidence.json"
+    evidence.write_text('{"workflow":"CodeQL","status":"completed","conclusion":"success"}', encoding="utf-8")
+
+    def fake_which(name: str) -> str:
+        return f"/usr/bin/{name}"
+
+    def fake_runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=command, returncode=0, stdout=f"{command[0]} 1.0\n", stderr="")
+
+    monkeypatch.setattr("scripts.security_scanner_snapshot.shutil.which", fake_which)
+    snapshot = collect_snapshot(
+        root=tmp_path,
+        env={
+            "SEMGREP_ENABLED": "true",
+            "DEPENDENCY_AUDIT_ENABLED": "true",
+            "CODEQL_ENABLED": "true",
+            "CODEQL_RUN_EVIDENCE_PATH": str(evidence),
+        },
+        runner=fake_runner,
+    )
+
+    assert snapshot.release_scanner_proof_ready is True
+    assert snapshot.codeql_run_evidence_present is True

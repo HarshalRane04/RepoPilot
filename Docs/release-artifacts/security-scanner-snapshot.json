@@ -1,5 +1,6 @@
 {
   "blockers": [],
+  "codeql_run_evidence_present": false,
   "codeql_workflow_present": true,
   "dependency_manifests": [
     "apps/api/requirements.txt",
@@ -16,7 +17,7 @@
     "DEPENDENCY_AUDIT_ENABLED": true,
     "SEMGREP_ENABLED": true
   },
-  "generated_at": "2026-06-04T17:58:49.892694+00:00",
+  "generated_at": "2026-06-17T13:27:44.300427+00:00",
   "release_scanner_proof_ready": false,
   "root": "/Users/harshalrane/Documents/RepoPilot",
   "scanners": [
@@ -66,11 +67,11 @@
       ]
     },
     {
-      "detail": "CODEQL_ENABLED is true and a CodeQL workflow file is present; GitHub code-scanning run evidence is still required.",
+      "detail": "CODEQL_ENABLED is true and a CodeQL workflow file is present; successful GitHub CodeQL run, SARIF ingestion, or alert-fetch evidence is still required.",
       "enabled": true,
       "env_key": "CODEQL_ENABLED",
       "name": "codeql",
-      "next_step": "Run the GitHub CodeQL workflow on a code-scanning-enabled repository and capture alert/SARIF evidence.",
+      "next_step": "Run the GitHub CodeQL workflow on a code-scanning-enabled repository and capture Docs/release-artifacts/codeql-run-evidence.json or verified alert/SARIF evidence.",
       "required_for_release": true,
       "status": "workflow_ready",
       "tools": [
@@ -87,7 +88,7 @@
       ],
       "detail": null,
       "name": "semgrep",
-      "version": "1.165.0"
+      "version": "1.166.0"
     },
     {
       "available": true,
@@ -107,7 +108,7 @@
       ],
       "detail": null,
       "name": "pip-audit",
-      "version": "pip-audit 2.10.0"
+      "version": "pip-audit 2.10.1"
     },
     {
       "available": false,
@@ -121,6 +122,6 @@
     }
   ],
   "warnings": [
-    "CODEQL_ENABLED is true and a CodeQL workflow file is present; GitHub code-scanning run evidence is still required."
+    "CODEQL_ENABLED is true and a CodeQL workflow file is present; successful GitHub CodeQL run, SARIF ingestion, or alert-fetch evidence is still required."
   ]
 }

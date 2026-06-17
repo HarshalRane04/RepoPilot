@@ -146,6 +146,15 @@ def _pull_request_numbers(value: object) -> list[dict[str, int]]:
     return pull_requests
 
 
+def _free_form_audit_metadata(value: str) -> dict[str, object]:
+    stripped = value.strip()
+    return {
+        "present": bool(stripped),
+        "sha256": hashlib.sha256(stripped.encode("utf-8")).hexdigest() if stripped else None,
+        "length": len(stripped),
+    }
+
+
 async def process_github_event(db: AsyncSession, *, event_id: UUID) -> dict[str, str]:
     event = await db.get(GitHubEvent, event_id)
     if event is None:
@@ -213,7 +222,7 @@ async def _process_issue_comment_command(
         entity_id=str(issue.id),
         metadata={
             "command": normalized.command,
-            "args": normalized.command_args,
+            "args": _free_form_audit_metadata(normalized.command_args),
             "comment_url": normalized.comment_url,
             "permission_check": "not_connected",
         },
@@ -357,7 +366,7 @@ async def _apply_authorized_command(
             action="plan.rejected_via_github_command",
             entity_type="plan",
             entity_id=str(plan.id),
-            metadata={"reason": reason},
+            metadata={"reason": _free_form_audit_metadata(reason)},
         )
         return
 
@@ -387,7 +396,11 @@ async def _apply_authorized_command(
             action="plan.revision_requested_via_github_command",
             entity_type="plan",
             entity_id=str(plan.id),
-            metadata={"instructions": instructions, "new_plan_id": str(new_plan.id), "run_id": str(run.id) if run else None},
+            metadata={
+                "instructions": _free_form_audit_metadata(instructions),
+                "new_plan_id": str(new_plan.id),
+                "run_id": str(run.id) if run else None,
+            },
         )
         return
 

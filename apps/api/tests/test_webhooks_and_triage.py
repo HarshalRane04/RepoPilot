@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 
 from app.db.models import AgentRun, LLMTrace
-from app.services.github_ingestion import store_webhook_event
+from app.services.github_ingestion import _free_form_audit_metadata, store_webhook_event
 from app.services.github_webhooks import (
     GitHubEventNormalizer,
     GitHubSignatureVerifier,
@@ -248,6 +248,30 @@ def test_webhook_storage_minimizes_and_redacts_check_run_payload() -> None:
     normalized = GitHubEventNormalizer().normalize("check_run", event.payload_json)
     assert normalized.pull_request_number == 4
     assert "[REDACTED_SECRET]" in normalized.log_excerpt
+
+
+def test_comment_command_audit_metadata_minimizes_free_form_args() -> None:
+    token = "ghp_abcdefghijklmnopqrstuvwxyz123456"
+    private_note = "customer alice@example.test asked us to rotate the private integration"
+    args = f"revise because {private_note}; leaked token {token}"
+
+    metadata = _free_form_audit_metadata(args)
+
+    stored_text = json.dumps(metadata, sort_keys=True)
+    assert token not in stored_text
+    assert private_note not in stored_text
+    assert "alice@example.test" not in stored_text
+    assert metadata == {
+        "present": True,
+        "sha256": hashlib.sha256(args.encode("utf-8")).hexdigest(),
+        "length": len(args),
+    }
+
+
+def test_comment_command_audit_metadata_handles_empty_args_without_text() -> None:
+    metadata = _free_form_audit_metadata("   ")
+
+    assert metadata == {"present": False, "sha256": None, "length": 0}
 
 
 def test_triage_detects_bug_and_acceptance_criteria() -> None:

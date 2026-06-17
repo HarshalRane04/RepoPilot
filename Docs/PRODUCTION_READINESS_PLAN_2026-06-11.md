@@ -25,11 +25,11 @@ The realistic open-source release model for this week is **self-hosted single-te
 |---|---|---|
 | Source state | `git status --short` shows unrelated modified web UI files and untracked `report_a.xls` / `report_b.csv`. | Do not tag until intentional changes are separated and unknown untracked files are removed, ignored, or explicitly retained outside the source boundary. |
 | CI | Latest `main` CI for commit `3bfd972fec1ea39f1c4742c674b9db7babf046b3` passed on GitHub Actions run `27069899447`. | Core tests/typecheck/hygiene/package/sandbox checks are green for the pushed baseline. |
-| CodeQL | Latest CodeQL workflow is skipped. | Do not claim CodeQL/code-scanning production proof yet. Public repo or private Advanced Security/code-scanning setup is still required. |
+| CodeQL | `CODEQL_ENABLED=true` was added as a repository variable and workflow dispatch `27422972267` ran CodeQL for Python and JavaScript/TypeScript, but both Analyze jobs failed at SARIF upload because GitHub reported code scanning is not enabled for this repository. | Do not claim CodeQL/code-scanning production proof yet. Enable code scanning/GitHub Advanced Security for the private repository or prove CodeQL on a public release repository. |
 | Runtime smoke | Existing local release artifacts show previous local runtime smoke, but Docker is not currently reachable from this session. | Refresh runtime evidence before tagging. Current-session runtime proof is missing. |
 | Credentials | `credential-readiness-snapshot` reports `github_mode=missing_credentials`, `model_mode=mock_model`, writes disabled, and credential smoke `blocked`. | The live GitHub/model path remains unproven until secrets are configured and smoke runs pass. |
 | Deployment docs | `deployment-validation` reports zero failed findings and zero warnings. | Static deployment topology/docs are in good shape, but production-like hosted smoke remains pending. |
-| Security scanner | Scanner posture evidence exists; CodeQL is not live-proven. | Semgrep/dependency-audit posture is credible; CodeQL alert ingestion must be proven or clearly labeled pending. |
+| Security scanner | Scanner posture evidence exists; CodeQL is no longer merely skipped, but live upload is blocked by GitHub code-scanning configuration. | Semgrep/dependency-audit posture is credible; CodeQL alert ingestion must be proven after code scanning is enabled or clearly labeled pending. |
 | Dashboard | Static screenshots and GIFs exist for core local flows. | UI has demo evidence; live credentialed states and real PR/CI evidence need screenshots after smoke. |
 
 ## Release Blocking Gaps
@@ -47,7 +47,7 @@ These are the blockers that prevent "anyone can install and use this for actual 
 | P1 | "Direct install" path still needs live package proof. | Open-source users need an obvious path from clone or GHCR image pull to configured GitHub App. | `make init-local-env` and `docker-compose.ghcr.yml` now cover local defaults and released-image install commands; next proof is an actual GHCR publish, package visibility check, and fresh-host pull/up/migrate smoke. |
 | P1 | Service directories are scaffold-only. | `services/*/README.md` says runtime lives elsewhere; this can look like dead architecture to contributors. | Either extract real runtime entrypoints or relabel these as planned extraction packages and remove them from install-critical docs. |
 | P1 | Artifact storage is local filesystem backed. | Production users need retention, cleanup, backup, and possible object-store migration. | Document local retention defaults and add an object-store extension point before making production storage claims. |
-| P1 | Code scanning is not proven. | Security claims depend on live scanner evidence. | Prove CodeQL in public repo or explicitly state CodeQL is optional/pending for private repos. |
+| P1 | Code scanning is not proven. | Security claims depend on live scanner evidence; a dispatched private-repo CodeQL run scanned files but failed upload because code scanning is disabled. | Enable GitHub code scanning/Advanced Security for the private repo, or prove CodeQL in a public repo, then archive successful run or SARIF/alert ingestion evidence. |
 | P1 | Browser QA is local/static only. | The dashboard must not mislead users in live mode. | Capture screenshots after GitHub/model verification and after the first real draft PR. |
 | P2 | Provider/eval metrics are present but not thresholded for release. | "Works for actual work" needs a minimum quality bar. | Define minimum pass rates for plan quality, retrieval precision, applied-patch validation, security block correctness, cost, and latency. |
 
@@ -174,7 +174,7 @@ Exit evidence:
 | PRD-05 | Provider eval threshold file | P1 | Versioned thresholds for plan, retrieval, patch, security, latency, and cost. |
 | PRD-06 | Service scaffold decision | P1 | Runtime docs either map each service directory to real code or mark it explicitly as future extraction. |
 | PRD-07 | Artifact retention policy | P1 | Configurable retention and cleanup docs for local artifacts; object-store path documented as future/hardening. |
-| PRD-08 | CodeQL proof or honest limitation | P1 | Public CodeQL run or private code-scanning setup evidence; otherwise release notes say CodeQL is not proven. |
+| PRD-08 | CodeQL proof or honest limitation | P1 | A private-repo CodeQL dispatch now proves the workflow executes but upload fails while code scanning is disabled; release notes must say CodeQL is not production-proven until successful run, SARIF ingestion, or alert-fetch evidence is archived. |
 | PRD-09 | Browser live-state capture | P1 | Screenshots/GIFs for verified model, verified GitHub, real draft PR, CI state, and security findings. |
 | PRD-10 | Contributor issue templates | P2 | Bug/security/setup issue templates guide users to redact logs and avoid posting secrets. |
 

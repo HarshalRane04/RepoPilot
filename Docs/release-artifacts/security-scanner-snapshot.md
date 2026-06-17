@@ -1,9 +1,10 @@
 # RepoPilot Security Scanner Snapshot
 
-- Generated at: `2026-06-04T17:58:49.892694+00:00`
+- Generated at: `2026-06-17T13:27:44.300427+00:00`
 - Root: `/Users/harshalrane/Documents/RepoPilot`
 - Release scanner proof ready: `False`
 - CodeQL workflow present: `True`
+- CodeQL run evidence present: `False`
 - Dependency manifests found: `8`
 
 ## Scanner Status
@@ -14,15 +15,15 @@
 | release_hygiene_secret_scan |  | True | ready | True | Source-boundary hygiene scanning is available through make release-hygiene. |  |
 | semgrep | SEMGREP_ENABLED | True | ready | True | Semgrep is enabled and the executable is available for sandbox security gates. |  |
 | dependency_audit | DEPENDENCY_AUDIT_ENABLED | True | ready | True | Dependency audit is enabled and manifests were found: 8. |  |
-| codeql | CODEQL_ENABLED | True | workflow_ready | True | CODEQL_ENABLED is true and a CodeQL workflow file is present; GitHub code-scanning run evidence is still required. | Run the GitHub CodeQL workflow on a code-scanning-enabled repository and capture alert/SARIF evidence. |
+| codeql | CODEQL_ENABLED | True | workflow_ready | True | CODEQL_ENABLED is true and a CodeQL workflow file is present; successful GitHub CodeQL run, SARIF ingestion, or alert-fetch evidence is still required. | Run the GitHub CodeQL workflow on a code-scanning-enabled repository and capture Docs/release-artifacts/codeql-run-evidence.json or verified alert/SARIF evidence. |
 
 ## Tool Availability
 
 | Tool | Available | Version | Detail |
 |---|---|---|---|
-| semgrep | True | 1.165.0 |  |
+| semgrep | True | 1.166.0 |  |
 | npm | True | 10.9.4 |  |
-| pip-audit | True | pip-audit 2.10.0 |  |
+| pip-audit | True | pip-audit 2.10.1 |  |
 | codeql | False |  | codeql executable was not found. |
 
 ## Dependency Manifests
@@ -38,4 +39,4 @@
 
 ## Warnings
 
-- CODEQL_ENABLED is true and a CodeQL workflow file is present; GitHub code-scanning run evidence is still required.
+- CODEQL_ENABLED is true and a CodeQL workflow file is present; successful GitHub CodeQL run, SARIF ingestion, or alert-fetch evidence is still required.
