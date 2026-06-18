@@ -2478,18 +2478,28 @@ function SettingsScreen({
         || modelProviderDraft.apiKey
       )
   );
+  const [activeTab, setActiveTab] = useState<SettingsTab>(tab);
+  useEffect(() => {
+    setActiveTab(tab);
+  }, [tab]);
+
+  function chooseTab(next: SettingsTab) {
+    setActiveTab(next);
+    setTab(next);
+  }
+
   return (
     <div className="screen">
       <ScreenHeader title="Settings" subtitle="Configure GitHub access, models, approval policies, tools, and cost limits." />
       <div className="tabs">
         {settingsTabs.map((item) => (
-          <button className={tab === item ? "tab active" : "tab"} key={item} onClick={() => setTab(item)} type="button">
+          <button className={activeTab === item ? "tab active" : "tab"} key={item} onClick={() => chooseTab(item)} type="button">
             {item}
           </button>
         ))}
       </div>
       <div className="settingsGrid">
-        {tab === "GitHub" && (
+        {activeTab === "GitHub" && (
           <>
             <section className="detailStack">
               <GitHubSyncPanel data={data} onConfigure={() => setShowSecretForm(true)} onConnect={onGithub} />
@@ -2570,7 +2580,7 @@ function SettingsScreen({
           </>
         )}
 
-        {tab === "Policies" && (
+        {activeTab === "Policies" && (
           <>
             <section className="detailStack">
               <section className="panel settingsPanel">
@@ -2604,7 +2614,7 @@ function SettingsScreen({
           </>
         )}
 
-        {tab === "Tool Permissions" && (
+        {activeTab === "Tool Permissions" && (
           <>
             <section className="detailStack">
               <section className="panel settingsPanel">
@@ -2630,7 +2640,7 @@ function SettingsScreen({
           </>
         )}
 
-        {tab === "Cost Limits" && (
+        {activeTab === "Cost Limits" && (
           <>
             <section className="detailStack">
               <section className="panel settingsPanel">
@@ -2655,7 +2665,7 @@ function SettingsScreen({
           </>
         )}
 
-        {tab === "Models" && (
+        {activeTab === "Models" && (
           <>
             <section className="detailStack">
               <ModelProviderForm
@@ -2703,7 +2713,7 @@ function SettingsScreen({
           </>
         )}
 
-        {tab === "Notifications" && (
+        {activeTab === "Notifications" && (
           <>
             <section className="detailStack">
               <section className="panel settingsPanel">
@@ -2734,7 +2744,7 @@ function SettingsScreen({
           </>
         )}
 
-        {tab === "Display" && (
+        {activeTab === "Display" && (
           <>
             <section className="detailStack">
               <section className="panel settingsPanel">

@@ -27,8 +27,8 @@ Released-image install path:
 
 ```bash
 make init-local-env
-REPOPILOT_IMAGE_TAG=v1.0.0 docker compose -f docker-compose.ghcr.yml pull
-REPOPILOT_IMAGE_TAG=v1.0.0 docker compose -f docker-compose.ghcr.yml up -d
+REPOPILOT_IMAGE_TAG=<published-rc-tag-or-digest> docker compose -f docker-compose.ghcr.yml pull
+REPOPILOT_IMAGE_TAG=<published-rc-tag-or-digest> docker compose -f docker-compose.ghcr.yml up -d
 docker compose -f docker-compose.ghcr.yml exec api alembic upgrade head
 ```
 

@@ -42,7 +42,7 @@ RepoPilot is not yet v1.0 release-ready. This candidate is a local, single-tenan
 ### Verification Snapshot
 
 - API compile check: passed.
-- Full API test suite: `171 passed`.
+- Full API test suite: `271 passed`.
 - Alembic head: `0006_llm_trace_metadata`.
 - Fresh database migration verification: passed with `make migration-verify`.
 - Docker Compose config: passed with placeholder local-development secrets.
@@ -54,9 +54,10 @@ RepoPilot is not yet v1.0 release-ready. This candidate is a local, single-tenan
 - Local runtime deployment smoke: passed with `make deployment-smoke` against `http://127.0.0.1:8000/health` and `http://127.0.0.1:3001/`.
 - LLM trace smoke: passed through local prompt creation with OpenRouter configured; `llm_traces` rows recorded provider `openrouter`, modes `live`/`fallback`, response hashes, and redacted metadata, and `/runs/{run_id}/trace` returned those fields.
 - Source-boundary manifest: generated `319` non-ignored source candidate entries with aggregate SHA-256 evidence.
-- Credential readiness snapshot: captured running-app readiness showing `model_mode=mock_model`, `github_mode=missing_credentials`, local-record mode enabled, missing GitHub App/OAuth/model runtime secrets, and write mode disabled.
-- Credential smoke summary: generated redacted aggregate smoke evidence showing GitHub OAuth, GitHub App, and model provider gates are currently blocked until runtime secrets are saved.
-- Security scanner snapshot: captured local scanner posture, dependency manifests, external scanner enablement, and installed-tool availability; current local proof still reports external scanner enablement as incomplete until Semgrep, dependency audit, and CodeQL are enabled in the runtime/CI path.
+- Credential readiness snapshot: captured running-app readiness showing `model_mode=live_model_verified`, `github_mode=missing_credentials`, local-record mode enabled, missing GitHub App/OAuth runtime secrets, and write mode disabled.
+- Credential smoke summary: generated redacted aggregate smoke evidence showing model-provider verification passed while GitHub OAuth and GitHub App gates remain blocked until runtime secrets are saved.
+- Security scanner snapshot: captured local scanner posture, dependency manifests, external scanner enablement, and installed-tool availability; CI scanner-posture evidence is green for the public repository.
+- CodeQL proof: public `main` CodeQL workflow succeeded for JavaScript/TypeScript and Python analysis after the repository was made public.
 - Browser QA: passed at default desktop viewport for dashboard, repositories/repository detail, plan review, agent runs, run trace, pull requests, security, evaluations, and settings; passed at 390x844 mobile viewport for the dashboard after the responsive shell fix.
 - Release GIF evidence: generated local plan-to-PR and governance visual-flow GIFs from the captured operator-console screenshots.
 
@@ -64,7 +65,7 @@ RepoPilot is not yet v1.0 release-ready. This candidate is a local, single-tenan
 
 - Real GitHub App write readiness is not production-proven until credentials and a disposable demo repository prove branch/commit/draft-PR smoke testing.
 - One ad hoc live-provider prompt smoke produced redacted trace rows; this is connectivity evidence only, not provider-quality or production-readiness proof. Live model and live embedding quality are not production-proven until provider-backed planning, patch-attempt, retrieval, and applied-patch evals run.
-- Semgrep, dependency-audit, and CodeQL scanner paths are implemented locally, and the CodeQL workflow file is present. CI now uploads Semgrep/dependency-audit posture evidence, but release-grade CodeQL proof remains incomplete until a code-scanning-enabled repository produces SARIF/alert evidence.
+- Semgrep, dependency-audit, and CodeQL scanner paths are implemented locally. CI now uploads Semgrep/dependency-audit posture evidence, and public-repository CodeQL analysis succeeds; credentialed CodeQL alert-fetch evidence is still pending until live GitHub credentials are configured.
 - Artifact storage currently uses local filesystem-backed Docker volume storage with scheduled dry-run/deletion retention for local files; production object storage and signed artifact retrieval are pending deployment work.
 - Full browser visual QA remains partially pending: core static screenshots and local visual-flow GIFs are captured, but live credentialed write/CI states still need release captures.
 - Release deployment has a guide plus local runtime smoke evidence, but production-like cloud/VM deployment validation is still pending.

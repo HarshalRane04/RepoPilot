@@ -75,7 +75,7 @@ make release-hygiene
 make release-gifs
 make deployment-validate
 make deployment-smoke
-REPOPILOT_IMAGE_TAG=v1.0.0 make ghcr-config
+REPOPILOT_IMAGE_TAG=<published-rc-tag-or-digest> make ghcr-config
 ```
 
 Strict release gate after live credentials and Docker runtime are ready:

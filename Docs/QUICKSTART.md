@@ -50,7 +50,7 @@ make migrate
 make sandbox-image
 ```
 
-For published GHCR images, set `REPOPILOT_IMAGE_TAG` in `.env` to a release tag such as `v1.0.0`, `latest`, or a digest-pinned override through `REPOPILOT_API_IMAGE`/`REPOPILOT_WEB_IMAGE`/`REPOPILOT_SANDBOX_IMAGE`, then run:
+For published GHCR images, set `REPOPILOT_IMAGE_TAG` in `.env` to a published release-candidate tag, `latest`, or a digest-pinned override through `REPOPILOT_API_IMAGE`/`REPOPILOT_WEB_IMAGE`/`REPOPILOT_SANDBOX_IMAGE`, then run:
 
 ```bash
 make ghcr-start-local
