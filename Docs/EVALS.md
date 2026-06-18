@@ -68,8 +68,8 @@ Implemented local endpoints:
 
 Implemented local report artifact:
 
-- `Docs/eval-reports/v1-local-latest.md`: human-readable local fixture report.
-- `Docs/eval-reports/v1-local-latest.json`: machine-readable local fixture report.
+- `Docs/eval-reports/v1-local-latest.md`: human-readable local fixture report, generated on demand and kept out of normal source commits.
+- `Docs/eval-reports/v1-local-latest.json`: machine-readable local fixture report, generated on demand and kept out of normal source commits.
 - `make eval-report`: regenerates both files with failed release gates allowed, so the report remains honest about missing observed plan/patch/provider evidence.
 - `make provider-planning-eval`: runs the planning-only live-provider harness using the encrypted local runtime secret store first, then provider-specific environment variables as an override. It defaults to `PROVIDER=openrouter`, `MODEL=gemma-4-31b-it:free`, and `OPENROUTER_API_KEY` when an override is needed. Reports are written to `Docs/eval-reports/v1-provider-planning.*`.
 - `make provider-retrieval-eval`: runs the provider-backed retrieval-quality harness using the encrypted local runtime secret store first, then provider-specific environment variables as an override. It calls an embedding-capable provider endpoint, retrieves fixture file citations for each benchmark issue, and feeds those citations into the existing context-precision gate. Reports are written to `Docs/eval-reports/v1-provider-retrieval.*`.

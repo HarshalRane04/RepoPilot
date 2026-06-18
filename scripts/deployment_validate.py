@@ -48,29 +48,26 @@ REQUIRED_GUIDE_SECTIONS = {
     "Rollback",
     "Production Readiness Gate",
 }
-REQUIRED_RELEASE_ARTIFACTS = {
-    "Docs/release-artifacts/source-boundary-hygiene.md",
-    "Docs/release-artifacts/source-boundary-hygiene.json",
-    "Docs/release-artifacts/source-boundary-manifest.md",
-    "Docs/release-artifacts/source-boundary-manifest.json",
-    "Docs/release-artifacts/release-gifs.md",
-    "Docs/release-artifacts/release-gifs.json",
-    "Docs/release-artifacts/deployment-runtime-smoke.md",
-    "Docs/release-artifacts/deployment-runtime-smoke.json",
-    "Docs/release-artifacts/credential-readiness-snapshot.md",
-    "Docs/release-artifacts/credential-readiness-snapshot.json",
-    "Docs/release-artifacts/credential-smoke-summary.md",
-    "Docs/release-artifacts/credential-smoke-summary.json",
-    "Docs/release-artifacts/security-scanner-snapshot.md",
-    "Docs/release-artifacts/security-scanner-snapshot.json",
-    "Docs/release-artifacts/model-provider-smoke.md",
-    "Docs/release-artifacts/model-provider-smoke.json",
-    "Docs/release-artifacts/github-app-smoke.md",
-    "Docs/release-artifacts/github-app-smoke.json",
-    "Docs/release-artifacts/github-oauth-smoke.md",
-    "Docs/release-artifacts/github-oauth-smoke.json",
-    "Docs/eval-reports/v1-local-latest.md",
-    "Docs/eval-reports/v1-local-latest.json",
+REQUIRED_PUBLIC_DOCS = {
+    "Docs/README.md",
+    "Docs/ARCHITECTURE.md",
+    "Docs/CREDENTIAL_HANDOFF.md",
+    "Docs/DEMO_SCRIPT.md",
+    "Docs/DEPLOYMENT_GUIDE.md",
+    "Docs/EVALS.md",
+    "Docs/GITHUB_APP_SETUP.md",
+    "Docs/MODEL_TESTING.md",
+    "Docs/QUICKSTART.md",
+    "Docs/RELEASE_CHECKLIST.md",
+    "Docs/RELEASE_NOTES.md",
+    "Docs/ROADMAP.md",
+    "Docs/RUNBOOK.md",
+    "Docs/SECURITY.md",
+    "Docs/ADRs/0001-local-platform-stack.md",
+}
+GENERATED_EVIDENCE_DIRECTORIES = {
+    "Docs/eval-reports",
+    "Docs/release-artifacts",
 }
 
 
@@ -122,7 +119,7 @@ class DeploymentValidator:
         self.validate_ghcr_compose(report)
         self.validate_env_example(report)
         self.validate_deployment_guide(report)
-        self.validate_release_artifacts(report)
+        self.validate_public_docs(report)
         if check_runtime:
             self.validate_runtime(report)
         if not report.findings:
@@ -231,21 +228,22 @@ class DeploymentValidator:
             if phrase not in guide:
                 report.findings.append(DeploymentFinding(check="deployment_guide_content", status="failed", target=phrase, detail="Required deployment instruction is missing."))
 
-    def validate_release_artifacts(self, report: DeploymentValidationReport) -> None:
-        for artifact in sorted(REQUIRED_RELEASE_ARTIFACTS):
+    def validate_public_docs(self, report: DeploymentValidationReport) -> None:
+        for artifact in sorted(REQUIRED_PUBLIC_DOCS):
             path = self.root / artifact
             if not path.is_file():
-                report.findings.append(DeploymentFinding(check="release_artifact", status="failed", target=artifact, detail="Required release evidence artifact is missing."))
-        screenshots = sorted((self.root / "Docs/release-artifacts").glob("operator-console-*.png"))
-        if len(screenshots) < 6:
-            report.findings.append(
-                DeploymentFinding(check="release_artifact", status="warning", target="Docs/release-artifacts", detail="Fewer than six operator-console screenshots were found.")
-            )
-        gifs = sorted((self.root / "Docs/release-artifacts").glob("operator-console-*.gif"))
-        if len(gifs) < 2:
-            report.findings.append(
-                DeploymentFinding(check="release_artifact", status="failed", target="Docs/release-artifacts", detail="Fewer than two operator-console release GIFs were found.")
-            )
+                report.findings.append(DeploymentFinding(check="public_doc", status="failed", target=artifact, detail="Required public documentation is missing."))
+        for directory in sorted(GENERATED_EVIDENCE_DIRECTORIES):
+            path = self.root / directory
+            if not path.is_dir():
+                report.findings.append(
+                    DeploymentFinding(
+                        check="generated_evidence_dir",
+                        status="failed",
+                        target=directory,
+                        detail="Generated evidence output directory is missing; keep a placeholder directory but do not check in generated evidence.",
+                    )
+                )
 
     def validate_runtime(self, report: DeploymentValidationReport) -> None:
         for name, url in {"api_health": "http://127.0.0.1:8000/health", "web": "http://127.0.0.1:3001/"}.items():

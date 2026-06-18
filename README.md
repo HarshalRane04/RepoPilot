@@ -2,7 +2,7 @@
 
 RepoPilot AI is a local-first, single-tenant GitHub App control plane and operator console for human-approved issue triage, planning, validation evidence, security checks, and gated draft PR workflows.
 
-The current codebase contains a strong local control plane, but the full AI coding loop is still under active implementation. See [Docs/IMPROVEMENT_PLAN.md](Docs/IMPROVEMENT_PLAN.md) for the safety-first roadmap from the current MVP to a production-grade LLM-powered PR agent.
+The current codebase contains a strong local control plane, but the full AI coding loop is still under active implementation. See [Docs/ROADMAP.md](Docs/ROADMAP.md) for the safety-first release-candidate roadmap from the current MVP to a production-grade LLM-powered PR agent.
 
 ## Current Implementation Status
 
@@ -28,15 +28,15 @@ Implemented today:
 - CI analyzer for workflow/check events, failure-log summaries, and fresh revision-plan creation after CI failure.
 - Observability endpoints for run traces, audit logs, metrics, readiness, and eval reports.
 - Fixture-backed local eval runner with 31 benchmark tasks, per-task outcomes, category pass rates, observed plan-quality/context-precision/patch-quality/human-edit-distance/provider-comparison scoring, and release quality gates.
-- Local Markdown/JSON eval report generation with `make eval-report`; the latest baseline is in `Docs/eval-reports/`.
+- Local Markdown/JSON eval report generation with `make eval-report`; reports are written to the git-ignored `Docs/eval-reports/` workspace or uploaded as workflow artifacts.
 - Planning-only live-provider eval harness with `make provider-planning-eval`, using provider keys from the shell environment rather than source files.
 - Manual GitHub Actions provider-planning workflow for credentialed model tests with secret-name inputs and downloadable eval artifacts.
-- Source-boundary manifest generation with `make source-boundary-manifest`; the latest manifest is in `Docs/release-artifacts/`.
-- Redacted credential readiness snapshot generation with `make readiness-snapshot`; the latest snapshot is in `Docs/release-artifacts/`.
-- Security scanner posture snapshot generation with `make security-scanner-snapshot`; the latest snapshot is in `Docs/release-artifacts/`.
-- Source-boundary hygiene report generation with `make release-hygiene`; the latest report is in `Docs/release-artifacts/`.
-- Deployment topology/docs validation with `make deployment-validate`; the latest report is in `Docs/release-artifacts/`.
-- Local runtime deployment smoke with `make deployment-smoke`; the latest report is in `Docs/release-artifacts/`.
+- Source-boundary manifest generation with `make source-boundary-manifest`; reports are written to the git-ignored `Docs/release-artifacts/` workspace or uploaded as workflow artifacts.
+- Redacted credential readiness snapshot generation with `make readiness-snapshot`; reports are written to the git-ignored `Docs/release-artifacts/` workspace.
+- Security scanner posture snapshot generation with `make security-scanner-snapshot`; reports are written to the git-ignored `Docs/release-artifacts/` workspace or uploaded as workflow artifacts.
+- Source-boundary hygiene report generation with `make release-hygiene`; reports are written to the git-ignored `Docs/release-artifacts/` workspace.
+- Deployment topology/docs validation with `make deployment-validate`; reports are written to the git-ignored `Docs/release-artifacts/` workspace.
+- Local runtime deployment smoke with `make deployment-smoke`; reports are written to the git-ignored `Docs/release-artifacts/` workspace.
 - Next.js operator dashboard for repositories, issues, runs, PRs, security finding lifecycle actions, CI revision plans, evals, audit logs, and settings.
 
 Not production-complete yet:
@@ -163,4 +163,4 @@ The active implementation roadmap is:
 hygiene -> safety envelope -> model gateway -> semantic planning -> human review -> executor-mediated patching -> validation/security -> GitHub writes -> CI/evals/release
 ```
 
-The next major milestones are a real GitHub demo-repo smoke test with user-provided credentials, provider-backed embedding/model validation, and deployment packaging from [Docs/IMPROVEMENT_PLAN.md](Docs/IMPROVEMENT_PLAN.md).
+The next major milestones are a real GitHub demo-repo smoke test with user-provided credentials, provider-backed embedding/model validation, and deployment packaging from [Docs/ROADMAP.md](Docs/ROADMAP.md).

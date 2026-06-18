@@ -26,6 +26,10 @@ def write_required_ignore_files(root: Path) -> None:
                 "*.tsbuildinfo",
                 "celerybeat-schedule",
                 "apps/api/celerybeat-schedule",
+                "Docs/eval-reports/*",
+                "!Docs/eval-reports/.gitkeep",
+                "Docs/release-artifacts/*",
+                "!Docs/release-artifacts/.gitkeep",
             ]
         ),
         encoding="utf-8",
@@ -130,18 +134,16 @@ def test_release_hygiene_scanner_warns_for_ignored_local_runtime_secret_store(tm
     assert not any(finding.check == "local_runtime_secret_store" and finding.status == "failed" for finding in report.findings)
 
 
-def test_release_hygiene_scanner_links_documented_duplicate_readme_decision(tmp_path: Path) -> None:
+def test_release_hygiene_scanner_warns_for_duplicate_readme(tmp_path: Path) -> None:
     write_required_ignore_files(tmp_path)
     tmp_path.joinpath(".git").mkdir()
     tmp_path.joinpath("README 2.md").write_text("duplicate", encoding="utf-8")
-    tmp_path.joinpath("Docs").mkdir()
-    tmp_path.joinpath("Docs/SOURCE_BOUNDARY_DECISIONS.md").write_text("README 2.md pending owner approval", encoding="utf-8")
 
     report = ReleaseHygieneScanner(root=tmp_path).scan()
 
     assert any(
         finding.check == "manual_review"
         and finding.path == "README 2.md"
-        and "Docs/SOURCE_BOUNDARY_DECISIONS.md" in finding.detail
+        and "Duplicate README" in finding.detail
         for finding in report.findings
     )

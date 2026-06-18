@@ -9,6 +9,24 @@ from scripts.deployment_validate import DeploymentValidator, render_markdown
 def write_valid_deployment_fixture(root: Path) -> None:
     root.joinpath("Docs/release-artifacts").mkdir(parents=True)
     root.joinpath("Docs/eval-reports").mkdir(parents=True)
+    root.joinpath("Docs/ADRs").mkdir(parents=True)
+    for doc in [
+        "Docs/README.md",
+        "Docs/ARCHITECTURE.md",
+        "Docs/CREDENTIAL_HANDOFF.md",
+        "Docs/DEMO_SCRIPT.md",
+        "Docs/EVALS.md",
+        "Docs/GITHUB_APP_SETUP.md",
+        "Docs/MODEL_TESTING.md",
+        "Docs/QUICKSTART.md",
+        "Docs/RELEASE_CHECKLIST.md",
+        "Docs/RELEASE_NOTES.md",
+        "Docs/ROADMAP.md",
+        "Docs/RUNBOOK.md",
+        "Docs/SECURITY.md",
+        "Docs/ADRs/0001-local-platform-stack.md",
+    ]:
+        root.joinpath(doc).write_text("# Public doc\n", encoding="utf-8")
     root.joinpath("Docs/DEPLOYMENT_GUIDE.md").write_text(
         """
 # Deploy
@@ -158,36 +176,6 @@ volumes:
 """,
         encoding="utf-8",
     )
-    for artifact in [
-        "Docs/release-artifacts/source-boundary-hygiene.md",
-        "Docs/release-artifacts/source-boundary-hygiene.json",
-        "Docs/release-artifacts/source-boundary-manifest.md",
-        "Docs/release-artifacts/source-boundary-manifest.json",
-        "Docs/release-artifacts/release-gifs.md",
-        "Docs/release-artifacts/release-gifs.json",
-        "Docs/release-artifacts/deployment-runtime-smoke.md",
-        "Docs/release-artifacts/deployment-runtime-smoke.json",
-        "Docs/release-artifacts/credential-readiness-snapshot.md",
-        "Docs/release-artifacts/credential-readiness-snapshot.json",
-        "Docs/release-artifacts/credential-smoke-summary.md",
-        "Docs/release-artifacts/credential-smoke-summary.json",
-        "Docs/release-artifacts/security-scanner-snapshot.md",
-        "Docs/release-artifacts/security-scanner-snapshot.json",
-        "Docs/release-artifacts/model-provider-smoke.md",
-        "Docs/release-artifacts/model-provider-smoke.json",
-        "Docs/release-artifacts/github-app-smoke.md",
-        "Docs/release-artifacts/github-app-smoke.json",
-        "Docs/release-artifacts/github-oauth-smoke.md",
-        "Docs/release-artifacts/github-oauth-smoke.json",
-        "Docs/eval-reports/v1-local-latest.md",
-        "Docs/eval-reports/v1-local-latest.json",
-    ]:
-        root.joinpath(artifact).write_text("{}", encoding="utf-8")
-    for index in range(6):
-        root.joinpath(f"Docs/release-artifacts/operator-console-{index}.png").write_bytes(b"png")
-    for index in range(2):
-        root.joinpath(f"Docs/release-artifacts/operator-console-flow-{index}.gif").write_bytes(b"gif")
-
 
 def test_deployment_validator_passes_complete_static_fixture(tmp_path: Path) -> None:
     write_valid_deployment_fixture(tmp_path)
@@ -225,14 +213,14 @@ def test_deployment_validator_blocks_unsafe_embedding_transfer_default(tmp_path:
     )
 
 
-def test_deployment_validator_reports_missing_release_artifacts(tmp_path: Path) -> None:
+def test_deployment_validator_reports_missing_public_doc(tmp_path: Path) -> None:
     write_valid_deployment_fixture(tmp_path)
-    tmp_path.joinpath("Docs/eval-reports/v1-local-latest.md").unlink()
+    tmp_path.joinpath("Docs/ROADMAP.md").unlink()
 
     report = DeploymentValidator(root=tmp_path).validate()
 
     assert report.failed is True
-    assert any(finding.check == "release_artifact" and finding.target == "Docs/eval-reports/v1-local-latest.md" for finding in report.findings)
+    assert any(finding.check == "public_doc" and finding.target == "Docs/ROADMAP.md" for finding in report.findings)
 
 
 def test_deployment_validator_blocks_dev_only_ghcr_compose(tmp_path: Path) -> None:
@@ -279,15 +267,14 @@ volumes:
     assert any(finding.check == "ghcr_compose_release_boundary" and finding.target == "npm run dev" for finding in report.findings)
 
 
-def test_deployment_validator_requires_release_gifs(tmp_path: Path) -> None:
+def test_deployment_validator_requires_generated_evidence_directories(tmp_path: Path) -> None:
     write_valid_deployment_fixture(tmp_path)
-    for gif_path in tmp_path.glob("Docs/release-artifacts/*.gif"):
-        gif_path.unlink()
+    tmp_path.joinpath("Docs/release-artifacts").rmdir()
 
     report = DeploymentValidator(root=tmp_path).validate()
 
     assert report.failed is True
-    assert any(finding.check == "release_artifact" and "release GIFs" in finding.detail for finding in report.findings)
+    assert any(finding.check == "generated_evidence_dir" and finding.target == "Docs/release-artifacts" for finding in report.findings)
 
 
 def test_deployment_validator_runtime_check_passes_when_local_urls_respond(tmp_path: Path, monkeypatch) -> None:

@@ -32,3 +32,10 @@ artifacts/
 .commandcode/
 celerybeat-schedule
 apps/api/celerybeat-schedule
+
+# Generated release/eval evidence. Keep the public docs lightweight; regenerate
+# these locally or download them from workflow artifacts when needed.
+Docs/eval-reports/*
+!Docs/eval-reports/.gitkeep
+Docs/release-artifacts/*
+!Docs/release-artifacts/.gitkeep

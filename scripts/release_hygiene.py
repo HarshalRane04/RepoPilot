@@ -26,7 +26,6 @@ FORBIDDEN_DIR_SUFFIXES = {".egg-info"}
 FORBIDDEN_SECRET_PATHS = {".secrets", "apps/api/.secrets"}
 LOCAL_RUNTIME_SECRET_PATHS = {".local", ".local/repopilot-secrets"}
 ALLOWED_MOUNT_POINTS = {"apps/web/node_modules", "apps/web/.next"}
-SOURCE_BOUNDARY_DECISION_FILE = "Docs/SOURCE_BOUNDARY_DECISIONS.md"
 REQUIRED_GITIGNORE_PATTERNS = {
     ".DS_Store",
     ".env",
@@ -44,6 +43,10 @@ REQUIRED_GITIGNORE_PATTERNS = {
     "*.tsbuildinfo",
     "celerybeat-schedule",
     "apps/api/celerybeat-schedule",
+    "Docs/eval-reports/*",
+    "!Docs/eval-reports/.gitkeep",
+    "Docs/release-artifacts/*",
+    "!Docs/release-artifacts/.gitkeep",
 }
 REQUIRED_DOCKERIGNORE_PATTERNS = {
     ".git",
@@ -158,6 +161,8 @@ class ReleaseHygieneScanner:
                 )
                 continue
             if relative in LOCAL_RUNTIME_SECRET_PATHS or any(relative.startswith(f"{item}/") for item in LOCAL_RUNTIME_SECRET_PATHS):
+                if relative not in LOCAL_RUNTIME_SECRET_PATHS:
+                    continue
                 if self.is_git_ignored(path):
                     report.findings.append(
                         HygieneFinding(
@@ -221,11 +226,7 @@ class ReleaseHygieneScanner:
     def scan_manual_review_items(self, report: HygieneReport) -> None:
         duplicate_readme = self.root / "README 2.md"
         if duplicate_readme.exists():
-            decision_file = self.root / SOURCE_BOUNDARY_DECISION_FILE
-            if decision_file.is_file():
-                detail = f"Duplicate README is documented in {SOURCE_BOUNDARY_DECISION_FILE}; owner decision is still required before release packaging."
-            else:
-                detail = "Duplicate README needs owner decision before release packaging."
+            detail = "Duplicate README needs removal or an explicit maintainer decision before release packaging."
             report.findings.append(
                 HygieneFinding(
                     check="manual_review",
@@ -302,9 +303,6 @@ class ReleaseHygieneScanner:
         return result.returncode == 0
 
     def should_scan_content(self, path: Path) -> bool:
-        relative = self.relative(path)
-        if relative.startswith("Docs/RepoPilot_AI_") and path.suffix == ".docx":
-            return False
         if path.stat().st_size > 500_000:
             return False
         if path.name == ".env.example":
