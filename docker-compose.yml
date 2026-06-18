@@ -191,7 +191,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: celery -A app.worker.celery_app beat --loglevel=INFO
+    command: celery -A app.worker.celery_app beat --loglevel=INFO --schedule=/tmp/celerybeat-schedule
 
   web:
     build:

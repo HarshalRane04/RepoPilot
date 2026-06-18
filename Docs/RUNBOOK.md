@@ -291,6 +291,14 @@ The draft PR route creates a local branch/PR database record and a GitHub-shaped
 ## Common Issues
 
 - If API startup fails with database connection errors, confirm Postgres is healthy and `.env` matches Docker service names.
+- If `/health` returns `200` but database-backed routes return `500` with `asyncpg.exceptions.InvalidPasswordError`, the existing `postgres_data` volume may have been initialized with an older `POSTGRES_PASSWORD`. Prefer reconciling the local role password without deleting data:
+
+  ```bash
+  docker exec repopilot-postgres-1 sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "ALTER USER repopilot WITH PASSWORD '\''$POSTGRES_PASSWORD'\'';"'
+  docker compose restart api worker beat
+  ```
+
+  If the local database is disposable, `docker compose down -v` followed by `make start-local` also recreates the volume, but it deletes local Postgres data.
 - If migrations fail on `vector`, confirm the `pgvector/pgvector:pg16` image is running.
 - If the dashboard cannot reach the API, confirm `NEXT_PUBLIC_API_URL=http://localhost:8000` for browser access.
 - If sandbox validation returns `Sandbox backend executable not found: docker`, install/start Docker or set `SANDBOX_BACKEND=local` only for a controlled development test.

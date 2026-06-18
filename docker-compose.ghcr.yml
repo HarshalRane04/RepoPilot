@@ -131,7 +131,7 @@ services:
       REPOPILOT_ARTIFACT_RETENTION_DRY_RUN: ${REPOPILOT_ARTIFACT_RETENTION_DRY_RUN:-true}
       REPOPILOT_RUNTIME_SECRETS_KEY_PATH: ${REPOPILOT_RUNTIME_SECRETS_KEY_PATH:-/home/appuser/.repopilot/runtime-secrets.key}
       REPOPILOT_RUNTIME_SECRETS_STORE_PATH: ${REPOPILOT_RUNTIME_SECRETS_STORE_PATH:-/home/appuser/.repopilot/runtime-secrets.json}
-    command: celery -A app.worker.celery_app beat --loglevel=INFO
+    command: celery -A app.worker.celery_app beat --loglevel=INFO --schedule=/tmp/celerybeat-schedule
     volumes:
       - ./.local/repopilot-secrets:/home/appuser/.repopilot
       - agent_workspaces:/tmp/repopilot-agent-workspaces
