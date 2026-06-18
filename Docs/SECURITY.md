@@ -22,7 +22,7 @@ RepoPilot AI is security-sensitive because it can eventually create branches, co
 - `security.dependency_audit` runs `npm audit --audit-level=moderate --json` for `package-lock.json` and `pip-audit --format json` for Python manifests when `DEPENDENCY_AUDIT_ENABLED=true`; unavailable tools or failed audit commands fail closed with persisted findings.
 - `.github/workflows/codeql.yml` runs CodeQL analysis for Python and JavaScript/TypeScript using the current major CodeQL Action tag on public repositories, or on private repositories when GitHub code scanning is available and the repository variable `CODEQL_ENABLED=true` is set.
 - Stale isolated workspaces are cleaned on API startup and by a scheduled Celery Beat task over the shared `agent_workspaces` Docker volume.
-- Local artifact files are written with owner-only permissions where supported; configurable retention planning can run in dry-run mode by default or delete expired local artifact files while retaining database audit records.
+- Local artifact files are written with owner-only permissions where supported; `repopilot.artifacts.retention_cleanup` is scheduled through Celery Beat and defaults to dry-run retention planning before operators opt into deleting expired local artifact files while retaining database audit records.
 - Security findings support `open`, `acknowledged`, `fixed`, and `false_positive` lifecycle states, with review reasons required for acknowledgement and false-positive decisions.
 - Draft PR creation is blocked when high or critical security findings are open.
 - CI workflow/check conclusions are summarized before a run can move to `READY_FOR_REVIEW`; failed CI can create a fresh waiting revision plan.

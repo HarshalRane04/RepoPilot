@@ -145,17 +145,23 @@ class ImplementationAgent:
             metadata={"workspace_path": workspace_path},
         )
 
-        snippets = await self._read_context_snippets(
-            db,
-            run=run,
-            workspace_path=workspace_path,
-            implementation_plan=implementation_plan,
-        )
         last_validation: SandboxCommandResult | None = None
         patch: GeneratedPatch | None = None
         max_attempts = max(1, min(settings.max_agent_retries, 3))
 
         for attempt in range(1, max_attempts + 1):
+            snippets = await self._read_context_snippets(
+                db,
+                run=run,
+                workspace_path=workspace_path,
+                implementation_plan=implementation_plan,
+            )
+            workspace_state = await self._retry_workspace_state(
+                db,
+                run=run,
+                workspace_path=workspace_path,
+                attempt=attempt,
+            )
             tool_plan = await self._propose_tool_plan(
                 db,
                 run=run,
@@ -163,6 +169,7 @@ class ImplementationAgent:
                 implementation_plan=implementation_plan,
                 workspace_path=workspace_path,
                 snippets=snippets,
+                workspace_state=workspace_state,
                 attempt=attempt,
                 previous_validation=last_validation,
             )
@@ -307,17 +314,54 @@ class ImplementationAgent:
     ) -> list[dict[str, Any]]:
         snippets: list[dict[str, Any]] = []
         paths = self._unique_paths(implementation_plan.files_to_inspect + implementation_plan.files_to_modify)
-        for path in paths[:8]:
-            result = await self._execute_tool(
-                db,
-                run=run,
-                state=AgentRunState.IMPLEMENT_PATCH,
-                tool_name="repo.read_file",
-                arguments={"workspace_path": workspace_path, "path": path, "start_line": 1, "end_line": 220},
-            )
-            if result.status == ToolCallStatus.SUCCEEDED:
-                snippets.append(result.output)
+        if not paths:
+            return snippets
+        result = await self._execute_tool(
+            db,
+            run=run,
+            state=AgentRunState.IMPLEMENT_PATCH,
+            tool_name="repo.read_files",
+            arguments={
+                "workspace_path": workspace_path,
+                "files": [{"path": path, "start_line": 1, "end_line": 220} for path in paths[:8]],
+            },
+        )
+        if result.status == ToolCallStatus.SUCCEEDED:
+            snippets.extend(item for item in result.output.get("files", []) if isinstance(item, dict))
         return snippets
+
+    async def _retry_workspace_state(
+        self,
+        db: AsyncSession,
+        *,
+        run: AgentRun,
+        workspace_path: str,
+        attempt: int,
+    ) -> dict[str, Any] | None:
+        if attempt <= 1:
+            return None
+        result = await self._execute_tool(
+            db,
+            run=run,
+            state=AgentRunState(run.state),
+            tool_name="workspace.diff",
+            arguments={"workspace_path": workspace_path},
+        )
+        if result.status != ToolCallStatus.SUCCEEDED:
+            return {"diff_available": False, "blocked_reason": result.blocked_reason}
+        changed_files = [
+            change
+            for change in result.output.get("changed_files", [])
+            if isinstance(change, dict)
+        ]
+        diff = str(result.output.get("diff") or "")
+        return {
+            "diff_available": True,
+            "changed_files": changed_files[:20],
+            "changed_file_count": len(changed_files),
+            "diff_excerpt": diff[:8_000],
+            "diff_truncated": bool(result.output.get("truncated")) or len(diff) > 8_000,
+        }
 
     async def _propose_tool_plan(
         self,
@@ -328,6 +372,7 @@ class ImplementationAgent:
         implementation_plan: ImplementationPlan,
         workspace_path: str,
         snippets: list[dict[str, Any]],
+        workspace_state: dict[str, Any] | None,
         attempt: int,
         previous_validation: SandboxCommandResult | None,
     ) -> ImplementationToolPlan:
@@ -341,6 +386,7 @@ class ImplementationAgent:
             "attempt": attempt,
             "previous_validation": previous_validation.model_dump(mode="json") if previous_validation else None,
             "file_snippets": snippets,
+            "workspace_state": workspace_state,
             "allowed_tools": sorted(WRITE_TOOLS),
             "rules": [
                 "Return only JSON matching the schema.",

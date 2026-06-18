@@ -23,7 +23,7 @@ from app.services.tools.registry import _persist_validation_result
 from app.services.validation import ProjectDetector, ValidationPlanner
 from app.services.workspace_cleanup import WorkspaceCleanupService
 from app.worker.celery_app import celery_app
-from app.worker.tasks import cleanup_stale_workspaces_task
+from app.worker.tasks import cleanup_artifacts_retention_task, cleanup_stale_workspaces_task
 
 
 class FakeDb:
@@ -132,6 +132,13 @@ def test_workspace_cleanup_is_registered_as_periodic_celery_task() -> None:
     schedule = celery_app.conf.beat_schedule["repopilot.workspace.cleanup"]
     assert schedule["task"] == "repopilot.workspace.cleanup"
     assert schedule["schedule"] > 0
+
+    assert cleanup_artifacts_retention_task.name == "repopilot.artifacts.retention_cleanup"
+    assert "repopilot.artifacts.retention_cleanup" in celery_app.tasks
+
+    artifact_schedule = celery_app.conf.beat_schedule["repopilot.artifacts.retention_cleanup"]
+    assert artifact_schedule["task"] == "repopilot.artifacts.retention_cleanup"
+    assert artifact_schedule["schedule"] > 0
 
 
 def test_codeql_sarif_ingestion_persists_high_finding() -> None:

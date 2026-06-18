@@ -9,7 +9,7 @@ Required services:
 - `api`: FastAPI application and migrations.
 - `web`: Next.js operator console on `localhost:3001`.
 - `worker`: Celery worker for webhook and run tasks.
-- `beat`: Celery Beat scheduler for stale workspace cleanup.
+- `beat`: Celery Beat scheduler for stale workspace cleanup and local artifact-retention cleanup.
 - `postgres`: PostgreSQL with pgvector.
 - `redis`: queue broker, result backend, and local cache.
 

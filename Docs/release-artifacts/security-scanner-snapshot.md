@@ -1,6 +1,6 @@
 # RepoPilot Security Scanner Snapshot
 
-- Generated at: `2026-06-17T13:27:44.300427+00:00`
+- Generated at: `2026-06-18T07:09:24.252405+00:00`
 - Root: `/Users/harshalrane/Documents/RepoPilot`
 - Release scanner proof ready: `False`
 - CodeQL workflow present: `True`
@@ -21,7 +21,7 @@
 
 | Tool | Available | Version | Detail |
 |---|---|---|---|
-| semgrep | True | 1.166.0 |  |
+| semgrep | True | 1.167.0 |  |
 | npm | True | 10.9.4 |  |
 | pip-audit | True | pip-audit 2.10.1 |  |
 | codeql | False |  | codeql executable was not found. |

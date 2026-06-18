@@ -101,6 +101,17 @@ class RepoReadFileInput(ToolInput):
     end_line: int | None = Field(default=None, ge=1)
 
 
+class RepoReadFileSpec(ToolInput):
+    path: str
+    start_line: int | None = Field(default=None, ge=1)
+    end_line: int | None = Field(default=None, ge=1)
+
+
+class RepoReadFilesInput(ToolInput):
+    workspace_path: str
+    files: list[RepoReadFileSpec] = Field(min_length=1, max_length=12)
+
+
 class RepoGrepInput(ToolInput):
     workspace_path: str
     query: str = Field(min_length=1)
@@ -326,6 +337,7 @@ class ToolRegistry:
         self._register(name="repo.search_context", description="Retrieve ranked repository context with file and line citations.", input_model=RepoSearchContextInput, permission=ToolPermissionTier.READ, handler=_repo_search_context)
         self._register(name="repo.list_files", description="List text/code files from a workspace using RepoPilot ignore rules.", input_model=RepoListFilesInput, permission=ToolPermissionTier.READ, handler=_repo_list_files)
         self._register(name="repo.read_file", description="Read bounded file content with optional line ranges.", input_model=RepoReadFileInput, permission=ToolPermissionTier.READ, handler=_repo_read_file)
+        self._register(name="repo.read_files", description="Read multiple bounded file snippets from a workspace with per-file errors.", input_model=RepoReadFilesInput, permission=ToolPermissionTier.READ, handler=_repo_read_files)
         self._register(name="repo.grep", description="Search workspace text files for a literal query.", input_model=RepoGrepInput, permission=ToolPermissionTier.READ, handler=_repo_grep)
         self._register(name="repo.summarize_tree", description="Return a compact workspace tree and stack hints.", input_model=RepoSummarizeTreeInput, permission=ToolPermissionTier.READ, handler=_repo_summarize_tree)
         self._register(name="issue.triage", description="Run deterministic issue triage without mutating the issue.", input_model=IssueTriageInput, permission=ToolPermissionTier.READ, handler=_issue_triage)
@@ -615,22 +627,58 @@ async def _repo_list_files(_db: AsyncSession, request: ToolCallRequest, payload:
 async def _repo_read_file(_db: AsyncSession, request: ToolCallRequest, payload: BaseModel) -> dict[str, Any]:
     args = _cast(payload, RepoReadFileInput)
     workspace = _isolated_workspace(request.run_id, args.workspace_path)
-    path = _child_path(workspace, args.path)
-    relative = path.relative_to(workspace).as_posix()
+    return _read_workspace_file(workspace, path=args.path, start_line=args.start_line, end_line=args.end_line)
+
+
+async def _repo_read_files(_db: AsyncSession, request: ToolCallRequest, payload: BaseModel) -> dict[str, Any]:
+    args = _cast(payload, RepoReadFilesInput)
+    workspace = _isolated_workspace(request.run_id, args.workspace_path)
+    files: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    for spec in args.files:
+        try:
+            files.append(
+                _read_workspace_file(
+                    workspace,
+                    path=spec.path,
+                    start_line=spec.start_line,
+                    end_line=spec.end_line,
+                )
+            )
+        except ToolBlocked as exc:
+            errors.append({"path": spec.path, "blocked_reason": str(exc), "block_type": exc.block_type.value})
+    return {
+        "workspace_path": str(workspace),
+        "files": files,
+        "errors": errors,
+        "succeeded_count": len(files),
+        "blocked_count": len(errors),
+    }
+
+
+def _read_workspace_file(
+    workspace: Path,
+    *,
+    path: str,
+    start_line: int | None,
+    end_line: int | None,
+) -> dict[str, Any]:
+    resolved = _child_path(workspace, path)
+    relative = resolved.relative_to(workspace).as_posix()
     if _is_sensitive_workspace_path(relative):
         raise ToolBlocked(f"Refusing to read sensitive file: {relative}")
-    if not path.is_file():
-        raise ToolBlocked(f"File not found: {args.path}")
-    if path.stat().st_size > MAX_READ_BYTES:
-        raise ToolBlocked(f"File exceeds read limit of {MAX_READ_BYTES} bytes: {args.path}")
-    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
-    start = args.start_line or 1
-    end = args.end_line or len(lines)
+    if not resolved.is_file():
+        raise ToolBlocked(f"File not found: {path}")
+    if resolved.stat().st_size > MAX_READ_BYTES:
+        raise ToolBlocked(f"File exceeds read limit of {MAX_READ_BYTES} bytes: {path}")
+    lines = resolved.read_text(encoding="utf-8", errors="ignore").splitlines()
+    start = start_line or 1
+    end = end_line or len(lines)
     if end < start:
         raise ToolBlocked("end_line must be greater than or equal to start_line.")
     selected = lines[start - 1 : end]
     return {
-        "path": path.relative_to(workspace).as_posix(),
+        "path": relative,
         "start_line": start,
         "end_line": min(end, len(lines)),
         "line_count": len(lines),

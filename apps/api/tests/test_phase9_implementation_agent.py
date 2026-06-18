@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import shutil
 from pathlib import Path
 from uuid import uuid4
@@ -246,6 +247,106 @@ def test_implementation_agent_skips_apply_patch_diff_payload() -> None:
             },
         }
     ]
+
+
+def test_implementation_agent_reads_context_with_batched_tool() -> None:
+    captured: list[dict[str, object]] = []
+    agent = ImplementationAgent(model_gateway=FakeGateway())
+    run = AgentRun(id=uuid4(), state=AgentRunState.IMPLEMENT_PATCH.value)
+    implementation_plan = ImplementationPlan(
+        plan_id=str(uuid4()),
+        issue_id=str(uuid4()),
+        files_to_inspect=["apps/api/app/demo.py"],
+        files_to_modify=["apps/api/app/demo.py", "apps/api/tests/test_demo.py"],
+        tests_to_add=[],
+        commands_to_run=["python -m pytest"],
+        rollback_plan="Close the generated branch.",
+    )
+
+    async def fake_execute_tool(*_args, **kwargs):
+        captured.append({"tool_name": kwargs["tool_name"], "arguments": kwargs["arguments"]})
+        return ToolCallResult(
+            tool_name=kwargs["tool_name"],
+            status=ToolCallStatus.SUCCEEDED,
+            output={
+                "files": [
+                    {"path": "app/demo.py", "start_line": 1, "end_line": 1, "line_count": 1, "content": "VALUE = 1"}
+                ],
+                "errors": [],
+            },
+        )
+
+    agent._execute_tool = fake_execute_tool  # type: ignore[method-assign]
+
+    snippets = asyncio.run(
+        agent._read_context_snippets(
+            object(),
+            run=run,
+            workspace_path="/tmp/repopilot-agent-workspaces/demo",
+            implementation_plan=implementation_plan,
+        )
+    )
+
+    assert snippets == [{"path": "app/demo.py", "start_line": 1, "end_line": 1, "line_count": 1, "content": "VALUE = 1"}]
+    assert captured == [
+        {
+            "tool_name": "repo.read_files",
+            "arguments": {
+                "workspace_path": "/tmp/repopilot-agent-workspaces/demo",
+                "files": [
+                    {"path": "app/demo.py", "start_line": 1, "end_line": 220},
+                    {"path": "tests/test_demo.py", "start_line": 1, "end_line": 220},
+                ],
+            },
+        }
+    ]
+
+
+def test_implementation_agent_includes_retry_workspace_state_in_prompt() -> None:
+    class PromptGateway:
+        def __init__(self) -> None:
+            self.user_prompt = ""
+
+        async def complete_json(self, *_args, **kwargs):
+            self.user_prompt = kwargs["user_prompt"]
+            return ImplementationToolPlan(summary="Retry with fresh diff.", tool_calls=[])
+
+    gateway = PromptGateway()
+    agent = ImplementationAgent(model_gateway=gateway)
+    run = AgentRun(id=uuid4(), state=AgentRunState.RUN_LOCAL_VALIDATION.value)
+    issue = Issue(id=uuid4(), repository_id=uuid4(), number=24, title="Fix demo")
+    implementation_plan = ImplementationPlan(
+        plan_id=str(uuid4()),
+        issue_id=str(issue.id),
+        files_to_modify=["app/demo.py"],
+        commands_to_run=["python -m pytest"],
+        rollback_plan="Close the generated branch.",
+    )
+
+    asyncio.run(
+        agent._propose_tool_plan(
+            object(),
+            run=run,
+            issue=issue,
+            implementation_plan=implementation_plan,
+            workspace_path="/tmp/repopilot-agent-workspaces/demo",
+            snippets=[{"path": "app/demo.py", "content": "VALUE = 1"}],
+            workspace_state={
+                "diff_available": True,
+                "changed_files": [{"path": "app/demo.py", "change_type": "modify", "additions": 1, "deletions": 1}],
+                "changed_file_count": 1,
+                "diff_excerpt": "@@ -1 +1 @@\n-VALUE = 1\n+VALUE = 2\n",
+                "diff_truncated": False,
+            },
+            attempt=2,
+            previous_validation=None,
+        )
+    )
+
+    prompt = json.loads(gateway.user_prompt)
+    assert prompt["attempt"] == 2
+    assert prompt["workspace_state"]["changed_files"][0]["path"] == "app/demo.py"
+    assert "VALUE = 2" in prompt["workspace_state"]["diff_excerpt"]
 
 
 def test_phase9_normalizes_pytest_validation_command() -> None:

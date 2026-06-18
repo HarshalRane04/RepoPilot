@@ -45,7 +45,9 @@ Not production-complete yet:
 - Provider-backed embeddings.
 - End-to-end smoke test against a real GitHub demo repository with user-provided GitHub App credentials.
 - Full live GitHub Actions archive parsing and credentialed provider-backed plan/patch-quality/human-edit-distance comparisons.
-- Production deployment packaging.
+- Release proof for public GHCR image visibility, a fresh-host `make ghcr-start-local` smoke, successful CodeQL upload/alert evidence on a code-scanning-enabled repository, and production-like deployment smoke.
+
+The root `services/*` directories are planned extraction boundaries unless their README says otherwise. Runtime behavior for v1 currently lives in `apps/api`, `apps/web`, shared `packages`, Docker Compose, and the active `services/sandbox_runner` image.
 
 ## Safety Model
 

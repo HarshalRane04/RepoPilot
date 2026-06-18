@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from app.db.models import ArtifactRecord
 from app.services.artifacts import ArtifactStore, maybe_externalize_json
+from app.worker.tasks import cleanup_artifacts_retention_task
 
 
 class FakeDb:
@@ -138,3 +139,22 @@ def test_artifact_retention_does_not_follow_symlinks_outside_root(tmp_path) -> N
     finally:
         link.unlink(missing_ok=True)
         outside.unlink(missing_ok=True)
+
+
+def test_artifact_retention_celery_task_returns_reviewable_payload(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("app.services.artifacts.settings.artifact_store_root", str(tmp_path))
+    monkeypatch.setattr("app.services.artifacts.settings.artifact_retention_max_age_seconds", 60)
+    monkeypatch.setattr("app.services.artifacts.settings.artifact_retention_dry_run", True)
+    old_file = tmp_path / "run-1" / "old.txt"
+    old_file.parent.mkdir()
+    old_file.write_text("old artifact", encoding="utf-8")
+    old_time = time.time() - 3600
+    os.utime(old_file, (old_time, old_time))
+
+    result = cleanup_artifacts_retention_task()
+
+    assert result["dry_run"] is True
+    assert result["removed_count"] == 0
+    assert result["retained_count"] == 1
+    assert result["storage_keys"] == ["run-1/old.txt"]
+    assert old_file.exists()

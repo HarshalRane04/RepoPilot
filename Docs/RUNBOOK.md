@@ -149,6 +149,18 @@ Tune cleanup with:
 
 The cleanup task queries non-terminal agent runs and skips their workspace IDs. Terminal or abandoned workspaces older than the configured age are removed from the shared `agent_workspaces` Docker volume.
 
+## Artifact Retention Cleanup
+
+RepoPilot stores large patch, validation, and tool-output evidence under `/tmp/repopilot-artifacts` through `local://artifacts/...` pointers. Celery Beat periodically dispatches `repopilot.artifacts.retention_cleanup`, which uses the same shared `agent_artifacts` Docker volume as the API and worker.
+
+Tune artifact retention with:
+
+- `REPOPILOT_ARTIFACT_RETENTION_MAX_AGE_SECONDS`: default `2592000`.
+- `REPOPILOT_ARTIFACT_RETENTION_INTERVAL_SECONDS`: default `86400`.
+- `REPOPILOT_ARTIFACT_RETENTION_DRY_RUN`: default `true`.
+
+Keep dry-run enabled for release evidence review. Set `REPOPILOT_ARTIFACT_RETENTION_DRY_RUN=false` only after confirming old local artifact files can be deleted; database `ArtifactRecord` audit rows are retained even when the backing local file is removed.
+
 ## CodeQL SARIF Ingestion
 
 RepoPilot does not run arbitrary CodeQL shell commands inside agent workspaces. Instead, it exposes a guarded SARIF ingestion path for CodeQL output produced by CI.

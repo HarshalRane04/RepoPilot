@@ -15,7 +15,7 @@ RepoPilot is not yet v1.0 release-ready. This candidate is a local, single-tenan
 - Planning prompts with redacted issue metadata, cited context chunk evidence, policy constraints, deterministic fallback plans, and explicit expected-evidence requirements.
 - Human-gated planning with approval/reject/revise paths, plan hash binding, and policy review.
 - Executor-mediated implementation in isolated run workspaces with approved-path controls, diff hash capture, validation, and bounded retry behavior.
-- Artifact-backed evidence storage for patch diffs, validation logs, and large tool outputs through `ArtifactRecord`, `ArtifactReference`, `local://artifacts/...` URIs, SHA-256 metadata, and the local `agent_artifacts` Docker volume.
+- Artifact-backed evidence storage for patch diffs, validation logs, and large tool outputs through `ArtifactRecord`, `ArtifactReference`, `local://artifacts/...` URIs, SHA-256 metadata, owner-only local files where supported, and scheduled Celery Beat artifact-retention cleanup over the local `agent_artifacts` Docker volume with dry-run enabled by default.
 - Security checks with prompt/secret scanning, finding lifecycle, Semgrep/dependency-audit adapters, CodeQL workflow file, CodeQL SARIF ingestion, and credential-gated CodeQL alert fetch.
 - GitHub write/client path for branch/blob/tree/commit/draft-PR/comment/check-run operations, guarded by credentials, write mode, permission checks, validation, and security gates; check-run, check-annotation, and workflow-log helpers now return bounded, redacted metadata/summaries for agent use.
 - Draft PR evidence bodies generated from stored approved-plan hashes, patch hashes, changed files, validation evidence hashes/log URIs, redacted security-finding status, model/cost trace summaries, rollback instructions, and persisted body hashes.
@@ -65,7 +65,7 @@ RepoPilot is not yet v1.0 release-ready. This candidate is a local, single-tenan
 - Real GitHub App write readiness is not production-proven until credentials and a disposable demo repository prove branch/commit/draft-PR smoke testing.
 - One ad hoc live-provider prompt smoke produced redacted trace rows; this is connectivity evidence only, not provider-quality or production-readiness proof. Live model and live embedding quality are not production-proven until provider-backed planning, patch-attempt, retrieval, and applied-patch evals run.
 - Semgrep, dependency-audit, and CodeQL scanner paths are implemented locally, and the CodeQL workflow file is present. CI now uploads Semgrep/dependency-audit posture evidence, but release-grade CodeQL proof remains incomplete until a code-scanning-enabled repository produces SARIF/alert evidence.
-- Artifact storage currently uses local filesystem-backed Docker volume storage; production object storage, retention policy, and signed artifact retrieval are pending deployment work.
+- Artifact storage currently uses local filesystem-backed Docker volume storage with scheduled dry-run/deletion retention for local files; production object storage and signed artifact retrieval are pending deployment work.
 - Full browser visual QA remains partially pending: core static screenshots and local visual-flow GIFs are captured, but live credentialed write/CI states still need release captures.
 - Release deployment has a guide plus local runtime smoke evidence, but production-like cloud/VM deployment validation is still pending.
 - No autonomous merge behavior is included or planned for v1.
@@ -73,7 +73,7 @@ RepoPilot is not yet v1.0 release-ready. This candidate is a local, single-tenan
 ### Upgrade Notes
 
 - Alembic revision IDs were shortened to fit Alembic's default `version_num VARCHAR(32)` column. Local development databases stamped with the old pre-baseline head `0003_canonical_plan_run_link` should be restamped to `0003_plan_run_link` before running new Alembic commands, then upgraded through `0006_llm_trace_metadata`.
-- `REPOPILOT_ARTIFACT_STORE_ROOT` and `REPOPILOT_ARTIFACT_INLINE_MAX_BYTES` control local artifact storage and large inline-output externalization.
+- `REPOPILOT_ARTIFACT_STORE_ROOT`, `REPOPILOT_ARTIFACT_INLINE_MAX_BYTES`, `REPOPILOT_ARTIFACT_RETENTION_MAX_AGE_SECONDS`, `REPOPILOT_ARTIFACT_RETENTION_INTERVAL_SECONDS`, and `REPOPILOT_ARTIFACT_RETENTION_DRY_RUN` control local artifact storage, large inline-output externalization, and scheduled local retention cleanup.
 
 ### v1.0 Tag Gate
 

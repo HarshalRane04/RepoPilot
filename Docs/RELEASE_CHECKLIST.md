@@ -91,7 +91,7 @@ make release-verify
 - `make deployment-validate` reports no failed findings before release packaging.
 - `apps/web/node_modules` and `apps/web/.next` may appear while the web service is running; they must be ignored Docker mount points backed by named volumes.
 - `.dockerignore` excludes local secrets, generated web artifacts, dependency folders, docs/images, and local tool artifacts.
-- Local `agent_artifacts` storage is either intentionally retained for review or governed by a documented cleanup/retention step before release packaging.
+- Local `agent_artifacts` storage is either intentionally retained for review or governed by the scheduled artifact-retention task; keep `REPOPILOT_ARTIFACT_RETENTION_DRY_RUN=true` for release evidence review and set it to `false` only when expired local files may be deleted.
 - Released-image rollbacks use the previous GHCR digest from the `release-images-*` artifact, not an unverified mutable tag.
 - `README 2.md` removal is recorded in `Docs/SOURCE_BOUNDARY_DECISIONS.md`; no stale duplicate README remains in the source boundary.
 - A deliberate baseline commit exists before the v1.0 tag.

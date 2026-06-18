@@ -66,10 +66,12 @@ def test_tool_registry_exposes_model_facing_definitions() -> None:
 
     assert "repo.search_context" in definitions
     assert "repo.read_file" in definitions
+    assert "repo.read_files" in definitions
     assert "workspace.write_file" in definitions
     assert "sandbox.run_command" in definitions
     assert "github.create_branch" in definitions
     assert definitions["repo.read_file"].permission == "read"
+    assert definitions["repo.read_files"].permission == "read"
     assert definitions["workspace.write_file"].requires_approved_plan is True
     assert definitions["github.create_branch"].enabled is True
     assert definitions["github.create_branch"].requires_github_write_mode is True
@@ -160,6 +162,48 @@ def test_executor_runs_read_file_tool_and_records_success() -> None:
     assert result.status == "succeeded"
     assert result.output["content"] == "beta"
     assert any(getattr(item, "step_name", "") == "TOOL_CALL:repo.read_file" for item in db.added)
+
+
+def test_executor_runs_batched_read_files_with_per_file_errors() -> None:
+    run = AgentRun(id=uuid4(), state=AgentRunState.WAIT_FOR_APPROVAL.value)
+    source = WORKSPACE_ROOT / str(run.id)
+    shutil.rmtree(source, ignore_errors=True)
+    source.mkdir(parents=True)
+    (source / "demo.py").write_text("alpha\nbeta\n", encoding="utf-8")
+    (source / ".env.local").write_text("TOKEN=fake-value\n", encoding="utf-8")
+    db = FakeDb(run=run)
+
+    try:
+        result = asyncio.run(
+            ToolExecutor().execute(
+                db,
+                request=ToolCallRequest(
+                    run_id=run.id,
+                    state=AgentRunState.WAIT_FOR_APPROVAL,
+                    tool_name="repo.read_files",
+                    actor="agent",
+                    arguments={
+                        "workspace_path": str(source),
+                        "files": [
+                            {"path": "demo.py", "start_line": 2, "end_line": 2},
+                            {"path": ".env.local"},
+                            {"path": "missing.py"},
+                        ],
+                    },
+                ),
+            )
+        )
+    finally:
+        shutil.rmtree(source, ignore_errors=True)
+
+    assert result.status == "succeeded"
+    assert result.output["succeeded_count"] == 1
+    assert result.output["blocked_count"] == 2
+    assert result.output["files"][0]["content"] == "beta"
+    error_reasons = {item["path"]: item["blocked_reason"] for item in result.output["errors"]}
+    assert "sensitive file" in error_reasons[".env.local"]
+    assert "File not found" in error_reasons["missing.py"]
+    assert any(getattr(item, "step_name", "") == "TOOL_CALL:repo.read_files" for item in db.added)
 
 
 def test_repo_read_tools_filter_sensitive_workspace_files() -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 from uuid import UUID
 
 from sqlalchemy import select
@@ -8,6 +9,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.db.models import AgentRun
 from app.db.session import AsyncSessionLocal, engine
+from app.services.artifacts import ArtifactStore
 from app.services.github_ingestion import process_github_event
 from app.services.state_machine import TERMINAL_STATES
 from app.services.workspace_cleanup import WorkspaceCleanupService
@@ -27,6 +29,11 @@ def process_github_event_task(event_id: str) -> dict[str, str]:
 @celery_app.task(name="repopilot.workspace.cleanup")
 def cleanup_stale_workspaces_task() -> dict[str, object]:
     return asyncio.run(_cleanup_stale_workspaces())
+
+
+@celery_app.task(name="repopilot.artifacts.retention_cleanup")
+def cleanup_artifacts_retention_task() -> dict[str, object]:
+    return asdict(ArtifactStore().plan_retention())
 
 
 async def _process_github_event(event_id: str) -> dict[str, str]:

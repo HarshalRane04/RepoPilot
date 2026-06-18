@@ -20,5 +20,9 @@ celery_app.conf.update(
             "task": "repopilot.workspace.cleanup",
             "schedule": settings.workspace_cleanup_interval_seconds,
         },
+        "repopilot.artifacts.retention_cleanup": {
+            "task": "repopilot.artifacts.retention_cleanup",
+            "schedule": settings.artifact_retention_interval_seconds,
+        },
     },
 )
