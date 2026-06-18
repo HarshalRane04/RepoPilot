@@ -1,10 +1,10 @@
 # RepoPilot Security Scanner Snapshot
 
-- Generated at: `2026-06-18T07:09:24.252405+00:00`
+- Generated at: `2026-06-18T07:22:42.948267+00:00`
 - Root: `/Users/harshalrane/Documents/RepoPilot`
-- Release scanner proof ready: `False`
+- Release scanner proof ready: `True`
 - CodeQL workflow present: `True`
-- CodeQL run evidence present: `False`
+- CodeQL run evidence present: `True`
 - Dependency manifests found: `8`
 
 ## Scanner Status
@@ -15,7 +15,7 @@
 | release_hygiene_secret_scan |  | True | ready | True | Source-boundary hygiene scanning is available through make release-hygiene. |  |
 | semgrep | SEMGREP_ENABLED | True | ready | True | Semgrep is enabled and the executable is available for sandbox security gates. |  |
 | dependency_audit | DEPENDENCY_AUDIT_ENABLED | True | ready | True | Dependency audit is enabled and manifests were found: 8. |  |
-| codeql | CODEQL_ENABLED | True | workflow_ready | True | CODEQL_ENABLED is true and a CodeQL workflow file is present; successful GitHub CodeQL run, SARIF ingestion, or alert-fetch evidence is still required. | Run the GitHub CodeQL workflow on a code-scanning-enabled repository and capture Docs/release-artifacts/codeql-run-evidence.json or verified alert/SARIF evidence. |
+| codeql | CODEQL_ENABLED | True | ready | True | CODEQL_ENABLED is true, a CodeQL workflow file is present, and successful GitHub CodeQL run or ingestion evidence is recorded. |  |
 
 ## Tool Availability
 
@@ -36,7 +36,3 @@
 - `packages/llm_client/pyproject.toml`
 - `packages/policy_engine/pyproject.toml`
 - `packages/shared_contracts/pyproject.toml`
-
-## Warnings
-
-- CODEQL_ENABLED is true and a CodeQL workflow file is present; successful GitHub CodeQL run, SARIF ingestion, or alert-fetch evidence is still required.

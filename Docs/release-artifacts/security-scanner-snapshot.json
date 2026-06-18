@@ -1,6 +1,6 @@
 {
   "blockers": [],
-  "codeql_run_evidence_present": false,
+  "codeql_run_evidence_present": true,
   "codeql_workflow_present": true,
   "dependency_manifests": [
     "apps/api/requirements.txt",
@@ -17,8 +17,8 @@
     "DEPENDENCY_AUDIT_ENABLED": true,
     "SEMGREP_ENABLED": true
   },
-  "generated_at": "2026-06-18T07:09:24.252405+00:00",
-  "release_scanner_proof_ready": false,
+  "generated_at": "2026-06-18T07:22:42.948267+00:00",
+  "release_scanner_proof_ready": true,
   "root": "/Users/harshalrane/Documents/RepoPilot",
   "scanners": [
     {
@@ -67,13 +67,13 @@
       ]
     },
     {
-      "detail": "CODEQL_ENABLED is true and a CodeQL workflow file is present; successful GitHub CodeQL run, SARIF ingestion, or alert-fetch evidence is still required.",
+      "detail": "CODEQL_ENABLED is true, a CodeQL workflow file is present, and successful GitHub CodeQL run or ingestion evidence is recorded.",
       "enabled": true,
       "env_key": "CODEQL_ENABLED",
       "name": "codeql",
-      "next_step": "Run the GitHub CodeQL workflow on a code-scanning-enabled repository and capture Docs/release-artifacts/codeql-run-evidence.json or verified alert/SARIF evidence.",
+      "next_step": null,
       "required_for_release": true,
-      "status": "workflow_ready",
+      "status": "ready",
       "tools": [
         "codeql"
       ]
@@ -121,7 +121,5 @@
       "version": null
     }
   ],
-  "warnings": [
-    "CODEQL_ENABLED is true and a CodeQL workflow file is present; successful GitHub CodeQL run, SARIF ingestion, or alert-fetch evidence is still required."
-  ]
+  "warnings": []
 }
