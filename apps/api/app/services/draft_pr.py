@@ -31,6 +31,7 @@ from app.db.models import (
 from app.services.audit import record_audit
 from app.services.github_app import GitHubApiClient, GitHubIntegrationError
 from app.services.planning import approved_plan_hash_matches, implementation_plan_from_db
+from app.services.runtime_secrets import effective_settings
 from app.services.security_envelope import redact_text, stable_json_hash
 from app.services.security_scanner import SecurityScanner
 from app.services.state_machine import transition_run
@@ -76,7 +77,8 @@ class DraftPullRequestService:
         body_hash = self._body_hash(body)
         title = request.title or self._default_title(issue=issue)
         real_write_evidence: dict[str, object] = {}
-        if settings.github_writes_enabled:
+        runtime_settings = effective_settings(settings)
+        if runtime_settings.github_writes_enabled:
             real_write_evidence = await self._write_real_github_pr(
                 db,
                 run=run,
@@ -119,8 +121,8 @@ class DraftPullRequestService:
             next_state=AgentRunState.OPEN_DRAFT_PR,
             actor_type="agent",
             reason="Opening draft PR after validation and security gates.",
-            metadata={"github_writes_enabled": settings.github_writes_enabled, "pr_number": pr_number},
-            allowed_from={AgentRunState.RUN_LOCAL_VALIDATION.value},
+            metadata={"github_writes_enabled": runtime_settings.github_writes_enabled, "pr_number": pr_number},
+            allowed_from={AgentRunState.RUN_LOCAL_VALIDATION.value, AgentRunState.RUN_SECURITY_CHECKS.value},
         )
         db.add(
             AgentStep(
@@ -233,18 +235,25 @@ class DraftPullRequestService:
         installation = await db.get(Installation, repository.installation_id)
         if installation is None:
             raise ValueError("Real GitHub PR creation requires a linked GitHub App installation.")
+        if installation.github_installation_id.startswith("oauth:"):
+            raise ValueError(
+                "Real GitHub PR creation requires the GitHub App to be installed on this repository; "
+                "OAuth-synced repositories are read-only for write-mode PR creation."
+            )
         patch_payload = await self._latest_patch_payload(db, run_id=run.id)
         if not patch_payload or patch_payload.get("patch_hash") != patch_hash:
             raise ValueError("Real GitHub PR creation requires the latest validated patch hash.")
 
         client = GitHubApiClient()
         try:
-            base_sha = repository.last_indexed_sha or await client.get_ref_sha(
-                installation_id=installation.github_installation_id,
-                owner=repository.owner,
-                repo=repository.name,
-                branch=repository.default_branch,
-            )
+            base_sha = repository.last_indexed_sha if self._looks_like_commit_sha(repository.last_indexed_sha) else None
+            if base_sha is None:
+                base_sha = await client.get_ref_sha(
+                    installation_id=installation.github_installation_id,
+                    owner=repository.owner,
+                    repo=repository.name,
+                    branch=repository.default_branch,
+                )
             await client.create_branch(
                 installation_id=installation.github_installation_id,
                 owner=repository.owner,
@@ -288,6 +297,9 @@ class DraftPullRequestService:
             "patch_hash": patch_hash,
             "body_hash": body_hash,
         }
+
+    def _looks_like_commit_sha(self, value: str | None) -> bool:
+        return bool(value and re.fullmatch(r"[0-9a-fA-F]{40}", value))
 
     def _changed_file_contents(self, patch_payload: dict[str, object]) -> list[dict[str, str | None]]:
         workspace = Path(str(patch_payload.get("working_workspace_path") or "")).expanduser()

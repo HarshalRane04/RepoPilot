@@ -19,6 +19,8 @@ from repopilot_llm_client import (
     provider_catalog,
 )
 
+from app.services.url_safety import provider_base_url as safe_provider_base_url
+
 OPENROUTER_PROVIDER_ID = "openrouter"
 DYNAMIC_MODEL_CACHE_TTL_SECONDS = 300
 
@@ -112,7 +114,14 @@ async def get_dynamic_models_for_provider(
     if not provider:
         return [], None, "provider_not_found"
 
-    resolved_base_url = (base_url or provider.default_base_url).rstrip("/")
+    try:
+        resolved_base_url = safe_provider_base_url(
+            base_url or provider.default_base_url,
+            default_base_url=provider.default_base_url,
+            provider_id=provider.id,
+        )
+    except ValueError as exc:
+        return [], None, f"{exc.__class__.__name__}: {exc}"
     cache_key = (provider.id, bool(api_key), resolved_base_url)
     now = monotonic()
     cached = _dynamic_model_cache.get(cache_key)
@@ -166,7 +175,11 @@ async def fetch_provider_models(
     if normalized_provider_id == OPENROUTER_PROVIDER_ID:
         return await fetch_openrouter_models(timeout_seconds=timeout_seconds, base_url=base_url)
 
-    resolved_base_url = (base_url or provider.default_base_url).rstrip("/")
+    resolved_base_url = safe_provider_base_url(
+        base_url or provider.default_base_url,
+        default_base_url=provider.default_base_url,
+        provider_id=provider.id,
+    )
     headers, params = _provider_request_auth(provider_id=normalized_provider_id, api_key=api_key)
     endpoints = _provider_model_endpoints(provider_id=normalized_provider_id, base_url=resolved_base_url)
     timeout = min(max(timeout_seconds, 5), 20)
@@ -194,7 +207,12 @@ async def fetch_openrouter_models(*, timeout_seconds: int = 10, base_url: str | 
     if not provider:
         raise ValueError("openrouter provider is not configured in the provider catalog")
 
-    endpoint = f"{(base_url or provider.default_base_url).rstrip('/')}/models"
+    resolved_base_url = safe_provider_base_url(
+        base_url or provider.default_base_url,
+        default_base_url=provider.default_base_url,
+        provider_id=provider.id,
+    )
+    endpoint = f"{resolved_base_url}/models"
     timeout = min(max(timeout_seconds, 5), 30)
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.get(endpoint, headers={"Accept": "application/json"})

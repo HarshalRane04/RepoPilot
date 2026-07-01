@@ -587,6 +587,7 @@ async def _upsert_issue(
             number=normalized.issue_number,
             title=normalized.issue_title,
             body_hash=body_hash,
+            body_text=_bounded_issue_body(normalized.issue_body),
             status="new",
         )
         db.add(issue)
@@ -594,7 +595,12 @@ async def _upsert_issue(
     else:
         issue.title = normalized.issue_title
         issue.body_hash = body_hash
+        issue.body_text = _bounded_issue_body(normalized.issue_body)
     return issue
+
+
+def _bounded_issue_body(value: str) -> str:
+    return redact_text(value)[:8000]
 
 
 async def _latest_plan_for_issue(db: AsyncSession, *, issue: Issue) -> Plan | None:

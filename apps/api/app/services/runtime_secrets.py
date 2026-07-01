@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -216,10 +217,8 @@ class RuntimeSecretStore:
                 os.unlink(temp_name)
 
     def _harden_permissions(self, path: Path) -> None:
-        try:
+        with suppress(OSError):
             os.chmod(path, 0o600)
-        except OSError:
-            pass
 
     def _permissions_ok(self, path: Path) -> bool:
         if os.name == "nt":

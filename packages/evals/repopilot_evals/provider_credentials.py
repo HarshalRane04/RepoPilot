@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +12,12 @@ from repopilot_llm_client import provider_by_id
 RUNTIME_SECRET_STORE_ENV = "REPOPILOT_RUNTIME_SECRETS_STORE_PATH"
 RUNTIME_SECRET_KEY_ENV = "REPOPILOT_RUNTIME_SECRETS_KEY"
 RUNTIME_SECRET_KEY_PATH_ENV = "REPOPILOT_RUNTIME_SECRETS_KEY_PATH"
+SECRET_OUTPUT_PATTERNS = (
+    re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}"),
+    re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
+    re.compile(r"(?i)(api[_-]?key|client[_-]?secret|token|password)\s*[:=]\s*['\"]?[A-Za-z0-9_./+=-]{8,}"),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL),
+)
 
 
 @dataclass(frozen=True)
@@ -112,3 +119,12 @@ def default_provider_api_key_env(provider: str) -> str:
     if normalized == "openrouter":
         return "OPENROUTER_API_KEY"
     return "MODEL_API_KEY"
+
+
+def redact_for_output(value: object, *, limit: int | None = None) -> str:
+    text = str(value)
+    for pattern in SECRET_OUTPUT_PATTERNS:
+        text = pattern.sub("[redacted]", text)
+    if limit is not None:
+        return text[:limit]
+    return text

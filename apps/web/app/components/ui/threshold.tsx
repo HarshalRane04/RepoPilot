@@ -3,7 +3,7 @@ export function Threshold({ label, tone, value }: { label: string; tone: string;
   return (
     <div className="threshold">
       <span>{label}</span>
-      <span style={{ color: toneColors[tone] ?? "var(--text-2)", fontWeight: 740, fontSize: 13 }}>{value}</span>
+      <span style={{ color: toneColors[tone] ?? "var(--text-2)", fontWeight: 700, fontSize: 13 }}>{value}</span>
     </div>
   );
 }

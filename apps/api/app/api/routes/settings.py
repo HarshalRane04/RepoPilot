@@ -27,6 +27,9 @@ from app.services.runtime_secrets import (
 )
 from app.services.security_envelope import rate_limit
 from app.services.state_machine import ALLOWED_TRANSITIONS, TERMINAL_STATES
+from app.services.url_safety import github_api_base_url as safe_github_api_base_url
+from app.services.url_safety import github_web_base_url as safe_github_web_base_url
+from app.services.url_safety import provider_base_url as safe_provider_base_url
 
 router = APIRouter()
 
@@ -64,6 +67,16 @@ class GitHubOAuthConfigRequest(BaseModel):
         if not urlparse(value).path.endswith("/auth/github/callback"):
             raise ValueError("must point to /auth/github/callback")
         return value
+
+    @field_validator("github_api_base_url")
+    @classmethod
+    def validate_github_api_base_url(cls, value: str) -> str:
+        return safe_github_api_base_url(value)
+
+    @field_validator("github_web_base_url")
+    @classmethod
+    def validate_github_web_base_url(cls, value: str) -> str:
+        return safe_github_web_base_url(value)
 
     @field_validator("session_secret_key")
     @classmethod
@@ -310,11 +323,15 @@ async def save_model_provider_config(
     if not provider:
         raise HTTPException(status_code=422, detail="Unsupported model provider.")
     effective = effective_settings()
+    try:
+        model_base_url = _provider_base_url(provider=provider, value=request.model_base_url or provider.default_base_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     available_models = await dynamic_model_ids_for_provider(
         provider_id=request.provider,
         timeout_seconds=effective.model_request_timeout_seconds,
         api_key=request.model_api_key or (effective.model_api_key if effective.model_provider == request.provider else None),
-        base_url=request.model_base_url or provider.default_base_url,
+        base_url=model_base_url,
     )
     if request.model not in available_models:
         raise HTTPException(status_code=422, detail="Selected model is not available for the selected provider.")
@@ -323,15 +340,11 @@ async def save_model_provider_config(
         model_id=request.model,
         timeout_seconds=effective.model_request_timeout_seconds,
         api_key=request.model_api_key or (effective.model_api_key if effective.model_provider == request.provider else None),
-        base_url=request.model_base_url or provider.default_base_url,
+        base_url=model_base_url,
     )
     reasoning_levels = tuple(str(level) for level in (selected_model.get("reasoning_levels", ()) if selected_model else ()))
     if request.model_reasoning_level and request.model_reasoning_level not in reasoning_levels:
         raise HTTPException(status_code=422, detail="Selected reasoning level is not available for the selected model.")
-    try:
-        model_base_url = _provider_base_url(provider=provider, value=request.model_base_url or provider.default_base_url)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
     values = {
         "MODEL_PROVIDER": request.provider,
         "MODEL_NAME": request.model,
@@ -416,22 +429,31 @@ async def _model_provider_status() -> dict[str, object]:
     summary = store.summary(set(MODEL_RUNTIME_SECRET_FIELDS))
     effective = effective_settings()
     provider = provider_by_id(effective.model_provider)
-    selected_model = await dynamic_model_by_id(
-        provider_id=effective.model_provider,
-        model_id=effective.model_name,
-        timeout_seconds=effective.model_request_timeout_seconds,
-        api_key=effective.model_api_key,
-        base_url=effective.model_base_url or (provider.default_base_url if provider else None),
-    )
-    configured_model = False
-    if provider:
-        available_models = await dynamic_model_ids_for_provider(
+    selected_model: dict[str, object] | None = None
+    catalog_available = True
+    safe_base_url = effective.model_base_url or (provider.default_base_url if provider else None)
+    try:
+        selected_model = await dynamic_model_by_id(
             provider_id=effective.model_provider,
+            model_id=effective.model_name,
             timeout_seconds=effective.model_request_timeout_seconds,
             api_key=effective.model_api_key,
-            base_url=effective.model_base_url or provider.default_base_url,
+            base_url=safe_base_url,
         )
-        configured_model = effective.model_name in available_models
+    except Exception:  # noqa: BLE001 - settings status must not expose provider/backend exception detail.
+        catalog_available = False
+    configured_model = False
+    if provider:
+        try:
+            available_models = await dynamic_model_ids_for_provider(
+                provider_id=effective.model_provider,
+                timeout_seconds=effective.model_request_timeout_seconds,
+                api_key=effective.model_api_key,
+                base_url=safe_base_url or provider.default_base_url,
+            )
+            configured_model = effective.model_name in available_models
+        except Exception:  # noqa: BLE001 - settings status must not expose provider/backend exception detail.
+            catalog_available = False
     api_key_configured = _configured_value(effective.model_api_key)
     reasoning_levels = [str(level) for level in (selected_model.get("reasoning_levels", ()) if selected_model else ())]
     reasoning_level = effective.model_reasoning_level if effective.model_reasoning_level in reasoning_levels else None
@@ -456,6 +478,7 @@ async def _model_provider_status() -> dict[str, object]:
         if effective.model_provider_verified_model == f"{effective.model_provider}:{effective.model_name}"
         else None,
         "status": "configured" if configured_model and api_key_configured else "missing",
+        "catalog_available": catalog_available,
         "summary": summary,
     }
 
@@ -468,12 +491,8 @@ def _configured_value(value: str | None) -> bool:
 
 
 def _provider_base_url(*, provider: object, value: str) -> str:
-    parsed = urlparse(value)
-    default = urlparse(str(getattr(provider, "default_base_url", "")))
-    if parsed.scheme != "https" or not parsed.netloc:
-        raise ValueError("Model base URL must be an absolute https URL.")
-    if parsed.username or parsed.password:
-        raise ValueError("Model base URL must not include credentials.")
-    if parsed.hostname != default.hostname:
-        raise ValueError("Model base URL host must match the selected provider.")
-    return value.rstrip("/")
+    return safe_provider_base_url(
+        value,
+        default_base_url=str(getattr(provider, "default_base_url", "")),
+        provider_id=str(getattr(provider, "id", "model provider")),
+    )

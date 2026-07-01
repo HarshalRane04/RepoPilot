@@ -6,12 +6,12 @@ import time
 import zipfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
-
 import httpx
 
 from app.core.config import Settings, settings
+from app.services.runtime_secrets import effective_settings
 from app.services.security_envelope import redact_text
+from app.services.url_safety import github_api_base_url, path_fragment, path_segment, query_string
 
 
 MAX_CHECK_RUN_SUMMARIES = 20
@@ -36,7 +36,7 @@ class GitHubWritesDisabled(GitHubIntegrationError):
 
 class GitHubAppTokenProvider:
     def __init__(self, config: Settings | None = None) -> None:
-        self.config = config or settings
+        self.config = config or effective_settings(settings)
 
     def is_configured(self) -> bool:
         return bool(self.config.github_app_id and self._private_key_material())
@@ -64,7 +64,7 @@ class GitHubAppTokenProvider:
 
     async def create_installation_access_token(self, installation_id: str) -> str:
         app_jwt = self.create_app_jwt()
-        url = f"{self.config.github_api_base_url.rstrip('/')}/app/installations/{installation_id}/access_tokens"
+        url = f"{github_api_base_url(self.config.github_api_base_url)}/app/installations/{path_segment(installation_id)}/access_tokens"
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.post(
                 url,
@@ -93,7 +93,7 @@ class GitHubAppTokenProvider:
 
 class GitHubApiClient:
     def __init__(self, token_provider: GitHubAppTokenProvider | None = None, config: Settings | None = None) -> None:
-        self.config = config or settings
+        self.config = config or effective_settings(settings)
         self.token_provider = token_provider or GitHubAppTokenProvider(self.config)
 
     def ensure_write_mode(self) -> None:
@@ -120,7 +120,7 @@ class GitHubApiClient:
         elif not self.token_provider.is_configured():
             raise GitHubCredentialsMissing("GitHub App credentials are required for this GitHub API call.")
         token = await self.token_provider.create_installation_access_token(installation_id)
-        url = f"{self.config.github_api_base_url.rstrip('/')}/{path.lstrip('/')}"
+        url = self._api_url(path)
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.request(
                 method,
@@ -142,7 +142,7 @@ class GitHubApiClient:
         payload = await self.request(
             installation_id=installation_id,
             method="GET",
-            path=f"/repos/{owner}/{repo}/git/ref/heads/{branch}",
+            path=f"/repos/{path_segment(owner)}/{path_segment(repo)}/git/ref/heads/{path_fragment(branch)}",
         )
         sha = payload.get("object", {}).get("sha") if isinstance(payload.get("object"), dict) else None
         if not sha:
@@ -153,7 +153,7 @@ class GitHubApiClient:
         return await self.request(
             installation_id=installation_id,
             method="POST",
-            path=f"/repos/{owner}/{repo}/git/refs",
+            path=f"/repos/{path_segment(owner)}/{path_segment(repo)}/git/refs",
             json_body={"ref": f"refs/heads/{branch_name}", "sha": base_sha},
         )
 
@@ -161,7 +161,7 @@ class GitHubApiClient:
         return await self.request(
             installation_id=installation_id,
             method="GET",
-            path=f"/repos/{owner}/{repo}/contents/{path}?ref={ref}",
+            path=f"/repos/{path_segment(owner)}/{path_segment(repo)}/contents/{path_fragment(path)}?{query_string({'ref': ref})}",
             require_write=False,
         )
 
@@ -169,14 +169,14 @@ class GitHubApiClient:
         return await self.request(
             installation_id=installation_id,
             method="GET",
-            path=f"/repos/{owner}/{repo}/git/commits/{commit_sha}",
+            path=f"/repos/{path_segment(owner)}/{path_segment(repo)}/git/commits/{path_segment(commit_sha)}",
         )
 
     async def create_blob(self, *, installation_id: str, owner: str, repo: str, content: str) -> str:
         payload = await self.request(
             installation_id=installation_id,
             method="POST",
-            path=f"/repos/{owner}/{repo}/git/blobs",
+            path=f"/repos/{path_segment(owner)}/{path_segment(repo)}/git/blobs",
             json_body={"content": content, "encoding": "utf-8"},
         )
         sha = payload.get("sha")
@@ -196,7 +196,7 @@ class GitHubApiClient:
         payload = await self.request(
             installation_id=installation_id,
             method="POST",
-            path=f"/repos/{owner}/{repo}/git/trees",
+            path=f"/repos/{path_segment(owner)}/{path_segment(repo)}/git/trees",
             json_body={"base_tree": base_tree_sha, "tree": tree_items},
         )
         sha = payload.get("sha")
@@ -217,7 +217,7 @@ class GitHubApiClient:
         payload = await self.request(
             installation_id=installation_id,
             method="POST",
-            path=f"/repos/{owner}/{repo}/git/commits",
+            path=f"/repos/{path_segment(owner)}/{path_segment(repo)}/git/commits",
             json_body={"message": message, "tree": tree_sha, "parents": [parent_sha]},
         )
         sha = payload.get("sha")
@@ -229,7 +229,7 @@ class GitHubApiClient:
         return await self.request(
             installation_id=installation_id,
             method="PATCH",
-            path=f"/repos/{owner}/{repo}/git/refs/heads/{branch_name}",
+            path=f"/repos/{path_segment(owner)}/{path_segment(repo)}/git/refs/heads/{path_fragment(branch_name)}",
             json_body={"sha": commit_sha, "force": False},
         )
 
@@ -299,7 +299,7 @@ class GitHubApiClient:
         return await self.request(
             installation_id=installation_id,
             method="POST",
-            path=f"/repos/{owner}/{repo}/pulls",
+            path=f"/repos/{path_segment(owner)}/{path_segment(repo)}/pulls",
             json_body={"head": branch_name, "base": base_branch, "title": title, "body": body, "draft": draft},
         )
 
@@ -315,7 +315,7 @@ class GitHubApiClient:
         return await self.request(
             installation_id=installation_id,
             method="POST",
-            path=f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
+            path=f"/repos/{path_segment(owner)}/{path_segment(repo)}/issues/{path_segment(str(issue_number))}/comments",
             json_body={"body": body},
         )
 
@@ -323,7 +323,7 @@ class GitHubApiClient:
         return await self.request(
             installation_id=installation_id,
             method="GET",
-            path=f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
+            path=f"/repos/{path_segment(owner)}/{path_segment(repo)}/commits/{path_fragment(ref)}/check-runs",
             require_write=False,
         )
 
@@ -331,7 +331,9 @@ class GitHubApiClient:
         if not self.token_provider.is_configured():
             raise GitHubCredentialsMissing("GitHub App credentials are required for workflow log fetches.")
         token = await self.token_provider.create_installation_access_token(installation_id)
-        url = f"{self.config.github_api_base_url.rstrip('/')}/repos/{owner}/{repo}/actions/runs/{run_id}/logs"
+        url = self._api_url(
+            f"/repos/{path_segment(owner)}/{path_segment(repo)}/actions/runs/{path_segment(str(run_id))}/logs"
+        )
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             response = await client.get(
                 url,
@@ -366,9 +368,11 @@ class GitHubApiClient:
     ) -> list[dict[str, Any]]:
         if not self.token_provider.is_configured():
             raise GitHubCredentialsMissing("GitHub App credentials are required for check-run annotation fetches.")
-        query = urlencode({"per_page": min(max(per_page, 1), 100)})
+        query = query_string({"per_page": min(max(per_page, 1), 100)})
         token = await self.token_provider.create_installation_access_token(installation_id)
-        url = f"{self.config.github_api_base_url.rstrip('/')}/repos/{owner}/{repo}/check-runs/{check_run_id}/annotations?{query}"
+        url = self._api_url(
+            f"/repos/{path_segment(owner)}/{path_segment(repo)}/check-runs/{path_segment(str(check_run_id))}/annotations?{query}"
+        )
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.get(
                 url,
@@ -573,7 +577,7 @@ class GitHubApiClient:
         payload = await self.request(
             installation_id=installation_id,
             method="GET",
-            path=f"/repos/{owner}/{repo}/collaborators/{username}/permission",
+            path=f"/repos/{path_segment(owner)}/{path_segment(repo)}/collaborators/{path_segment(username)}/permission",
             require_write=False,
         )
         permission = payload.get("permission")
@@ -616,9 +620,8 @@ class GitHubApiClient:
         if tool_name:
             query["tool_name"] = tool_name
         token = await self.token_provider.create_installation_access_token(installation_id)
-        url = (
-            f"{self.config.github_api_base_url.rstrip('/')}/repos/{owner}/{repo}/code-scanning/alerts?"
-            f"{urlencode(query)}"
+        url = self._api_url(
+            f"/repos/{path_segment(owner)}/{path_segment(repo)}/code-scanning/alerts?{query_string(query)}"
         )
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.get(
@@ -635,3 +638,9 @@ class GitHubApiClient:
         if not isinstance(payload, list):
             raise GitHubIntegrationError("GitHub code-scanning alerts response was not an array.")
         return [dict(item) for item in payload if isinstance(item, dict)]
+
+    def _api_url(self, path: str) -> str:
+        clean_path = path.strip()
+        if not clean_path.startswith("/") or clean_path.startswith("//") or "://" in clean_path:
+            raise GitHubIntegrationError("GitHub API path must be a relative absolute path.")
+        return f"{github_api_base_url(self.config.github_api_base_url)}{clean_path}"

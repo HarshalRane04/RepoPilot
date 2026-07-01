@@ -13,7 +13,7 @@ from typing import Any, Protocol
 from repopilot_contracts import EvalTaskFixture
 from repopilot_llm_client import build_completion_request, extract_completion_content, provider_by_id
 
-from .provider_credentials import resolve_provider_credentials
+from .provider_credentials import redact_for_output, resolve_provider_credentials
 from .report import BenchmarkReport, BenchmarkReportBuilder
 
 
@@ -55,7 +55,7 @@ class ProviderChatClient:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"{self.provider} returned HTTP {exc.code}: {body[:500]}") from exc
+            raise RuntimeError(f"{self.provider} returned HTTP {exc.code}: {redact_for_output(body, limit=500)}") from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"{self.provider} request failed: {exc.reason}") from exc
         content = extract_completion_content(provider_id=self.provider, payload=payload)
@@ -110,7 +110,7 @@ class ProviderPlanningEvalRunner:
                 observed_plan_results.append(self.normalize_provider_plan(task=task, payload=provider_payload))
             except Exception as exc:  # noqa: BLE001 - provider failures should become eval evidence.
                 observed_plan_results.append(self.empty_failed_plan(task=task))
-                errors.append({"task_id": task.id, "error": str(exc)[:500]})
+                errors.append({"task_id": task.id, "error": redact_for_output(exc, limit=500)})
             finally:
                 latencies.append(int((time.monotonic() - started) * 1000))
 
@@ -315,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
             allow_failed_gates=args.allow_failed_gates,
         )
     except RuntimeError as exc:
-        print(str(exc))
+        print(redact_for_output(exc))
         return 2
     print(f"Wrote {result.markdown_path}")
     print(f"Wrote {result.json_path}")

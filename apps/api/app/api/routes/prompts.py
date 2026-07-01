@@ -17,7 +17,7 @@ from app.services.audit import record_audit
 from app.services.auth import CurrentUser, get_current_user
 from app.services.planning import PlanningService
 from app.services.runtime_secrets import effective_settings
-from app.services.security_envelope import rate_limit
+from app.services.security_envelope import rate_limit, redact_text
 from app.services.triage import TriageService
 
 router = APIRouter()
@@ -44,6 +44,7 @@ async def submit_prompt(
         number=issue_number,
         title=request.title,
         body_hash=_text_hash(request.prompt),
+        body_text=_bounded_issue_body(request.prompt),
         status="new",
     )
     db.add(issue)
@@ -167,3 +168,7 @@ def _text_hash(value: str) -> str:
 
 def _payload_hash(payload: dict[str, object]) -> str:
     return _text_hash(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+
+
+def _bounded_issue_body(value: str) -> str:
+    return redact_text(value)[:8000]

@@ -7,7 +7,6 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +24,7 @@ from app.core.config import settings  # noqa: E402
 from app.services.model_catalog import dynamic_model_ids_for_provider, provider_by_id  # noqa: E402
 from app.services.model_provider_verification import verify_model_provider  # noqa: E402
 from app.services.runtime_secrets import MODEL_RUNTIME_SECRET_FIELDS, effective_settings, runtime_secret_store  # noqa: E402
+from app.services.security_envelope import redact_text  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -216,7 +216,7 @@ async def async_main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     smoke = await capture_model_provider_smoke()
     write_outputs(smoke=smoke, json_out=args.json_out, md_out=args.md_out)
-    print(render_markdown(smoke))
+    print(redact_text(render_markdown(smoke)))
     if smoke.ok or (args.allow_blocked and smoke.status == "blocked"):
         return 0
     return 1

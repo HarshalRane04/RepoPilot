@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 from uuid import UUID
@@ -28,6 +29,7 @@ from app.db.models import AgentRun, AgentStep, Issue, Plan
 from app.services.artifacts import ArtifactStore
 from app.services.audit import record_audit
 from app.services.model_gateway import ModelGateway
+from app.services.path_safety import UnsafePathError, existing_directory_under_root
 from app.services.planning import approved_plan_hash_matches, implementation_plan_from_db
 from app.services.policy import PolicyEngine
 from app.services.state_machine import transition_run
@@ -112,7 +114,14 @@ class ImplementationAgent:
         if policy.decision != PolicyDecisionType.ALLOW:
             return await self._blocked(db, run=run, reason=f"Plan policy is {policy.decision}: {policy.reason}")
 
-        source_workspace = Path(request.workspace_path).expanduser().resolve()
+        try:
+            source_workspace = existing_directory_under_root(
+                request.workspace_path,
+                root_value=settings.repository_workspace_root,
+                label="Implementation source workspace",
+            )
+        except UnsafePathError as exc:
+            return await self._blocked(db, run=run, reason=str(exc))
         issue = await db.get(Issue, plan.issue_id)
 
         if run.state == AgentRunState.WAIT_FOR_APPROVAL.value:
@@ -174,12 +183,21 @@ class ImplementationAgent:
                 previous_validation=last_validation,
             )
             if not tool_plan.tool_calls:
-                return await self._blocked(
-                    db,
-                    run=run,
-                    reason=tool_plan.stop_reason or "Model did not propose implementation tool calls.",
+                deterministic_tool_plan = self._deterministic_tool_plan(
+                    issue=issue,
+                    implementation_plan=implementation_plan,
+                    snippets=snippets,
                 )
-
+                if deterministic_tool_plan.tool_calls:
+                    tool_plan = deterministic_tool_plan
+                else:
+                    return await self._blocked(
+                        db,
+                        run=run,
+                        reason=tool_plan.stop_reason
+                        or deterministic_tool_plan.stop_reason
+                        or "Model did not propose implementation tool calls.",
+                    )
             write_results = await self._execute_write_tool_calls(
                 db,
                 run=run,
@@ -380,6 +398,7 @@ class ImplementationAgent:
             "issue": {
                 "title": issue.title if issue else "RepoPilot implementation task",
                 "number": issue.number if issue else None,
+                "body": issue.body_text if issue else None,
             },
             "approved_plan": implementation_plan.model_dump(mode="json"),
             "workspace_path": workspace_path,
@@ -406,13 +425,97 @@ class ImplementationAgent:
             ),
             user_prompt=json.dumps(prompt, sort_keys=True),
             response_model=ImplementationToolPlan,
-            fallback=lambda: ImplementationToolPlan(
-                summary="No implementation tool calls were produced by the configured model.",
-                tool_calls=[],
-                stop_reason="Configure a live model provider or revise the plan with explicit patch instructions.",
+            fallback=lambda: self._deterministic_tool_plan(
+                issue=issue,
+                implementation_plan=implementation_plan,
+                snippets=snippets,
             ),
             context_citations=implementation_plan.context_citations,
         )
+
+    def _deterministic_tool_plan(
+        self,
+        *,
+        issue: Issue | None,
+        implementation_plan: ImplementationPlan,
+        snippets: list[dict[str, Any]],
+    ) -> ImplementationToolPlan:
+        instructions = "\n".join(
+            part
+            for part in [
+                issue.title if issue else "",
+                issue.body_text if issue else "",
+                implementation_plan.summary,
+                *implementation_plan.intended_changes,
+            ]
+            if part
+        )
+        replacement = self._explicit_replacement(instructions=instructions, snippets=snippets)
+        if replacement is None:
+            return ImplementationToolPlan(
+                summary="No implementation tool calls were produced by the configured model.",
+                tool_calls=[],
+                stop_reason="Configure a live model provider or revise the plan with explicit patch instructions.",
+            )
+        path, old_text, new_text = replacement
+        if path not in {self._workspace_relative_path(item) for item in implementation_plan.files_to_modify + implementation_plan.tests_to_add}:
+            return ImplementationToolPlan(
+                summary="Deterministic replacement was not within the approved plan.",
+                tool_calls=[],
+                stop_reason=f"Explicit replacement targets {path}, which is not approved for modification.",
+            )
+        return ImplementationToolPlan(
+            summary="Applied deterministic explicit replacement from issue instructions after model JSON fallback.",
+            tool_calls=[
+                ProposedImplementationToolCall(
+                    tool_name="workspace.replace_text",
+                    arguments={"path": path, "old_text": old_text, "new_text": new_text},
+                )
+            ],
+        )
+
+    def _explicit_replacement(self, *, instructions: str, snippets: list[dict[str, Any]]) -> tuple[str, str, str] | None:
+        normalized = " ".join(instructions.split())
+        replace_match = re.search(
+            r"replace\s+[`'\"](?P<old>.+?)[`'\"]\s+with\s+[`'\"](?P<new>.+?)[`'\"](?:\s+in\s+[`'\"]?(?P<path>[\w./-]+)[`'\"]?)?",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if replace_match:
+            explicit_path = replace_match.group("path")
+            old_text = replace_match.group("old")
+            new_text = replace_match.group("new")
+            for snippet in snippets:
+                path = str(snippet.get("path") or "")
+                content = str(snippet.get("content") or "")
+                if explicit_path and PurePosixPath(explicit_path).as_posix() != path:
+                    continue
+                if content.count(old_text) == 1:
+                    return path, old_text, new_text
+
+        return_match = re.search(
+            r"returns?\s+exactly\s+[`'\"]?(?P<value>[A-Za-z0-9][^`'\"\\n.]+?)[`'\"]?(?:\.|$)",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if not return_match:
+            return None
+        target_value = return_match.group("value").strip()
+        if not target_value:
+            return None
+        for snippet in snippets:
+            path = str(snippet.get("path") or "")
+            content = str(snippet.get("content") or "")
+            if not path.endswith((".py", ".js", ".jsx", ".ts", ".tsx")):
+                continue
+            line_match = re.search(r"(?m)^(?P<indent>\s*)return\s+([\"']).*?\2\s*$", content)
+            if not line_match:
+                continue
+            quote = '"'
+            old_text = line_match.group(0)
+            new_text = f"{line_match.group('indent')}return {quote}{target_value}{quote}"
+            return path, old_text, new_text
+        return None
 
     async def _execute_write_tool_calls(
         self,

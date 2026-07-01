@@ -49,6 +49,7 @@ from app.services.observability import ObservabilityService
 from app.services.planning import PlanningService, approved_plan_hash_matches, implementation_plan_from_db
 from app.services.policy import PolicyEngine
 from app.services.repo_indexer import IGNORED_DIRS, SENSITIVE_FILE_NAMES, SENSITIVE_SUFFIXES, TEXT_EXTENSIONS, RepositoryIndexer
+from app.services.runtime_secrets import effective_settings
 from app.services.sandbox import SandboxRunner
 from app.services.security_envelope import redact_data, redact_text, stable_json_hash
 from app.services.security_scanner import SecurityScanner
@@ -513,7 +514,7 @@ class ToolExecutor:
     ) -> str | None:
         if not definition.enabled:
             return definition.disabled_reason or "Tool is disabled."
-        if definition.requires_github_write_mode and not settings.github_writes_enabled:
+        if definition.requires_github_write_mode and not effective_settings(settings).github_writes_enabled:
             return "Real GitHub writes are disabled."
         if request is not None and request.state.value != run.state:
             return f"Tool call state {request.state.value} does not match current run state {run.state}."
@@ -935,7 +936,7 @@ async def _security_scan_workspace(db: AsyncSession, request: ToolCallRequest, p
 
 
 async def _security_explain_findings(db: AsyncSession, request: ToolCallRequest, payload: BaseModel) -> dict[str, Any]:
-    args = _cast(payload, RunIdInput)
+    _cast(payload, RunIdInput)
     result = await db.execute(select(SecurityFinding).where(SecurityFinding.run_id == request.run_id))
     findings = result.scalars().all()
     by_severity: dict[str, int] = {}

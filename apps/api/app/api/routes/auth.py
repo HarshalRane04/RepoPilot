@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.services.auth import CurrentUser, create_session_cookie, create_signed_value, get_current_user, verify_signed_value
 from app.services.github_oauth import GitHubOAuthError, GitHubOAuthService
 from app.services.runtime_secrets import effective_settings
+from app.services.url_safety import web_app_base_url
 
 router = APIRouter()
 
@@ -61,7 +62,7 @@ async def github_callback(
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
     if error:
-        return _redirect_to_app(f"/#connect?{urlencode({'github_error': error})}")
+        return _redirect_to_app(f"/#connect?{urlencode({'github_error': _safe_oauth_error(error)})}")
     if not code or not state:
         raise HTTPException(status_code=400, detail="GitHub OAuth callback is missing code or state.")
 
@@ -94,7 +95,21 @@ async def github_callback(
 
 def _redirect_to_app(path: str) -> RedirectResponse:
     config = effective_settings(settings)
-    return RedirectResponse(f"{config.web_app_url.rstrip('/')}{path}", status_code=303)
+    return RedirectResponse(f"{web_app_base_url(config.web_app_url)}{_safe_redirect_path(path)}", status_code=303)
+
+
+def _safe_redirect_path(path: str) -> str:
+    if not path.startswith("/") or path.startswith("//") or "://" in path:
+        return "/"
+    if any(ord(char) < 32 for char in path):
+        return "/"
+    return path
+
+
+def _safe_oauth_error(value: str) -> str:
+    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+    cleaned = "".join(char for char in value[:80] if char in allowed)
+    return cleaned or "github_oauth_error"
 
 
 def _set_cookie(response: JSONResponse | RedirectResponse, key: str, value: str, *, max_age: int) -> None:

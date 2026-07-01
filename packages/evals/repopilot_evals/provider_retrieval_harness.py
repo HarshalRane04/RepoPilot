@@ -12,7 +12,7 @@ from typing import Any, Protocol
 
 from repopilot_contracts import EvalTaskFixture
 
-from .provider_credentials import resolve_provider_credentials
+from .provider_credentials import redact_for_output, resolve_provider_credentials
 from .provider_harness import default_provider_api_key_env
 from .report import BenchmarkReport, BenchmarkReportBuilder
 
@@ -110,7 +110,7 @@ class ProviderRetrievalEvalRunner:
             except Exception as exc:  # noqa: BLE001 - provider failures should become eval evidence.
                 retrieval_results.append(self.empty_failed_retrieval(task=task))
                 observed_plan_results.append(self.plan_control_for_task(task=task, citations=[]))
-                errors.append({"task_id": task.id, "error": str(exc)[:500]})
+                errors.append({"task_id": task.id, "error": redact_for_output(exc, limit=500)})
             finally:
                 latencies.append(int((time.monotonic() - started) * 1000))
 
@@ -312,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:
             allow_failed_gates=args.allow_failed_gates,
         )
     except RuntimeError as exc:
-        print(str(exc))
+        print(redact_for_output(exc))
         return 2
     print(f"Wrote {result.markdown_path}")
     print(f"Wrote {result.json_path}")

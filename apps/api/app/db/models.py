@@ -100,6 +100,7 @@ class Issue(Base, TimestampMixin):
     number: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     body_hash: Mapped[str | None] = mapped_column(String(128))
+    body_text: Mapped[str | None] = mapped_column(Text)
     issue_type: Mapped[str | None] = mapped_column(String(64))
     complexity: Mapped[str | None] = mapped_column(String(64))
     risk_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

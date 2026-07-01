@@ -49,6 +49,7 @@ class PlanningService:
             fallback=lambda: deterministic_plan,
             context_citations=context.citations,
         )
+        implementation_plan = self._enforce_issue_intent(issue=issue, plan=implementation_plan, deterministic_plan=deterministic_plan)
         policy_decision = PolicyEngine().evaluate_plan(implementation_plan)
 
         plan = Plan(
@@ -110,6 +111,37 @@ class PlanningService:
     def _build_plan(self, *, issue: Issue, context_citations: list[str]) -> ImplementationPlan:
         inspected = [citation.split(":", 1)[0] for citation in context_citations]
         files_to_inspect = list(dict.fromkeys(inspected))[:6]
+        if self._is_documentation_only(issue):
+            docs_to_inspect = [path for path in files_to_inspect if self._looks_like_doc(path)]
+            docs_to_modify = docs_to_inspect[:3]
+            risk_notes = []
+            if not docs_to_inspect:
+                risk_notes.append("Issue explicitly requests documentation-only work but retrieved context did not include documentation files.")
+            return ImplementationPlan(
+                plan_id="pending-db-id",
+                issue_id=str(issue.id),
+                summary=f"Plan documentation-only work for issue #{issue.number}: {issue.title}",
+                files_to_inspect=docs_to_inspect,
+                files_to_modify=docs_to_modify,
+                tests_to_add=[],
+                commands_to_run=[],
+                intended_changes=(
+                    [f"Update documentation in {path}; do not modify source code or tests." for path in docs_to_modify]
+                    or ["Request more documentation context before proposing file edits."]
+                ),
+                validation_strategy=[
+                    "Review the documentation diff for accuracy and confirm no source or test files changed.",
+                ],
+                assumptions=[
+                    "The issue is explicitly documentation-only.",
+                    "Any source-code, test, workflow, or runtime-config change requires a revised plan and fresh approval.",
+                ],
+                context_citations=[citation for citation in context_citations if citation.split(":", 1)[0] in docs_to_inspect],
+                risk_notes=risk_notes,
+                rollback_plan="Revert the documentation-only commit or close the draft PR without merging.",
+                requires_human_approval=True,
+            )
+
         files_to_modify = [path for path in files_to_inspect if not self._looks_like_test(path)][:3]
         if not files_to_modify and files_to_inspect:
             files_to_modify = files_to_inspect[:1]
@@ -152,6 +184,51 @@ class PlanningService:
         lowered = path.lower()
         return "test" in lowered or lowered.startswith("tests/")
 
+    def _looks_like_doc(self, path: str) -> bool:
+        lowered = path.lower()
+        return lowered.endswith((".md", ".mdx", ".rst", ".txt")) or lowered.startswith(("docs/", "documentation/"))
+
+    def _is_documentation_only(self, issue: Issue) -> bool:
+        text = f"{issue.title}\n{issue.body_text or ''}\n{issue.issue_type or ''}".lower()
+        explicit_docs = any(marker in text for marker in ("documentation-only", "docs-only", "docs only", "documentation only"))
+        code_forbidden = any(marker in text for marker in ("do not modify code", "no code changes", "without code changes"))
+        return issue.issue_type == "docs" and (explicit_docs or code_forbidden)
+
+    def _enforce_issue_intent(
+        self,
+        *,
+        issue: Issue,
+        plan: ImplementationPlan,
+        deterministic_plan: ImplementationPlan,
+    ) -> ImplementationPlan:
+        if not self._is_documentation_only(issue):
+            return plan
+        docs_to_modify = [path for path in plan.files_to_modify if self._looks_like_doc(path)]
+        docs_to_inspect = [path for path in plan.files_to_inspect if self._looks_like_doc(path)]
+        if not docs_to_modify:
+            return deterministic_plan
+        return plan.model_copy(
+            update={
+                "summary": f"Plan documentation-only work for issue #{issue.number}: {issue.title}",
+                "files_to_inspect": docs_to_inspect or docs_to_modify,
+                "files_to_modify": docs_to_modify,
+                "tests_to_add": [],
+                "commands_to_run": [command for command in plan.commands_to_run if "pytest" not in command.lower() and "test" not in command.lower()],
+                "intended_changes": [
+                    f"Update documentation in {path}; do not modify source code or tests."
+                    for path in docs_to_modify
+                ],
+                "validation_strategy": [
+                    "Review the documentation diff for accuracy and confirm no source or test files changed.",
+                ],
+                "assumptions": [
+                    *plan.assumptions,
+                    "The issue is explicitly documentation-only.",
+                    "Any source-code, test, workflow, or runtime-config change requires a revised plan and fresh approval.",
+                ],
+            }
+        )
+
     def _commands_for_files(self, paths: list[str]) -> list[str]:
         if any(path.endswith(".py") for path in paths):
             return ["pytest"]
@@ -179,6 +256,7 @@ class PlanningPromptBuilder:
                 "complexity": issue.complexity,
                 "risk_score": issue.risk_score,
                 "body_hash": issue.body_hash,
+                "body": issue.body_text,
             },
             "repository_context": {
                 "query": context.query,

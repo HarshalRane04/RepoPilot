@@ -166,9 +166,12 @@ class CIAnalyzer:
 
     def proposed_fix_path(self, log_text: str) -> str | None:
         for raw_line in log_text.splitlines():
-            match = re.search(r"([A-Za-z0-9_./-]+\.(py|ts|tsx|js|jsx|go|md|yml|yaml))", raw_line)
-            if match:
-                return match.group(1)
+            for token in raw_line[:1000].split():
+                candidate = token.strip("`'\"()[]{}<>:,;")
+                if "::" in candidate:
+                    candidate = candidate.split("::", 1)[0]
+                if _looks_like_source_path(candidate):
+                    return candidate
         return None
 
     def summary(self, *, conclusion: str, failure_reasons: list[str]) -> str:
@@ -224,3 +227,15 @@ class CIAnalyzer:
             )
         )
         return has_passed_validation and findings.scalars().first() is None
+
+
+_SOURCE_EXTENSIONS = (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".md", ".yml", ".yaml")
+_SOURCE_PATH_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./-")
+
+
+def _looks_like_source_path(value: str) -> bool:
+    if not value or value.startswith(("/", "../", "./../")) or ".." in value.split("/"):
+        return False
+    if not value.endswith(_SOURCE_EXTENSIONS):
+        return False
+    return all(char in _SOURCE_PATH_CHARS for char in value)

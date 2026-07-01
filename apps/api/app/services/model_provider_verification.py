@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from app.services.model_catalog import ModelProviderOption
+from app.services.url_safety import provider_base_url as safe_provider_base_url
 
 
 @dataclass(frozen=True)
@@ -40,7 +41,11 @@ async def verify_model_provider(
 ) -> ModelProviderVerificationResult:
     started = perf_counter()
     checked_at = datetime.now(UTC).isoformat()
-    endpoint = _models_endpoint(provider_id=provider.id, base_url=base_url)
+    try:
+        safe_base_url = safe_provider_base_url(base_url, default_base_url=provider.default_base_url, provider_id=provider.id)
+    except ValueError:
+        return _result(False, provider.id, model, "Provider base URL failed safety validation.", checked_at, started)
+    endpoint = _models_endpoint(provider_id=provider.id, base_url=safe_base_url)
     headers = _headers(provider_id=provider.id, api_key=api_key)
 
     try:

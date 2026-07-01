@@ -11,6 +11,7 @@ from uuid import UUID
 from repopilot_contracts import PolicyDecisionType, SandboxCommandRequest, SandboxCommandResult, ValidationStatus
 
 from app.core.config import settings
+from app.services.path_safety import UnsafePathError, exact_existing_directory
 from app.services.policy import PolicyEngine
 from app.services.security_envelope import redact_text
 
@@ -32,21 +33,19 @@ class SandboxRunner:
                 blocked_reason=policy.reason,
             )
 
-        workspace = Path(request.workspace_path).expanduser().resolve()
         expected_workspace = (WORKSPACE_ROOT / str(run_id)).resolve()
-        if workspace != expected_workspace:
-            return SandboxCommandResult(
-                command=request.command,
-                status=ValidationStatus.BLOCKED,
-                duration_ms=0,
-                blocked_reason=f"Sandbox workspace must be the isolated run workspace: {expected_workspace}",
+        try:
+            workspace = exact_existing_directory(
+                request.workspace_path,
+                expected=expected_workspace,
+                label="Sandbox workspace",
             )
-        if not workspace.exists() or not workspace.is_dir():
+        except UnsafePathError as exc:
             return SandboxCommandResult(
                 command=request.command,
                 status=ValidationStatus.BLOCKED,
                 duration_ms=0,
-                blocked_reason=f"Workspace path is not a directory: {workspace}",
+                blocked_reason=str(exc),
             )
 
         if self.backend == "docker":

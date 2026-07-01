@@ -1,5 +1,4 @@
 import { EmptyState } from "./empty-state";
-import { Badge } from "./badge";
 
 export function CheckList({ items, empty }: { items: string[]; empty: string }) {
   if (items.length === 0) return <EmptyState text={empty} />;

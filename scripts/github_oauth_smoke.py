@@ -24,6 +24,8 @@ from app.core.config import settings  # noqa: E402
 from app.services.github_oauth import GitHubOAuthError, GitHubOAuthService  # noqa: E402
 from app.services.runtime_secrets import GITHUB_OAUTH_RUNTIME_SECRET_FIELDS, effective_settings, runtime_secret_store  # noqa: E402
 from app.services.security_envelope import redact_text  # noqa: E402
+from app.services.url_safety import github_api_base_url as safe_github_api_base_url  # noqa: E402
+from app.services.url_safety import github_web_base_url as safe_github_web_base_url  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -75,9 +77,9 @@ def capture_github_oauth_smoke() -> GitHubOAuthSmoke:
     callback_url_configured = _valid_url(effective.github_oauth_callback_url)
     web_app_url_configured = _valid_url(effective.web_app_url)
     session_secret_configured = _configured_value(effective.session_secret_key)
-    github_base_urls_configured = _valid_url(effective.github_api_base_url, allow_http_localhost=False) and _valid_url(
-        effective.github_web_base_url,
-        allow_http_localhost=False,
+    github_base_urls_configured = _valid_github_base_urls(
+        api_base_url=effective.github_api_base_url,
+        web_base_url=effective.github_web_base_url,
     )
 
     common = {
@@ -128,7 +130,7 @@ def capture_github_oauth_smoke() -> GitHubOAuthSmoke:
         )
 
     parsed = urlparse(authorization_url)
-    generated = parsed.scheme == "https" and parsed.netloc.endswith("github.com") and "/login/oauth/authorize" in parsed.path
+    generated = parsed.scheme == "https" and parsed.hostname == "github.com" and parsed.path == "/login/oauth/authorize"
     return GitHubOAuthSmoke(
         **common,
         ok=generated,
@@ -164,6 +166,15 @@ def render_markdown(smoke: GitHubOAuthSmoke) -> str:
     )
 
 
+def _valid_github_base_urls(*, api_base_url: str | None, web_base_url: str | None) -> bool:
+    try:
+        safe_github_api_base_url(api_base_url or "")
+        safe_github_web_base_url(web_base_url or "")
+    except ValueError:
+        return False
+    return True
+
+
 def write_outputs(*, smoke: GitHubOAuthSmoke, json_out: Path | None, md_out: Path | None) -> None:
     if json_out:
         json_out.parent.mkdir(parents=True, exist_ok=True)
@@ -185,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     smoke = capture_github_oauth_smoke()
     write_outputs(smoke=smoke, json_out=args.json_out, md_out=args.md_out)
-    print(render_markdown(smoke))
+    print(redact_text(render_markdown(smoke)))
     if smoke.ok or (args.allow_blocked and smoke.status == "blocked"):
         return 0
     return 1

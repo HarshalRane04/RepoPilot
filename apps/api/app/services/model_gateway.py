@@ -18,6 +18,7 @@ from app.db.models import AgentRun, LLMTrace
 from app.services.model_catalog import provider_by_id
 from app.services.runtime_secrets import effective_settings
 from app.services.security_envelope import BudgetGuard, redact_data, stable_json_hash
+from app.services.url_safety import provider_base_url as safe_provider_base_url
 
 StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 TRANSIENT_PROVIDER_STATUSES = {408, 409, 425, 429, 500, 502, 503, 504}
@@ -68,7 +69,11 @@ class ModelGateway:
                 provider_id=config.model_provider,
                 model=config.model_name,
                 api_key=config.model_api_key or "",
-                base_url=config.model_base_url or (provider.default_base_url if provider else ""),
+                base_url=safe_provider_base_url(
+                    config.model_base_url or provider.default_base_url,
+                    default_base_url=provider.default_base_url,
+                    provider_id=provider.id,
+                ),
                 prompt_hash=prompt_hash,
                 started=started,
                 system_prompt=system_prompt,
@@ -168,7 +173,11 @@ class ModelGateway:
                 provider_id=config.embedding_provider,
                 model=config.embedding_model,
                 api_key=config.model_api_key,
-                base_url=config.model_base_url or embedding_provider.default_base_url,
+                base_url=safe_provider_base_url(
+                    config.model_base_url or embedding_provider.default_base_url,
+                    default_base_url=embedding_provider.default_base_url,
+                    provider_id=embedding_provider.id,
+                ),
                 texts=texts,
                 dimensions=dimensions,
                 started=started,

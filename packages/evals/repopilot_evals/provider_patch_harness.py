@@ -14,7 +14,7 @@ from .provider_harness import (
     ProviderChatClient,
     default_provider_api_key_env,
 )
-from .provider_credentials import resolve_provider_credentials
+from .provider_credentials import redact_for_output, resolve_provider_credentials
 from .report import BenchmarkReport, BenchmarkReportBuilder
 
 
@@ -61,7 +61,7 @@ class ProviderPatchEvalRunner:
                 observed_task_results.append(self.normalize_provider_patch(task=task, payload=provider_payload))
             except Exception as exc:  # noqa: BLE001 - provider failures should become eval evidence.
                 observed_task_results.append(self.empty_failed_patch(task=task))
-                errors.append({"task_id": task.id, "error": str(exc)[:500]})
+                errors.append({"task_id": task.id, "error": redact_for_output(exc, limit=500)})
             finally:
                 latencies.append(int((time.monotonic() - started) * 1000))
 
@@ -261,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
             allow_failed_gates=args.allow_failed_gates,
         )
     except RuntimeError as exc:
-        print(str(exc))
+        print(redact_for_output(exc))
         return 2
     print(f"Wrote {result.markdown_path}")
     print(f"Wrote {result.json_path}")

@@ -12,6 +12,7 @@ from app.core.config import Settings, settings
 from app.db.models import Installation, Repository, User
 from app.services.audit import record_audit
 from app.services.runtime_secrets import effective_settings
+from app.services.url_safety import github_api_base_url, github_web_base_url
 
 
 class GitHubOAuthError(RuntimeError):
@@ -35,7 +36,7 @@ class GitHubOAuthService:
     def authorization_url(self, *, state: str) -> str:
         if not self.config.github_client_id:
             raise GitHubOAuthError("GitHub OAuth client id is not configured.")
-        return f"{self.config.github_web_base_url.rstrip('/')}/login/oauth/authorize?" + urlencode(
+        return f"{github_web_base_url(self.config.github_web_base_url)}/login/oauth/authorize?" + urlencode(
             {
                 "client_id": self.config.github_client_id,
                 "redirect_uri": self.config.github_oauth_callback_url,
@@ -50,7 +51,7 @@ class GitHubOAuthService:
             raise GitHubOAuthError("GitHub OAuth credentials are not configured.")
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
-                f"{self.config.github_web_base_url.rstrip('/')}/login/oauth/access_token",
+                f"{github_web_base_url(self.config.github_web_base_url)}/login/oauth/access_token",
                 headers={"Accept": "application/json"},
                 data={
                     "client_id": self.config.github_client_id,
@@ -72,11 +73,11 @@ class GitHubOAuthService:
     async def fetch_profile(self, *, token: str) -> GitHubOAuthProfile:
         async with httpx.AsyncClient(timeout=30) as client:
             user_response = await client.get(
-                f"{self.config.github_api_base_url.rstrip('/')}/user",
+                f"{github_api_base_url(self.config.github_api_base_url)}/user",
                 headers=self._headers(token),
             )
             email_response = await client.get(
-                f"{self.config.github_api_base_url.rstrip('/')}/user/emails",
+                f"{github_api_base_url(self.config.github_api_base_url)}/user/emails",
                 headers=self._headers(token),
             )
         if user_response.status_code >= 400:
@@ -97,7 +98,7 @@ class GitHubOAuthService:
         async with httpx.AsyncClient(timeout=30) as client:
             while page <= 10:
                 response = await client.get(
-                    f"{self.config.github_api_base_url.rstrip('/')}/user/repos",
+                    f"{github_api_base_url(self.config.github_api_base_url)}/user/repos",
                     headers=self._headers(token),
                     params={
                         "affiliation": "owner,collaborator,organization_member",

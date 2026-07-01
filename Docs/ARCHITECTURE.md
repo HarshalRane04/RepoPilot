@@ -18,7 +18,7 @@ RepoPilot AI is organized around a deterministic control plane and auditable age
 - `app.services.repo_indexer`: local repository scanner, text chunker, deterministic mock embedding writer, commit fingerprint generator, and cited context retriever.
 - `app.services.planning`: deterministic planning service that creates `plans`, links `agent_runs`, records context retrieval and policy review steps, and waits for approval.
 - `app.services.policy`: deny-by-default policy engine for command allowlists, high-risk path escalation, and plan-level decisions.
-- `app.services.sandbox`: Docker-first command runner with network disabled, resource limits, scrubbed environment, and an explicit local backend for tests/development.
+- `app.services.sandbox`: allowlisted command runner with scrubbed environment. Local development uses the explicit local backend; production-style Docker mode adds network-disabled execution, resource limits, and the sandbox image.
 - `app.services.implementation_agent`: approved-run implementation lane that copies the source workspace, generates a scoped pytest evidence patch, guards patch paths, runs local validation through the sandbox runner, and records patch/validation evidence.
 - `app.services.security_scanner`: deterministic scanner for secret-like text, prompt-injection phrases, and high-risk generated patch paths.
 - `app.services.draft_pr`: local branch/PR record creator that requires approved plans, passing validation, and clean blocking-security gates.

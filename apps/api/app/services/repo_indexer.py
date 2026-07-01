@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.db.models import CodeChunk, Repository, RepositoryIndex
 from app.services.audit import record_audit
 from app.services.model_gateway import ModelGateway
+from app.services.path_safety import UnsafePathError, existing_directory_under_root
 
 VECTOR_DIMENSIONS = 1536
 CHUNKER_VERSION = "semantic-v1"
@@ -257,13 +258,14 @@ class RepositoryIndexer:
         )
 
     def _server_managed_source_path(self, source_path: str) -> Path:
-        workspace_root = Path(settings.repository_workspace_root).expanduser().resolve()
-        source_root = Path(source_path).expanduser().resolve()
-        if not source_root.exists() or not source_root.is_dir():
-            raise ValueError(f"Source path is not a directory: {source_root}")
-        if not source_root.is_relative_to(workspace_root):
-            raise ValueError(f"Source path is outside the configured repository workspace root: {workspace_root}")
-        return source_root
+        try:
+            return existing_directory_under_root(
+                source_path,
+                root_value=settings.repository_workspace_root,
+                label="Repository source",
+            )
+        except UnsafePathError as exc:
+            raise ValueError(str(exc)) from exc
 
     async def retrieve_context(
         self,

@@ -40,7 +40,7 @@ Runtime secrets entered through the dashboard are encrypted under `.local/repopi
 
 Local mode may use the managed Fernet key file generated under `.local/repopilot-secrets`. Non-local and release-candidate deployments must provide `REPOPILOT_RUNTIME_SECRETS_KEY` through the host secret manager so `/settings/readiness` does not treat the deployment as using a local-only key.
 
-Build the sandbox image used by the default Docker backend:
+Build the sandbox image before using the optional Docker sandbox backend:
 
 ```bash
 make sandbox-image
@@ -249,7 +249,7 @@ curl -X POST "http://localhost:8000/runs/$RUN_ID/sandbox" \
   --data "{\"workspace_path\":\"$PWD\",\"command\":\"pytest\",\"timeout_seconds\":120}"
 ```
 
-The sandbox route blocks unapproved runs and non-allowlisted commands. With `SANDBOX_BACKEND=docker`, Docker must be reachable and the `repopilot-sandbox:local` image must exist.
+The sandbox route blocks unapproved runs and non-allowlisted commands. Local Compose uses `SANDBOX_BACKEND=local` so validation can run inside the API container without mounting the host Docker socket. With `SANDBOX_BACKEND=docker`, Docker must be reachable from the API process and the `repopilot-sandbox:local` image must exist.
 `/runs/{run_id}/start` also records a guarded transition to `CREATE_BRANCH`; invalid state skips are rejected by the state-machine guard.
 
 Execute the Phase 9 implementation/test lane against an approved run:
@@ -301,5 +301,5 @@ The draft PR route creates a local branch/PR database record and a GitHub-shaped
   If the local database is disposable, `docker compose down -v` followed by `make start-local` also recreates the volume, but it deletes local Postgres data.
 - If migrations fail on `vector`, confirm the `pgvector/pgvector:pg16` image is running.
 - If the dashboard cannot reach the API, confirm `NEXT_PUBLIC_API_URL=http://localhost:8000` for browser access.
-- If sandbox validation returns `Sandbox backend executable not found: docker`, install/start Docker or set `SANDBOX_BACKEND=local` only for a controlled development test.
+- If sandbox validation returns `Sandbox backend executable not found: docker`, install/start Docker or use `SANDBOX_BACKEND=local` for the local Compose development stack.
 - If sandbox validation exits before running tests, rebuild the image with `make sandbox-image`.

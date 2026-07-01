@@ -44,21 +44,21 @@
   ---dur-page: 400ms;
   ---dur-loading: 800ms;
 
-  --transition: var(---dur-press) var(---ease-out-quart);
+  --transition: calc(var(---dur-press) * var(--motion-level)) var(---ease-out-quart);
 
   /* ---- focus ---- */
   --focus-ring: 0 0 0 3px rgba(79, 140, 255, 0.18);
 
-  /* ---- type scale (rational: 1.125 major third) ---- */
+  /* ---- type scale (ratio: 1.25 minor third — product, 14px base) ---- */
   ---text-xs: 11px;
-  ---text-sm: 12px;
+  ---text-sm: 13px;
   ---text-base: 14px;
-  ---text-md: 15px;
-  ---text-lg: 17px;
-  ---text-xl: 20px;
-  ---text-2xl: 22px;
-  ---text-3xl: 28px;
-  ---text-4xl: 36px;
+  ---text-md: 18px;
+  ---text-lg: 22px;
+  ---text-xl: 28px;
+  ---text-2xl: 35px;
+  ---text-3xl: 44px;
+  ---text-4xl: 55px;
   ---text-5xl: 56px;
 
   /* ---- weight scale (Inter weights) ---- */
@@ -76,7 +76,6 @@
   ---leading-loose: 1.8;
 
   /* ---- font ---- */
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
 }
 
@@ -97,7 +96,7 @@ body {
   font-family: var(--font-sans);
   font-size: var(---text-base); /* 14px base */
   line-height: var(---leading-normal); /* 1.45 light-on-dark */
-  letter-spacing: 0;
+  letter-spacing: -0.005em;
   font-weight: var(---weight-normal); /* 400 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -229,7 +228,7 @@ textarea,
   align-items: center;
   gap: 12px;
   color: var(--text);
-  font-size: 22px;
+  font-size: var(---text-lg);
   font-weight: var(---weight-extrabold); /* 800 */
 }
 
@@ -570,7 +569,7 @@ textarea,
   align-items: center;
   gap: 9px;
   margin: 0;
-  font-size: 18px;
+  font-size: var(---text-md);
   line-height: 1.25;
   min-width: 0;
   overflow: hidden;
@@ -614,7 +613,7 @@ textarea,
 .summaryItem strong {
   display: block;
   margin-top: 5px;
-  font-size: 24px;
+  font-size: var(---text-xl);
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
@@ -691,7 +690,7 @@ textarea,
 
 .statCard strong {
   margin-top: 6px;
-  font-size: clamp(16px, 13cqw, 24px);
+  font-size: var(---text-xl);
   line-height: 1.15;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1490,7 +1489,7 @@ tr.selected {
   min-height: 92px;
   border-bottom: 1px solid var(--border);
   color: var(--text-2);
-  font-size: 17px;
+  font-size: var(---text-md);
 }
 
 .whyRow svg {
@@ -1650,7 +1649,7 @@ tr.selected {
 
 .githubSyncTitle h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(---text-lg);
   line-height: 1.2;
 }
 
@@ -1701,7 +1700,7 @@ tr.selected {
 
 .secretFormHeader h2 {
   margin: 0 0 6px;
-  font-size: 20px;
+  font-size: var(---text-lg);
   line-height: 1.2;
 }
 
@@ -2069,7 +2068,7 @@ tr.selected {
 
 .infoPanel h2 {
   margin: 0 0 14px;
-  font-size: 17px;
+  font-size: var(---text-md);
 }
 
 .infoPanel h2 span {
@@ -2262,7 +2261,7 @@ tr.selected {
   background: #071019;
   color: var(--text-2);
   font-size: 12px;
-  font-family: "Fira Code", "Cascadia Code", monospace, var(--mono);
+  font-family: var(--mono);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
@@ -2391,7 +2390,7 @@ tr.selected {
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.03);
   font-size: 12px;
-  font-family: "Fira Code", "Cascadia Code", monospace, var(--mono);
+  font-family: var(--mono);
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2436,7 +2435,7 @@ tr.selected {
   gap: 12px;
   min-height: 62px;
   color: var(--green);
-  font-size: 22px;
+  font-size: var(---text-lg);
 }
 
 .statusHero.warning {
@@ -2457,7 +2456,7 @@ tr.selected {
 
 .profileHero h2 {
   margin-bottom: 8px;
-  font-size: 28px;
+  font-size: var(---text-xl);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2553,7 +2552,7 @@ tr.selected {
   max-width: 610px;
   margin: 0 0 32px;
   color: var(--text-2);
-  font-size: 20px;
+  font-size: var(---text-lg);
   line-height: 1.5;
 }
 
@@ -2667,7 +2666,7 @@ tr.selected {
 .connectCard h1 {
   justify-content: center;
   margin-bottom: 16px;
-  font-size: 36px;
+  font-size: var(---text-2xl);
 }
 
 .connectCard > p {
@@ -3129,7 +3128,7 @@ button:active:not(:disabled) {
     height: 64px;
     padding: 0 16px;
     border-bottom: 0;
-    font-size: 20px;
+    font-size: var(---text-lg);
   }
 
   .brandButton .logoMark {
@@ -3143,11 +3142,21 @@ button:active:not(:disabled) {
     padding: 0 12px 12px;
     overflow-x: auto;
     overflow-y: hidden;
-    scrollbar-width: none;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
   }
 
   .sidebarNav::-webkit-scrollbar {
-    display: none;
+    height: 4px;
+  }
+
+  .sidebarNav::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .sidebarNav::-webkit-scrollbar-thumb {
+    border-radius: 2px;
+    background: var(--border);
   }
 
   .navItem {
@@ -3372,4 +3381,20 @@ button:active:not(:disabled) {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Motion-preference levels */
+[data-motion="no"] *,
+[data-motion="no"] *::before,
+[data-motion="no"] *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
+
+[data-motion="reduced"] .content > * {
+  animation: fade-in 120ms ease-out both;
+}
+
+[data-motion="reduced"] .statGrid > .statCard {
+  animation: none;
 }

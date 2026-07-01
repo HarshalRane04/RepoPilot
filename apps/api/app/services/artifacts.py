@@ -6,6 +6,7 @@ import os
 import re
 import time
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -109,10 +110,8 @@ class ArtifactStore:
         target = self.root / storage_key
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
-        try:
+        with suppress(OSError):
             target.chmod(0o600)
-        except OSError:
-            pass
 
         digest = hashlib.sha256(data).hexdigest()
         uri = f"local://artifacts/{storage_key}"

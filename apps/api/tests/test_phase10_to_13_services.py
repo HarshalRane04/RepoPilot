@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from repopilot_contracts import DraftPullRequestRequest, SecuritySeverity
 
-from app.db.models import AgentRun, AgentStep, Branch, Issue, LLMTrace, Plan, PullRequest, Repository, SecurityFinding, ValidationResult
+from app.db.models import AgentRun, AgentStep, Branch, Installation, Issue, LLMTrace, Plan, PullRequest, Repository, SecurityFinding, ValidationResult
 from app.services.ci_analyzer import CIAnalyzer, CISummarySuggestion
 from app.services.draft_pr import DraftPullRequestService
 from app.services.eval_runner import EvalRunner
@@ -64,6 +64,16 @@ class FakeDraftPrBodyDb:
         if "FROM agent_steps" in sql:
             return FakeScalarResult([self.patch_step])
         return FakeScalarResult([])
+
+
+class FakeInstallationDb:
+    def __init__(self, installation: Installation) -> None:
+        self.installation = installation
+
+    async def get(self, model, item_id):
+        if model is Installation and self.installation.id == item_id:
+            return self.installation
+        return None
 
 
 def test_security_scanner_detects_secret_like_patch_text() -> None:
@@ -187,6 +197,50 @@ def test_draft_pr_local_result_is_not_a_github_url() -> None:
     assert result.pr_mode == "local_record"
     assert result.is_local_record is True
     assert result.github_url is None
+
+
+def test_draft_pr_base_sha_guard_rejects_synthetic_index_markers() -> None:
+    service = DraftPullRequestService()
+
+    assert service._looks_like_commit_sha("19593aa1a73b28134c215020b853c8c650f6bbc4") is True
+    assert service._looks_like_commit_sha("live-smoke-2026-06-19") is False
+    assert service._looks_like_commit_sha(None) is False
+
+
+def test_real_github_write_rejects_oauth_synced_repository() -> None:
+    service = DraftPullRequestService()
+    run = AgentRun(id=uuid4(), issue_id=uuid4(), state="RUN_SECURITY_CHECKS")
+    issue = Issue(id=run.issue_id, repository_id=uuid4(), number=1, title="Smoke")
+    installation = Installation(id=uuid4(), github_installation_id="oauth:123", account_name="octo")
+    repository = Repository(
+        id=issue.repository_id,
+        installation_id=installation.id,
+        owner="octo",
+        name="demo",
+        default_branch="main",
+    )
+    plan = Plan(id=uuid4(), issue_id=issue.id, approval_status="approved", plan_json={})
+
+    try:
+        asyncio.run(
+            service._write_real_github_pr(
+                FakeInstallationDb(installation),
+                run=run,
+                request=DraftPullRequestRequest(),
+                issue=issue,
+                repository=repository,
+                plan=plan,
+                branch_name="repopilot/1-smoke",
+                patch_hash="patch",
+                body="body",
+                title="title",
+                body_hash="body-hash",
+            )
+        )
+    except ValueError as exc:
+        assert "GitHub App to be installed" in str(exc)
+    else:
+        raise AssertionError("OAuth-synced repositories must be rejected before GitHub writes.")
 
 
 def test_draft_pr_default_body_includes_evidence_hashes_and_redacted_security_details() -> None:

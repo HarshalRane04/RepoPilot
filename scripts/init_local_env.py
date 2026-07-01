@@ -16,6 +16,7 @@ LOCAL_DEFAULT_KEYS = {
     "MODEL_NAME",
     "ALLOW_MODEL_FALLBACK",
     "REPOPILOT_RELEASE_PROFILE",
+    "SANDBOX_BACKEND",
 }
 
 PLACEHOLDER_VALUES = {"", "placeholder", "change-me", "change-me-local-dev", "change-me-session-secret", "todo"}
@@ -34,6 +35,7 @@ def local_default_value(key: str) -> str:
         "MODEL_NAME": "mock-planner",
         "ALLOW_MODEL_FALLBACK": "false",
         "REPOPILOT_RELEASE_PROFILE": "oss-demo",
+        "SANDBOX_BACKEND": "local",
     }
     return defaults[key]
 

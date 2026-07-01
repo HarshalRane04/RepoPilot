@@ -1,7 +1,12 @@
 from .fixtures import FixtureCheckSummary, FixtureVerifier
 from .patch_quality import PatchQualityEvidence, PatchQualityResult, PatchQualityScorer
 from .plan_quality import PlanQualityEvidence, PlanQualityResult, PlanQualityScorer
+from .provider_applied_patch_harness import ProviderAppliedPatchEvalRunner
 from .provider_comparison import ProviderComparisonResult, ProviderComparisonScorer, ProviderEvalEvidence
+from .provider_credentials import ProviderCredentialResolution, resolve_provider_credentials
+from .provider_harness import BenchmarkReport, BenchmarkReportBuilder, OpenAICompatibleChatClient, ProviderChatClient, ProviderPlanningEvalRunner
+from .provider_patch_harness import ProviderPatchEvalRunner
+from .provider_retrieval_harness import ProviderEmbeddingClient, ProviderRetrievalEvalRunner
 
 
 def __getattr__(name: str):

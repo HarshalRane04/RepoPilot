@@ -14,7 +14,7 @@ from typing import Any
 from repopilot_contracts import EvalTaskFixture
 
 from .provider_harness import ChatCompletionClient, ProviderChatClient, default_provider_api_key_env
-from .provider_credentials import resolve_provider_credentials
+from .provider_credentials import redact_for_output, resolve_provider_credentials
 from .provider_patch_harness import ProviderPatchEvalRunner
 from .report import BenchmarkReport, BenchmarkReportBuilder
 
@@ -68,7 +68,7 @@ class ProviderAppliedPatchEvalRunner:
             except Exception as exc:  # noqa: BLE001 - provider/application failures should become eval evidence.
                 observed_task_results.append(self.patch_runner.empty_failed_patch(task=task))
                 application_results.append(self.empty_application_result(task=task, status="failed", detail=str(exc)[:500]))
-                errors.append({"task_id": task.id, "error": str(exc)[:500]})
+                errors.append({"task_id": task.id, "error": redact_for_output(exc, limit=500)})
             finally:
                 latencies.append(int((time.monotonic() - started) * 1000))
 
@@ -315,8 +315,8 @@ def _command_result(*, command: str, result: subprocess.CompletedProcess[str]) -
         "command": command,
         "passed": result.returncode == 0,
         "returncode": result.returncode,
-        "stdout": result.stdout[-2000:],
-        "stderr": result.stderr[-2000:],
+        "stdout": redact_for_output(result.stdout[-2000:]),
+        "stderr": redact_for_output(result.stderr[-2000:]),
     }
 
 
@@ -388,7 +388,7 @@ def main(argv: list[str] | None = None) -> int:
             allow_failed_gates=args.allow_failed_gates,
         )
     except RuntimeError as exc:
-        print(str(exc))
+        print(redact_for_output(exc))
         return 2
     print(f"Wrote {result.markdown_path}")
     print(f"Wrote {result.json_path}")

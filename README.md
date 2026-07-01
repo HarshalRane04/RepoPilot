@@ -20,7 +20,7 @@ Implemented today:
 - Human approval, rejection, and revision gates for implementation plans, with approved-plan hash enforcement before write/implementation/PR actions.
 - Mock-first model gateway for completions, structured JSON validation, deterministic embeddings, budget checks, prompt/response hashes, and LLM trace rows.
 - Deny-by-default policy checks for risky files and commands.
-- Docker-first sandbox validation runner with scrubbed environment, no network, resource limits, and local backend only for local development.
+- Sandbox validation runner with scrubbed environment and allowlisted commands. Local Compose uses the explicit `local` backend for development; production-style deployments can use the Docker backend with network disabled, resource limits, and the sandbox image.
 - Model-facing `ToolRegistry` and `ToolExecutor` boundary for audited tool calls.
 - Executor-mediated implementation lane that asks the model for bounded workspace tool calls, applies writes only through `ToolExecutor`, captures a diff hash, and validates inside the isolated run workspace.
 - Security scanner for generated patches and workspaces, plus finding lifecycle updates with reasoned acknowledgement/fixed/false-positive states.

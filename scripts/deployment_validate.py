@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 
 REQUIRED_SERVICES = {"api", "web", "worker", "beat", "postgres", "redis"}

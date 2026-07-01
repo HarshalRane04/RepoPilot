@@ -207,6 +207,88 @@ def test_implementation_agent_blocks_when_model_returns_no_tool_calls(monkeypatc
     assert result.blocked_reason == "No safe implementation path."
 
 
+def test_implementation_agent_uses_explicit_issue_body_fallback(monkeypatch, tmp_path: Path) -> None:
+    class EmptyGateway:
+        async def complete_json(self, *_args, **_kwargs):
+            return ImplementationToolPlan(
+                summary="No patch.",
+                tool_calls=[],
+                stop_reason="No safe implementation path.",
+            )
+
+    repository_root = tmp_path / "repositories"
+    source = repository_root / "demo"
+    source.mkdir(parents=True)
+    (source / "smoke_app.py").write_text(
+        'def smoke_message() -> str:\n    return "RepoPilot smoke pending"\n',
+        encoding="utf-8",
+    )
+    tests = source / "tests"
+    tests.mkdir()
+    (tests / "test_smoke_app.py").write_text(
+        'from smoke_app import smoke_message\n\n\n'
+        "def test_smoke_message_mentions_repopilot():\n"
+        '    assert "RepoPilot" in smoke_message()\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "repository_workspace_root", str(repository_root))
+    monkeypatch.setattr(settings, "sandbox_backend", "local")
+    monkeypatch.setattr(settings, "environment", "local")
+    monkeypatch.setattr(settings, "artifact_store_root", str(tmp_path / "artifacts"))
+
+    plan_id = uuid4()
+    issue_id = uuid4()
+    run = AgentRun(id=uuid4(), issue_id=issue_id, plan_id=plan_id, state=AgentRunState.WAIT_FOR_APPROVAL.value)
+    issue = Issue(
+        id=issue_id,
+        repository_id=uuid4(),
+        number=24,
+        title="RepoPilot live write-mode smoke",
+        body_text="Update smoke_app.py so smoke_message returns exactly RepoPilot live write smoke passed.",
+    )
+    implementation_plan = ImplementationPlan(
+        plan_id=str(plan_id),
+        issue_id=str(issue_id),
+        files_to_inspect=["smoke_app.py", "tests/test_smoke_app.py"],
+        files_to_modify=["smoke_app.py"],
+        tests_to_add=["tests/test_smoke_app.py"],
+        commands_to_run=["python -m pytest"],
+        rollback_plan="Close the generated branch.",
+    )
+    plan = Plan(
+        id=plan_id,
+        issue_id=issue_id,
+        approval_status=PlanApprovalStatus.APPROVED.value,
+        plan_json=_approved_plan_payload(implementation_plan),
+    )
+    workspace = WORKSPACE_ROOT / str(run.id)
+    shutil.rmtree(workspace, ignore_errors=True)
+    try:
+        result = asyncio.run(
+            ImplementationAgent(model_gateway=EmptyGateway()).execute(
+                FakeDb(run=run, plan=plan, issue=issue),
+                run_id=run.id,
+                request=type(
+                    "Request",
+                    (),
+                    {
+                        "workspace_path": str(source),
+                        "validation_command": "python -m pytest",
+                        "timeout_seconds": 60,
+                        "max_changed_files": 2,
+                    },
+                )(),
+            )
+        )
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+    assert result.status == "passed"
+    assert result.patch is not None
+    assert "RepoPilot live write smoke passed" in result.patch.diff
+    assert source.joinpath("smoke_app.py").read_text(encoding="utf-8").count("pending") == 1
+
+
 def test_implementation_agent_skips_apply_patch_diff_payload() -> None:
     captured: list[dict[str, object]] = []
     agent = ImplementationAgent(model_gateway=FakeGateway())

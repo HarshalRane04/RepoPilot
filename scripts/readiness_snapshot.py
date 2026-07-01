@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -11,6 +12,11 @@ from typing import Any
 
 
 SENSITIVE_KEY_PARTS = ("secret", "token", "private_key", "api_key", "password")
+SENSITIVE_OUTPUT_PATTERNS = (
+    re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}"),
+    re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL),
+)
 
 
 @dataclass(frozen=True)
@@ -107,6 +113,13 @@ def render_markdown(snapshot: ReadinessSnapshot) -> str:
     return "\n".join(lines)
 
 
+def redact_rendered_markdown(value: str) -> str:
+    redacted = value
+    for pattern in SENSITIVE_OUTPUT_PATTERNS:
+        redacted = pattern.sub("[redacted]", redacted)
+    return redacted
+
+
 def write_outputs(*, snapshot: ReadinessSnapshot, json_out: Path | None, md_out: Path | None) -> None:
     if json_out:
         json_out.parent.mkdir(parents=True, exist_ok=True)
@@ -129,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     snapshot = capture_snapshot(readiness_url=args.readiness_url, github_app_url=args.github_app_url)
     write_outputs(snapshot=snapshot, json_out=args.json_out, md_out=args.md_out)
-    print(render_markdown(snapshot))
+    print(redact_rendered_markdown(render_markdown(snapshot)))
     return 0
 
 

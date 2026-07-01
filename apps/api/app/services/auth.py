@@ -112,7 +112,7 @@ def verify_signed_value(value: str | None) -> dict[str, Any] | None:
 
 
 def _sign(value: str) -> str:
-    return hmac.new(effective_settings().session_secret_key.encode("utf-8"), value.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.new(effective_settings().session_secret_key.encode("utf-8"), value.encode("utf-8"), hashlib.sha512).hexdigest()
 
 
 def _b64encode(value: bytes) -> str:
