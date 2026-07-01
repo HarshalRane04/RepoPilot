@@ -25,6 +25,7 @@ from repopilot_evals import (
     ProviderRetrievalEvalRunner,
     resolve_provider_credentials,
 )
+from repopilot_evals.provider_credentials import redact_for_output
 from repopilot_evals.provider_harness import default_provider_api_key_env, default_provider_base_url
 
 
@@ -883,6 +884,15 @@ def test_provider_credentials_ignore_runtime_secret_for_other_provider(tmp_path,
 
     assert credentials.api_key is None
     assert credentials.source == "missing"
+
+
+def test_provider_error_redaction_handles_json_identifiers() -> None:
+    provider_error = '{"user_id":"user_3AsccjfPvC4EnpvUc3yXCZsb2qC","token":"secret-token-value"}'
+
+    redacted = redact_for_output(provider_error)
+
+    assert "user_3Ascc" not in redacted
+    assert "secret-token-value" not in redacted
 
 
 def test_eval_fixture_repositories_are_executable() -> None:
