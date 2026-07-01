@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from secrets import token_urlsafe
-from urllib.parse import urlencode
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -62,7 +61,7 @@ async def github_callback(
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
     if error:
-        return _redirect_to_app(f"/#connect?{urlencode({'github_error': _safe_oauth_error(error)})}")
+        return _redirect_to_app_oauth_error()
     if not code or not state:
         raise HTTPException(status_code=400, detail="GitHub OAuth callback is missing code or state.")
 
@@ -87,29 +86,20 @@ async def github_callback(
             "role": "owner",
         }
     )
-    response = _redirect_to_app("/#repositories?github=connected")
+    response = _redirect_to_app_connected()
     _set_cookie(response, SESSION_COOKIE, session_cookie, max_age=60 * 60 * 24 * 14)
     response.delete_cookie(OAUTH_STATE_COOKIE, path="/")
     return response
 
 
-def _redirect_to_app(path: str) -> RedirectResponse:
+def _redirect_to_app_connected() -> RedirectResponse:
     config = effective_settings(settings)
-    return RedirectResponse(f"{web_app_base_url(config.web_app_url)}{_safe_redirect_path(path)}", status_code=303)
+    return RedirectResponse(f"{web_app_base_url(config.web_app_url)}/#repositories?github=connected", status_code=303)
 
 
-def _safe_redirect_path(path: str) -> str:
-    if not path.startswith("/") or path.startswith("//") or "://" in path:
-        return "/"
-    if any(ord(char) < 32 for char in path):
-        return "/"
-    return path
-
-
-def _safe_oauth_error(value: str) -> str:
-    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
-    cleaned = "".join(char for char in value[:80] if char in allowed)
-    return cleaned or "github_oauth_error"
+def _redirect_to_app_oauth_error() -> RedirectResponse:
+    config = effective_settings(settings)
+    return RedirectResponse(f"{web_app_base_url(config.web_app_url)}/#connect?github_error=oauth_failed", status_code=303)
 
 
 def _set_cookie(response: JSONResponse | RedirectResponse, key: str, value: str, *, max_age: int) -> None:

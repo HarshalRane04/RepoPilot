@@ -93,6 +93,7 @@ def test_github_client_fetches_code_scanning_alerts(monkeypatch) -> None:
 
     class FakeAsyncClient:
         last_url = ""
+        last_params = {}
         last_headers = {}
 
         def __init__(self, **_kwargs) -> None:
@@ -104,8 +105,9 @@ def test_github_client_fetches_code_scanning_alerts(monkeypatch) -> None:
         async def __aexit__(self, *_args):
             return None
 
-        async def get(self, url, headers):
+        async def get(self, url, params, headers):
             FakeAsyncClient.last_url = url
+            FakeAsyncClient.last_params = params
             FakeAsyncClient.last_headers = headers
             return FakeResponse()
 
@@ -122,9 +124,9 @@ def test_github_client_fetches_code_scanning_alerts(monkeypatch) -> None:
     )
 
     assert alerts[0]["number"] == 7
-    assert "/repos/octo/demo/code-scanning/alerts?" in FakeAsyncClient.last_url
-    assert "per_page=100" in FakeAsyncClient.last_url
-    assert "tool_name=CodeQL" in FakeAsyncClient.last_url
+    assert FakeAsyncClient.last_url == "/repos/octo/demo/code-scanning/alerts"
+    assert FakeAsyncClient.last_params["per_page"] == 100
+    assert FakeAsyncClient.last_params["tool_name"] == "CodeQL"
     assert "Authorization" in FakeAsyncClient.last_headers
 
 

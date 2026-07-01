@@ -44,7 +44,6 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { genericKeyboard, rowKeyboard } from "./lib/keyboard";
 import type {
   ActivityItem,
   EvalReport,

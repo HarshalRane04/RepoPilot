@@ -484,10 +484,10 @@ def test_plan_approval_stores_stable_hash() -> None:
 
     response = asyncio.run(
         approve_plan(
-            plan_id=plan_id,
-            _rate_limit=None,
-            db=db,
-            current_user=CurrentUser(username="harshal", role="owner"),
+            plan_id,
+            None,
+            db,
+            CurrentUser(username="harshal", role="owner"),
         )
     )
 

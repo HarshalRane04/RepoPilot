@@ -24,7 +24,6 @@ for path in (
 from scripts.github_app_smoke import GitHubAppSmoke, capture_github_app_smoke  # noqa: E402
 from scripts.github_oauth_smoke import GitHubOAuthSmoke, capture_github_oauth_smoke  # noqa: E402
 from scripts.model_provider_smoke import ModelProviderSmoke, capture_model_provider_smoke  # noqa: E402
-from app.services.security_envelope import redact_text  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -144,7 +143,7 @@ async def async_main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     summary = await capture_credential_smoke_summary()
     write_outputs(summary=summary, json_out=args.json_out, md_out=args.md_out)
-    print(redact_text(render_markdown(summary)))
+    print(f"Credential smoke {summary.status}; redacted artifacts written to {args.json_out} and {args.md_out}.")
     if summary.ok or (args.allow_blocked and summary.status == "blocked"):
         return 0
     return 1

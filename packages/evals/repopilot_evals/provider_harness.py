@@ -19,7 +19,7 @@ from .report import BenchmarkReport, BenchmarkReportBuilder
 
 class ChatCompletionClient(Protocol):
     def complete_json(self, *, model: str, messages: list[dict[str, str]], timeout_seconds: int) -> dict[str, Any]:
-        ...
+        raise NotImplementedError
 
 
 class ProviderChatClient:
@@ -292,8 +292,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     if not credentials.api_key:
         print(
-            "Missing provider API key. "
-            f"Set {api_key_env} in the environment or save MODEL_API_KEY in RepoPilot's local runtime secret store."
+            "Missing provider API key. Set the provider-specific environment variable or save MODEL_API_KEY "
+            "in RepoPilot's local runtime secret store."
         )
         return 2
     runner = ProviderPlanningEvalRunner(
@@ -315,7 +315,8 @@ def main(argv: list[str] | None = None) -> int:
             allow_failed_gates=args.allow_failed_gates,
         )
     except RuntimeError as exc:
-        print(redact_for_output(exc))
+        _ = redact_for_output(exc)
+        print("Provider planning eval failed; console output was redacted to avoid leaking provider response data.")
         return 2
     print(f"Wrote {result.markdown_path}")
     print(f"Wrote {result.json_path}")

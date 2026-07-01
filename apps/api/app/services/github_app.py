@@ -620,12 +620,11 @@ class GitHubApiClient:
         if tool_name:
             query["tool_name"] = tool_name
         token = await self.token_provider.create_installation_access_token(installation_id)
-        url = self._api_url(
-            f"/repos/{path_segment(owner)}/{path_segment(repo)}/code-scanning/alerts?{query_string(query)}"
-        )
-        async with httpx.AsyncClient(timeout=30) as client:
+        alerts_path = f"/repos/{path_segment(owner)}/{path_segment(repo)}/code-scanning/alerts"
+        async with httpx.AsyncClient(timeout=30, base_url=github_api_base_url(self.config.github_api_base_url)) as client:
             response = await client.get(
-                url,
+                alerts_path,
+                params=query,
                 headers={
                     "Accept": "application/vnd.github+json",
                     "Authorization": f"Bearer {token}",

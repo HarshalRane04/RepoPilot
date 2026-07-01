@@ -307,7 +307,7 @@ async def model_provider_catalog(current_user: CurrentUser = Depends(get_current
 @router.get("/models/config")
 async def model_provider_config(current_user: CurrentUser = Depends(get_current_user)) -> dict[str, object]:
     _require_owner(current_user)
-    return await _model_provider_status()
+    return await _safe_model_provider_status()
 
 
 @router.post("/models/config")
@@ -357,7 +357,7 @@ async def save_model_provider_config(
     store = runtime_secret_store()
     store.delete_values({"MODEL_PROVIDER_VERIFIED_AT", "MODEL_PROVIDER_VERIFIED_MODEL"})
     store.save_values(values)
-    return await _model_provider_status()
+    return await _safe_model_provider_status()
 
 
 @router.post("/models/verify")
@@ -481,6 +481,31 @@ async def _model_provider_status() -> dict[str, object]:
         "catalog_available": catalog_available,
         "summary": summary,
     }
+
+
+async def _safe_model_provider_status() -> dict[str, object]:
+    try:
+        return await _model_provider_status()
+    except Exception:  # noqa: BLE001 - status endpoints must never expose provider/runtime stack traces.
+        effective = effective_settings()
+        provider = provider_by_id(effective.model_provider)
+        return {
+            "provider": effective.model_provider,
+            "provider_name": provider.name if provider else effective.model_provider,
+            "model": effective.model_name,
+            "model_configured": False,
+            "api_key_configured": _configured_value(effective.model_api_key),
+            "base_url": effective.model_base_url or (provider.default_base_url if provider else None),
+            "reasoning_level": None,
+            "reasoning_levels": [],
+            "reasoning_supported": False,
+            "docs_url": provider.docs_url if provider else None,
+            "verified": False,
+            "verified_at": None,
+            "status": "unavailable",
+            "catalog_available": False,
+            "summary": {"fields": [], "store_exists": False, "store_permissions_ok": False, "key_permissions_ok": False},
+        }
 
 
 def _configured_value(value: str | None) -> bool:

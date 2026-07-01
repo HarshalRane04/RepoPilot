@@ -19,7 +19,7 @@ from .report import BenchmarkReport, BenchmarkReportBuilder
 
 class EmbeddingClient(Protocol):
     def embed(self, *, model: str, texts: list[str], timeout_seconds: int) -> list[list[float]]:
-        ...
+        raise NotImplementedError
 
 
 @dataclass(frozen=True)
@@ -57,7 +57,7 @@ class ProviderEmbeddingClient:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"embedding provider returned HTTP {exc.code}: {body[:500]}") from exc
+            raise RuntimeError(f"embedding provider returned HTTP {exc.code}: {redact_for_output(body, limit=500)}") from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"embedding provider request failed: {exc.reason}") from exc
         data = payload.get("data") if isinstance(payload, dict) else None
@@ -292,8 +292,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     if not credentials.api_key:
         print(
-            "Missing provider API key. "
-            f"Set {api_key_env} in the environment or save MODEL_API_KEY in RepoPilot's local runtime secret store."
+            "Missing provider API key. Set the provider-specific environment variable or save MODEL_API_KEY "
+            "in RepoPilot's local runtime secret store."
         )
         return 2
     runner = ProviderRetrievalEvalRunner(
@@ -312,7 +312,8 @@ def main(argv: list[str] | None = None) -> int:
             allow_failed_gates=args.allow_failed_gates,
         )
     except RuntimeError as exc:
-        print(redact_for_output(exc))
+        _ = redact_for_output(exc)
+        print("Provider retrieval eval failed; console output was redacted to avoid leaking provider response data.")
         return 2
     print(f"Wrote {result.markdown_path}")
     print(f"Wrote {result.json_path}")
