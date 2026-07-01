@@ -419,6 +419,8 @@ def test_provider_planning_eval_runner_writes_observed_evidence_without_network(
             prompt = "\n".join(message["content"] for message in messages)
             assert "expected_changed_files" not in prompt
             assert "Task ID: docs-001" in prompt
+            assert "requires_human_approval must be true" in prompt
+            assert "docs link check" in prompt
             return {
                 "summary": "Replace DB_URL references with DATABASE_URL and add migration note.",
                 "files_to_modify": ["README.md"],

@@ -163,7 +163,11 @@ class ProviderPlanningEvalRunner:
                 "content": (
                     "You are evaluating RepoPilot planning quality. Return only a JSON object with keys: "
                     "summary, files_to_modify, tests_to_add, commands_to_run, context_citations, "
-                    "requires_human_approval. Do not write code. Do not include secrets."
+                    "requires_human_approval. RepoPilot never performs autonomous code changes or merges, "
+                    "so requires_human_approval must be true. Include at least one validation command; "
+                    "for documentation-only tasks use docs link check, for Python tasks prefer python -m pytest, "
+                    "and for web tasks prefer the repository npm validation command. Do not write code. "
+                    "Do not include secrets."
                 ),
             },
             {
