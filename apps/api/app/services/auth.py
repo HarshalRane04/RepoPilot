@@ -16,8 +16,6 @@ from app.core.config import settings
 from app.db.models import User
 from app.services.runtime_secrets import effective_settings
 
-_SIGNING_PERSON = b"repopilot-sess"
-
 
 @dataclass(frozen=True)
 class CurrentUser:
@@ -114,14 +112,9 @@ def verify_signed_value(value: str | None) -> dict[str, Any] | None:
 
 
 def _sign(value: str) -> str:
-    return hashlib.blake2b(value.encode("utf-8"), key=_session_signing_key(), digest_size=32, person=_SIGNING_PERSON).hexdigest()
-
-
-def _session_signing_key() -> bytes:
-    secret = effective_settings().session_secret_key.encode("utf-8")
-    if len(secret) <= 64:
-        return secret
-    return hashlib.blake2b(secret, digest_size=64, person=_SIGNING_PERSON).digest()
+    # The session secret is used as an HMAC key for cookie integrity, not as a password hash.
+    # codeql[py/weak-sensitive-data-hashing]
+    return hmac.new(effective_settings().session_secret_key.encode("utf-8"), value.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _b64encode(value: bytes) -> str:

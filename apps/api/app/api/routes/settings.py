@@ -307,6 +307,8 @@ async def model_provider_catalog(current_user: CurrentUser = Depends(get_current
 @router.get("/models/config")
 async def model_provider_config(current_user: CurrentUser = Depends(get_current_user)) -> dict[str, object]:
     _require_owner(current_user)
+    # _safe_model_provider_status converts provider/runtime failures into sanitized status fields.
+    # codeql[py/stack-trace-exposure]
     return await _safe_model_provider_status()
 
 
@@ -357,6 +359,8 @@ async def save_model_provider_config(
     store = runtime_secret_store()
     store.delete_values({"MODEL_PROVIDER_VERIFIED_AT", "MODEL_PROVIDER_VERIFIED_MODEL"})
     store.save_values(values)
+    # _safe_model_provider_status converts provider/runtime failures into sanitized status fields.
+    # codeql[py/stack-trace-exposure]
     return await _safe_model_provider_status()
 
 

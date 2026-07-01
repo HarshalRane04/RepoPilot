@@ -10,7 +10,9 @@ class UnsafePathError(ValueError):
 def existing_directory_under_root(path_value: str, *, root_value: str, label: str) -> Path:
     root = Path(root_value).expanduser().resolve()
     try:
-        candidate = Path(path_value).expanduser().resolve(strict=True)  # lgtm[py/path-injection]
+        # The supplied path is resolved here only so it can be constrained to the trusted root before use.
+        # codeql[py/path-injection]
+        candidate = Path(path_value).expanduser().resolve(strict=True)
     except OSError as exc:
         raise UnsafePathError(f"{label} path could not be resolved.") from exc
     if not candidate.is_dir():
@@ -24,7 +26,9 @@ def existing_directory_under_root(path_value: str, *, root_value: str, label: st
 
 def exact_existing_directory(path_value: str, *, expected: Path, label: str) -> Path:
     try:
-        candidate = Path(path_value).expanduser().resolve(strict=True)  # lgtm[py/path-injection]
+        # The supplied path is resolved here only so it can be compared with the isolated workspace path.
+        # codeql[py/path-injection]
+        candidate = Path(path_value).expanduser().resolve(strict=True)
     except OSError as exc:
         raise UnsafePathError(f"{label} path could not be resolved.") from exc
     expected_resolved = expected.expanduser().resolve()
