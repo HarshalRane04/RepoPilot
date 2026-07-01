@@ -4,12 +4,13 @@ import asyncio
 import io
 import json
 import zipfile
+from types import SimpleNamespace
 from uuid import uuid4
 
 from repopilot_github_client import command_permission_decision, role_for_github_permission as package_role_for_github_permission
 
 from app.db.models import Installation, Repository
-from app.services.github_app import GitHubApiClient
+from app.services.github_app import GitHubApiClient, GitHubAppTokenProvider
 from app.services.github_permissions import GitHubPermissionService, role_for_github_permission
 
 
@@ -27,6 +28,25 @@ class FakeTokenProvider:
 
     async def create_installation_access_token(self, _installation_id: str) -> str:
         return "installation-token"
+
+
+def test_github_app_token_provider_resolves_local_mounted_private_key_path(tmp_path) -> None:
+    key_path = tmp_path / "repopilot-local.private-key.pem"
+    key_path.write_text("-----BEGIN PRIVATE KEY-----\nredacted\n-----END PRIVATE KEY-----\n", encoding="utf-8")
+    runtime_store_path = tmp_path / "runtime-secrets.json"
+    runtime_key_path = tmp_path / "runtime-secrets.key"
+    config = SimpleNamespace(
+        environment="local",
+        github_app_id="12345",
+        github_private_key=None,
+        github_private_key_path=f"/home/appuser/.repopilot/{key_path.name}",
+        runtime_secrets_store_path=str(runtime_store_path),
+        runtime_secrets_key_path=str(runtime_key_path),
+    )
+
+    material = GitHubAppTokenProvider(config)._private_key_material()
+
+    assert material == key_path.read_text(encoding="utf-8")
 
 
 def test_github_permission_mapping() -> None:

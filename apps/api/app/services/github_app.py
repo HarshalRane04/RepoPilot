@@ -85,10 +85,25 @@ class GitHubAppTokenProvider:
         if self.config.github_private_key:
             return self.config.github_private_key.replace("\\n", "\n")
         if self.config.github_private_key_path:
-            path = Path(self.config.github_private_key_path).expanduser()
-            if path.is_file():
-                return path.read_text(encoding="utf-8")
+            for path in self._private_key_path_candidates(self.config.github_private_key_path):
+                if path.is_file():
+                    return path.read_text(encoding="utf-8")
         return None
+
+    def _private_key_path_candidates(self, configured_path: str) -> list[Path]:
+        path = Path(configured_path).expanduser()
+        candidates = [path]
+        if getattr(self.config, "environment", "") == "local":
+            for runtime_path_value in (
+                getattr(self.config, "runtime_secrets_store_path", None),
+                getattr(self.config, "runtime_secrets_key_path", None),
+            ):
+                if not runtime_path_value:
+                    continue
+                mounted_candidate = Path(str(runtime_path_value)).expanduser().parent / path.name
+                if mounted_candidate not in candidates:
+                    candidates.append(mounted_candidate)
+        return candidates
 
 
 class GitHubApiClient:
