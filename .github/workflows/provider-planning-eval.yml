@@ -50,7 +50,7 @@ jobs:
       API_KEY_VALUE: ${{ secrets[inputs.api_key_secret] }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
