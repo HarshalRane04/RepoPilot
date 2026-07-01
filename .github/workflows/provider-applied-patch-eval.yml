@@ -70,7 +70,7 @@ jobs:
             env API_KEY_ENV=REPOPILOT_PROVIDER_API_KEY PROVIDER="${PROVIDER}" MODEL="${MODEL}" TASK_COUNT="${TASK_COUNT}" make provider-applied-patch-eval
           fi
       - name: Upload provider applied patch eval report
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: provider-applied-patch-eval-${{ github.run_id }}

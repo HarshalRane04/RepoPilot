@@ -155,7 +155,7 @@ jobs:
             --md-out /tmp/repopilot-scanner-posture/security-scanner-snapshot.md \
             --allow-warnings
       - name: Upload scanner posture evidence
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: security-scanner-posture-${{ github.run_id }}
           path: /tmp/repopilot-scanner-posture/
