@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     snapshot = capture_snapshot(readiness_url=args.readiness_url, github_app_url=args.github_app_url)
     write_outputs(snapshot=snapshot, json_out=args.json_out, md_out=args.md_out)
-    print(redact_rendered_markdown(render_markdown(snapshot)))
+    print("Credential readiness snapshot completed; redacted artifacts were written.")
     return 0
 
 

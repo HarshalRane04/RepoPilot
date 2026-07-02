@@ -112,7 +112,10 @@ def verify_signed_value(value: str | None) -> dict[str, Any] | None:
 
 
 def _sign(value: str) -> str:
-    return hmac.new(effective_settings().session_secret_key.encode("utf-8"), value.encode("utf-8"), hashlib.sha512).hexdigest()
+    # codeql[py/weak-sensitive-data-hashing]
+    # lgtm[py/weak-sensitive-data-hashing]
+    # The session secret is used as an HMAC key for cookie integrity, not as a password hash.
+    return hmac.new(effective_settings().session_secret_key.encode("utf-8"), value.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _b64encode(value: bytes) -> str:

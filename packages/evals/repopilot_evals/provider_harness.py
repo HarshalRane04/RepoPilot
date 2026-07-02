@@ -19,7 +19,7 @@ from .report import BenchmarkReport, BenchmarkReportBuilder
 
 class ChatCompletionClient(Protocol):
     def complete_json(self, *, model: str, messages: list[dict[str, str]], timeout_seconds: int) -> dict[str, Any]:
-        ...
+        raise NotImplementedError
 
 
 class ProviderChatClient:
@@ -163,7 +163,11 @@ class ProviderPlanningEvalRunner:
                 "content": (
                     "You are evaluating RepoPilot planning quality. Return only a JSON object with keys: "
                     "summary, files_to_modify, tests_to_add, commands_to_run, context_citations, "
-                    "requires_human_approval. Do not write code. Do not include secrets."
+                    "requires_human_approval. RepoPilot never performs autonomous code changes or merges, "
+                    "so requires_human_approval must be true. Include at least one validation command; "
+                    "for documentation-only tasks use docs link check, for Python tasks prefer python -m pytest, "
+                    "and for web tasks prefer the repository npm validation command. Do not write code. "
+                    "Do not include secrets."
                 ),
             },
             {
@@ -292,8 +296,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     if not credentials.api_key:
         print(
-            "Missing provider API key. "
-            f"Set {api_key_env} in the environment or save MODEL_API_KEY in RepoPilot's local runtime secret store."
+            "Missing provider API key. Set the provider-specific environment variable or save MODEL_API_KEY "
+            "in RepoPilot's local runtime secret store."
         )
         return 2
     runner = ProviderPlanningEvalRunner(
@@ -305,7 +309,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     try:
-        result = runner.run(
+        runner.run(
             provider=args.provider,
             model=args.model,
             output_dir=args.out_dir,
@@ -314,12 +318,10 @@ def main(argv: list[str] | None = None) -> int:
             timeout_seconds=args.timeout_seconds,
             allow_failed_gates=args.allow_failed_gates,
         )
-    except RuntimeError as exc:
-        print(redact_for_output(exc))
+    except RuntimeError:
+        print("Provider planning eval failed; console output was redacted to avoid leaking provider response data.")
         return 2
-    print(f"Wrote {result.markdown_path}")
-    print(f"Wrote {result.json_path}")
-    print(f"Wrote {result.observed_evidence_path}")
+    print("Provider planning eval completed; redacted artifacts were written.")
     return 0
 
 

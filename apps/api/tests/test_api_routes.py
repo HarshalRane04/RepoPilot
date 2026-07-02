@@ -25,6 +25,8 @@ def isolate_runtime_secret_store(monkeypatch, tmp_path) -> None:
 def enable_dev_header_auth(monkeypatch) -> None:
     monkeypatch.setattr(settings, "dev_header_auth_enabled", True)
     monkeypatch.setattr(settings, "environment", "local")
+    monkeypatch.setattr(settings, "github_writes_enabled", False)
+    monkeypatch.setattr(settings, "github_write_smoke_verified_at", None)
 
 
 def authenticated(headers: dict[str, str] | None = None) -> dict[str, str]:

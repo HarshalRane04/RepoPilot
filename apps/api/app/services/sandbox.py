@@ -33,7 +33,7 @@ class SandboxRunner:
                 blocked_reason=policy.reason,
             )
 
-        expected_workspace = (WORKSPACE_ROOT / str(run_id)).resolve()
+        expected_workspace = WORKSPACE_ROOT / str(run_id)
         try:
             workspace = exact_existing_directory(
                 request.workspace_path,

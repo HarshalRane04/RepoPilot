@@ -25,6 +25,7 @@ from repopilot_evals import (
     ProviderRetrievalEvalRunner,
     resolve_provider_credentials,
 )
+from repopilot_evals.provider_credentials import redact_for_output
 from repopilot_evals.provider_harness import default_provider_api_key_env, default_provider_base_url
 
 
@@ -161,6 +162,28 @@ def test_plan_quality_scorer_grades_plan_and_context_precision() -> None:
     assert failed.context_precision == 0.0
     assert "Observed plan does not require human approval." in failed.failure_reasons
     assert "Observed plan targets disallowed files: app/db/models.py." in failed.failure_reasons
+
+
+def test_plan_quality_scorer_accepts_concrete_docs_link_check_commands() -> None:
+    benchmark = EvalRunner().load_benchmark()
+    task = next(task for task in benchmark["tasks"] if task.id == "docs-002")
+    scorer = PlanQualityScorer()
+
+    result = scorer.score(
+        task,
+        PlanQualityEvidence(
+            task_id=task.id,
+            summary="Add Redis connection refused troubleshooting entry.",
+            files_to_modify=["Docs/RUNBOOK.md"],
+            tests_to_add=[],
+            commands_to_run=["markdown-link-check Docs/RUNBOOK.md"],
+            context_citations=["Docs/RUNBOOK.md:1-40"],
+            requires_human_approval=True,
+        ),
+    )
+
+    assert result.status == "passed"
+    assert result.score == 1.0
 
 
 def test_patch_quality_scorer_grades_observed_patch_evidence() -> None:
@@ -418,6 +441,8 @@ def test_provider_planning_eval_runner_writes_observed_evidence_without_network(
             prompt = "\n".join(message["content"] for message in messages)
             assert "expected_changed_files" not in prompt
             assert "Task ID: docs-001" in prompt
+            assert "requires_human_approval must be true" in prompt
+            assert "docs link check" in prompt
             return {
                 "summary": "Replace DB_URL references with DATABASE_URL and add migration note.",
                 "files_to_modify": ["README.md"],
@@ -883,6 +908,15 @@ def test_provider_credentials_ignore_runtime_secret_for_other_provider(tmp_path,
 
     assert credentials.api_key is None
     assert credentials.source == "missing"
+
+
+def test_provider_error_redaction_handles_json_identifiers() -> None:
+    provider_error = '{"user_id":"user_3AsccjfPvC4EnpvUc3yXCZsb2qC","token":"secret-token-value"}'
+
+    redacted = redact_for_output(provider_error)
+
+    assert "user_3Ascc" not in redacted
+    assert "secret-token-value" not in redacted
 
 
 def test_eval_fixture_repositories_are_executable() -> None:

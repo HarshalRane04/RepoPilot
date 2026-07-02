@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from repopilot_contracts import DraftPullRequestRequest, SecuritySeverity
 
+from app.core.config import settings
 from app.db.models import AgentRun, AgentStep, Branch, Installation, Issue, LLMTrace, Plan, PullRequest, Repository, SecurityFinding, ValidationResult
 from app.services.ci_analyzer import CIAnalyzer, CISummarySuggestion
 from app.services.draft_pr import DraftPullRequestService
@@ -332,7 +333,9 @@ def test_eval_runner_ratio_handles_empty_denominator() -> None:
     assert runner._ratio(1, 4) == 0.25
 
 
-def test_readiness_reports_placeholder_gates() -> None:
+def test_readiness_reports_placeholder_gates(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "github_writes_enabled", False)
+    monkeypatch.setattr(settings, "github_write_smoke_verified_at", None)
     readiness = IntegrationReadinessService().readiness()
 
     assert readiness.production_ready is False

@@ -15,7 +15,7 @@ RUNTIME_SECRET_KEY_PATH_ENV = "REPOPILOT_RUNTIME_SECRETS_KEY_PATH"
 SECRET_OUTPUT_PATTERNS = (
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}"),
     re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
-    re.compile(r"(?i)(api[_-]?key|client[_-]?secret|token|password)\s*[:=]\s*['\"]?[A-Za-z0-9_./+=-]{8,}"),
+    re.compile(r"(?i)['\"]?(api[_-]?key|client[_-]?secret|token|password|user[_-]?id)['\"]?\s*[:=]\s*['\"]?[A-Za-z0-9_./+=-]{8,}['\"]?"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL),
 )
 
