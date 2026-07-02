@@ -7,7 +7,7 @@ import pytest
 from repopilot_contracts import ImplementationPlan
 
 from app.db.models import Issue
-from app.services.path_safety import UnsafePathError, existing_directory_under_root
+from app.services.path_safety import UnsafePathError, exact_existing_directory, existing_directory_under_root
 from app.services.planning import PlanningService
 from app.services.url_safety import UnsafeUrlError, provider_base_url
 
@@ -50,6 +50,14 @@ def test_existing_directory_under_root_rejects_symlink_escape(tmp_path: Path) ->
     escape.symlink_to(outside, target_is_directory=True)
     with pytest.raises(UnsafePathError):
         existing_directory_under_root(str(escape), root_value=str(root), label="repo")
+
+
+def test_exact_existing_directory_accepts_expected_raw_or_resolved_path(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    assert exact_existing_directory(str(workspace), expected=workspace, label="workspace") == workspace.resolve()
+    assert exact_existing_directory(str(workspace.resolve()), expected=workspace, label="workspace") == workspace.resolve()
 
 
 def test_docs_only_planning_ignores_source_file_context() -> None:
