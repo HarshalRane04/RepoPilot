@@ -164,6 +164,28 @@ def test_plan_quality_scorer_grades_plan_and_context_precision() -> None:
     assert "Observed plan targets disallowed files: app/db/models.py." in failed.failure_reasons
 
 
+def test_plan_quality_scorer_accepts_concrete_docs_link_check_commands() -> None:
+    benchmark = EvalRunner().load_benchmark()
+    task = next(task for task in benchmark["tasks"] if task.id == "docs-002")
+    scorer = PlanQualityScorer()
+
+    result = scorer.score(
+        task,
+        PlanQualityEvidence(
+            task_id=task.id,
+            summary="Add Redis connection refused troubleshooting entry.",
+            files_to_modify=["Docs/RUNBOOK.md"],
+            tests_to_add=[],
+            commands_to_run=["markdown-link-check Docs/RUNBOOK.md"],
+            context_citations=["Docs/RUNBOOK.md:1-40"],
+            requires_human_approval=True,
+        ),
+    )
+
+    assert result.status == "passed"
+    assert result.score == 1.0
+
+
 def test_patch_quality_scorer_grades_observed_patch_evidence() -> None:
     benchmark = EvalRunner().load_benchmark()
     task = next(task for task in benchmark["tasks"] if task.id == "bugfix-001")

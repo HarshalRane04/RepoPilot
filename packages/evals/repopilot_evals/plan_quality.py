@@ -72,7 +72,7 @@ class PlanQualityScorer:
             missing_expected = expected_paths.difference(planned_paths)
             if missing_expected:
                 failure_reasons.append(f"Plan is missing expected target files: {', '.join(sorted(missing_expected))}.")
-            missing_commands = set(task.expected_tests).difference(evidence.commands_to_run)
+            missing_commands = self._missing_expected_commands(task.expected_tests, evidence.commands_to_run)
             if missing_commands:
                 failure_reasons.append(f"Plan is missing expected validation commands: {', '.join(sorted(missing_commands))}.")
         elif planned_paths and "*" in task.disallowed_changes:
@@ -123,3 +123,18 @@ class PlanQualityScorer:
             for term in re.findall(r"[A-Za-z0-9_]+", value.lower())
             if len(term) >= 3 and term not in stop_words
         }
+
+    def _missing_expected_commands(self, expected_commands: list[str], observed_commands: list[str]) -> set[str]:
+        observed = {self._canonical_command(command) for command in observed_commands}
+        return {
+            expected
+            for expected in expected_commands
+            if self._canonical_command(expected) not in observed
+        }
+
+    def _canonical_command(self, value: str) -> str:
+        normalized = re.sub(r"\s+", " ", value.strip().lower())
+        compact = normalized.replace("-", "").replace("_", "").replace(":", "").replace(" ", "")
+        if "docslinkcheck" in compact or "markdownlinkcheck" in compact:
+            return "docs link check"
+        return normalized
