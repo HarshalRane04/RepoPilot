@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from secrets import token_urlsafe
+from typing import Literal
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -93,13 +94,16 @@ async def github_callback(
 
 
 def _redirect_to_app_connected() -> RedirectResponse:
-    config = effective_settings(settings)
-    return RedirectResponse(f"{web_app_base_url(config.web_app_url)}/#repositories?github=connected", status_code=303)
+    return _redirect_to_app("/#repositories?github=connected")
 
 
 def _redirect_to_app_oauth_error() -> RedirectResponse:
+    return _redirect_to_app("/#connect?github_error=oauth_failed")
+
+
+def _redirect_to_app(target: Literal["/#repositories?github=connected", "/#connect?github_error=oauth_failed"]) -> RedirectResponse:
     config = effective_settings(settings)
-    return RedirectResponse(f"{web_app_base_url(config.web_app_url)}/#connect?github_error=oauth_failed", status_code=303)
+    return RedirectResponse(f"{web_app_base_url(config.web_app_url)}{target}", status_code=303)  # lgtm[py/url-redirection]
 
 
 def _set_cookie(response: JSONResponse | RedirectResponse, key: str, value: str, *, max_age: int) -> None:

@@ -301,7 +301,7 @@ def main(argv: list[str] | None = None) -> int:
         client=ProviderEmbeddingClient(base_url=credentials.base_url, api_key=credentials.api_key),
     )
     try:
-        result = runner.run(
+        runner.run(
             provider=args.provider,
             model=args.model,
             output_dir=args.out_dir,
@@ -311,13 +311,10 @@ def main(argv: list[str] | None = None) -> int:
             top_k=args.top_k,
             allow_failed_gates=args.allow_failed_gates,
         )
-    except RuntimeError as exc:
-        _ = redact_for_output(exc)
+    except RuntimeError:
         print("Provider retrieval eval failed; console output was redacted to avoid leaking provider response data.")
         return 2
-    print(f"Wrote {result.markdown_path}")
-    print(f"Wrote {result.json_path}")
-    print(f"Wrote {result.observed_evidence_path}")
+    print("Provider retrieval eval completed; redacted artifacts were written.")
     return 0
 
 

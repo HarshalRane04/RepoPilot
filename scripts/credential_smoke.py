@@ -143,7 +143,7 @@ async def async_main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     summary = await capture_credential_smoke_summary()
     write_outputs(summary=summary, json_out=args.json_out, md_out=args.md_out)
-    print(f"Credential smoke {summary.status}; redacted artifacts written to {args.json_out} and {args.md_out}.")
+    print("Credential smoke completed; redacted artifacts were written.")
     if summary.ok or (args.allow_blocked and summary.status == "blocked"):
         return 0
     return 1

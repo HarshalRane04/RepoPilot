@@ -12,7 +12,7 @@ def existing_directory_under_root(path_value: str, *, root_value: str, label: st
     try:
         # The supplied path is resolved here only so it can be constrained to the trusted root before use.
         # codeql[py/path-injection]
-        candidate = Path(path_value).expanduser().resolve(strict=True)
+        candidate = Path(path_value).expanduser().resolve(strict=True)  # lgtm[py/path-injection]
     except OSError as exc:
         raise UnsafePathError(f"{label} path could not be resolved.") from exc
     if not candidate.is_dir():
@@ -28,7 +28,7 @@ def exact_existing_directory(path_value: str, *, expected: Path, label: str) -> 
     try:
         # The supplied path is resolved here only so it can be compared with the isolated workspace path.
         # codeql[py/path-injection]
-        candidate = Path(path_value).expanduser().resolve(strict=True)
+        candidate = Path(path_value).expanduser().resolve(strict=True)  # lgtm[py/path-injection]
     except OSError as exc:
         raise UnsafePathError(f"{label} path could not be resolved.") from exc
     expected_resolved = expected.expanduser().resolve()

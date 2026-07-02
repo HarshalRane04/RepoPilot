@@ -215,7 +215,7 @@ async def async_main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     smoke = await capture_model_provider_smoke()
     write_outputs(smoke=smoke, json_out=args.json_out, md_out=args.md_out)
-    print(f"Model provider smoke {smoke.status}; redacted artifacts written to {args.json_out} and {args.md_out}.")
+    print("Model provider smoke completed; redacted artifacts were written.")
     if smoke.ok or (args.allow_blocked and smoke.status == "blocked"):
         return 0
     return 1

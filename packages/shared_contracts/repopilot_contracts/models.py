@@ -424,8 +424,8 @@ class CodeQLAlertFetchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     state: str = Field(default="open", pattern="^(open|fixed|dismissed)$")
-    ref: str | None = Field(default=None, max_length=255)
-    tool_name: str = Field(default="CodeQL", min_length=1, max_length=255)
+    ref: str | None = Field(default=None, max_length=255, pattern=r"^refs/(heads|tags)/[^\r\n\t]+$")
+    tool_name: str = Field(default="CodeQL", pattern="^CodeQL$")
     per_page: int = Field(default=100, ge=1, le=100)
     fail_on_findings: bool = True
 

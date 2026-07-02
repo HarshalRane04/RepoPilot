@@ -20,6 +20,9 @@ MAX_CHECK_OUTPUT_CHARS = 1200
 MAX_WORKFLOW_LOG_FILES = 12
 MAX_WORKFLOW_LOG_FAILURE_LINES = 20
 MAX_WORKFLOW_LOG_FILE_BYTES = 64_000
+CODE_SCANNING_STATES = {"open", "fixed", "dismissed"}
+CODE_SCANNING_TOOL_NAMES = {"CodeQL"}
+CODE_SCANNING_REF_PREFIXES = ("refs/heads/", "refs/tags/")
 
 
 class GitHubIntegrationError(RuntimeError):
@@ -629,11 +632,16 @@ class GitHubApiClient:
     ) -> list[dict[str, Any]]:
         if not self.token_provider.is_configured():
             raise GitHubCredentialsMissing("GitHub App credentials are required for CodeQL alert fetches.")
-        query: dict[str, str | int] = {"state": state, "per_page": min(max(per_page, 1), 100)}
-        if ref:
-            query["ref"] = ref
-        if tool_name:
-            query["tool_name"] = tool_name
+        query: dict[str, str | int] = {
+            "state": self._code_scanning_state(state),
+            "per_page": min(max(per_page, 1), 100),
+        }
+        safe_ref = self._code_scanning_ref(ref)
+        if safe_ref:
+            query["ref"] = safe_ref
+        safe_tool_name = self._code_scanning_tool_name(tool_name)
+        if safe_tool_name:
+            query["tool_name"] = safe_tool_name
         token = await self.token_provider.create_installation_access_token(installation_id)
         alerts_path = f"/repos/{path_segment(owner)}/{path_segment(repo)}/code-scanning/alerts"
         async with httpx.AsyncClient(timeout=30, base_url=github_api_base_url(self.config.github_api_base_url)) as client:
@@ -652,6 +660,34 @@ class GitHubApiClient:
         if not isinstance(payload, list):
             raise GitHubIntegrationError("GitHub code-scanning alerts response was not an array.")
         return [dict(item) for item in payload if isinstance(item, dict)]
+
+    def _code_scanning_state(self, value: str) -> str:
+        state = value.strip().lower()
+        if state not in CODE_SCANNING_STATES:
+            raise GitHubIntegrationError("Unsupported code-scanning alert state.")
+        return state
+
+    def _code_scanning_ref(self, value: str | None) -> str | None:
+        if value is None:
+            return None
+        ref = value.strip()
+        if not ref:
+            return None
+        if len(ref) > 255 or any(char in ref for char in "\r\n\t"):
+            raise GitHubIntegrationError("Invalid code-scanning alert ref.")
+        if not ref.startswith(CODE_SCANNING_REF_PREFIXES):
+            raise GitHubIntegrationError("Code-scanning alert ref must be a branch or tag ref.")
+        return ref
+
+    def _code_scanning_tool_name(self, value: str | None) -> str | None:
+        if value is None:
+            return None
+        tool_name = value.strip()
+        if not tool_name:
+            return None
+        if tool_name not in CODE_SCANNING_TOOL_NAMES:
+            raise GitHubIntegrationError("Unsupported code-scanning tool name.")
+        return tool_name
 
     def _api_url(self, path: str) -> str:
         clean_path = path.strip()

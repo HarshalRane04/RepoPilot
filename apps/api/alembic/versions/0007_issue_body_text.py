@@ -14,6 +14,8 @@ down_revision = "0006_llm_trace_metadata"
 branch_labels = None
 depends_on = None
 
+__all__ = ["branch_labels", "depends_on", "downgrade", "down_revision", "revision", "upgrade"]
+
 
 def upgrade() -> None:
     op.add_column("issues", sa.Column("body_text", sa.Text(), nullable=True))

@@ -251,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     try:
-        result = runner.run(
+        runner.run(
             provider=args.provider,
             model=args.model,
             output_dir=args.out_dir,
@@ -260,13 +260,10 @@ def main(argv: list[str] | None = None) -> int:
             timeout_seconds=args.timeout_seconds,
             allow_failed_gates=args.allow_failed_gates,
         )
-    except RuntimeError as exc:
-        _ = redact_for_output(exc)
+    except RuntimeError:
         print("Provider patch eval failed; console output was redacted to avoid leaking provider response data.")
         return 2
-    print(f"Wrote {result.markdown_path}")
-    print(f"Wrote {result.json_path}")
-    print(f"Wrote {result.observed_evidence_path}")
+    print("Provider patch eval completed; redacted artifacts were written.")
     return 0
 
 

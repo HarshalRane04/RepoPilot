@@ -16,21 +16,49 @@ class FakeStore:
         }
 
 
-def test_github_oauth_smoke_blocks_when_credentials_missing(monkeypatch) -> None:
-    monkeypatch.setattr(github_oauth_smoke, "runtime_secret_store", lambda: FakeStore())
-    monkeypatch.setattr(
-        github_oauth_smoke,
-        "effective_settings",
-        lambda settings: SimpleNamespace(
-            github_client_id=None,
-            github_client_secret=None,
-            github_oauth_callback_url="http://localhost:8000/auth/github/callback",
-            web_app_url="http://localhost:3001",
-            session_secret_key="change-me-session-secret",
-            github_api_base_url="https://api.github.com",
-            github_web_base_url="https://github.com",
-        ),
+def fake_runtime_secret_store() -> FakeStore:
+    return FakeStore()
+
+
+def missing_oauth_settings(_settings) -> SimpleNamespace:
+    return SimpleNamespace(
+        github_client_id=None,
+        github_client_secret=None,
+        github_oauth_callback_url="http://localhost:8000/auth/github/callback",
+        web_app_url="http://localhost:3001",
+        session_secret_key="change-me-session-secret",
+        github_api_base_url="https://api.github.com",
+        github_web_base_url="https://github.com",
     )
+
+
+def configured_oauth_settings(_settings) -> SimpleNamespace:
+    return SimpleNamespace(
+        github_client_id="client-id",
+        github_client_secret="configured-client-secret",
+        github_oauth_callback_url="http://localhost:8000/auth/github/callback",
+        web_app_url="http://localhost:3001",
+        session_secret_key="configured-session-secret",
+        github_api_base_url="https://api.github.com",
+        github_web_base_url="https://github.com",
+    )
+
+
+def invalid_public_oauth_settings(_settings) -> SimpleNamespace:
+    return SimpleNamespace(
+        github_client_id="client-id",
+        github_client_secret="configured-client-secret",
+        github_oauth_callback_url="http://evil.example.com/auth/github/callback",
+        web_app_url="http://localhost:3001",
+        session_secret_key="configured-session-secret",
+        github_api_base_url="https://api.github.com",
+        github_web_base_url="https://github.com",
+    )
+
+
+def test_github_oauth_smoke_blocks_when_credentials_missing(monkeypatch) -> None:
+    monkeypatch.setattr(github_oauth_smoke, "runtime_secret_store", fake_runtime_secret_store)
+    monkeypatch.setattr(github_oauth_smoke, "effective_settings", missing_oauth_settings)
 
     smoke = github_oauth_smoke.capture_github_oauth_smoke()
 
@@ -42,20 +70,8 @@ def test_github_oauth_smoke_blocks_when_credentials_missing(monkeypatch) -> None
 
 
 def test_github_oauth_smoke_passes_when_authorize_url_can_be_generated(monkeypatch) -> None:
-    monkeypatch.setattr(github_oauth_smoke, "runtime_secret_store", lambda: FakeStore())
-    monkeypatch.setattr(
-        github_oauth_smoke,
-        "effective_settings",
-        lambda settings: SimpleNamespace(
-            github_client_id="client-id",
-            github_client_secret="configured-client-secret",
-            github_oauth_callback_url="http://localhost:8000/auth/github/callback",
-            web_app_url="http://localhost:3001",
-            session_secret_key="configured-session-secret",
-            github_api_base_url="https://api.github.com",
-            github_web_base_url="https://github.com",
-        ),
-    )
+    monkeypatch.setattr(github_oauth_smoke, "runtime_secret_store", fake_runtime_secret_store)
+    monkeypatch.setattr(github_oauth_smoke, "effective_settings", configured_oauth_settings)
 
     smoke = github_oauth_smoke.capture_github_oauth_smoke()
 
@@ -66,20 +82,8 @@ def test_github_oauth_smoke_passes_when_authorize_url_can_be_generated(monkeypat
 
 
 def test_github_oauth_smoke_rejects_invalid_public_urls(monkeypatch) -> None:
-    monkeypatch.setattr(github_oauth_smoke, "runtime_secret_store", lambda: FakeStore())
-    monkeypatch.setattr(
-        github_oauth_smoke,
-        "effective_settings",
-        lambda settings: SimpleNamespace(
-            github_client_id="client-id",
-            github_client_secret="configured-client-secret",
-            github_oauth_callback_url="http://evil.example.com/auth/github/callback",
-            web_app_url="http://localhost:3001",
-            session_secret_key="configured-session-secret",
-            github_api_base_url="https://api.github.com",
-            github_web_base_url="https://github.com",
-        ),
-    )
+    monkeypatch.setattr(github_oauth_smoke, "runtime_secret_store", fake_runtime_secret_store)
+    monkeypatch.setattr(github_oauth_smoke, "effective_settings", invalid_public_oauth_settings)
 
     smoke = github_oauth_smoke.capture_github_oauth_smoke()
 

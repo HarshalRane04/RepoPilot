@@ -7,10 +7,11 @@ import zipfile
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
 from repopilot_github_client import command_permission_decision, role_for_github_permission as package_role_for_github_permission
 
 from app.db.models import Installation, Repository
-from app.services.github_app import GitHubApiClient, GitHubAppTokenProvider
+from app.services.github_app import GitHubApiClient, GitHubAppTokenProvider, GitHubIntegrationError
 from app.services.github_permissions import GitHubPermissionService, role_for_github_permission
 
 
@@ -148,6 +149,40 @@ def test_github_client_fetches_code_scanning_alerts(monkeypatch) -> None:
     assert FakeAsyncClient.last_params["per_page"] == 100
     assert FakeAsyncClient.last_params["tool_name"] == "CodeQL"
     assert "Authorization" in FakeAsyncClient.last_headers
+
+
+def test_github_client_rejects_unsupported_code_scanning_filters() -> None:
+    client = GitHubApiClient(token_provider=FakeTokenProvider())
+
+    with pytest.raises(GitHubIntegrationError, match="Unsupported code-scanning alert state"):
+        asyncio.run(
+            client.fetch_code_scanning_alerts(
+                installation_id="123",
+                owner="octo",
+                repo="demo",
+                state="all",
+            )
+        )
+
+    with pytest.raises(GitHubIntegrationError, match="Code-scanning alert ref must be a branch or tag ref"):
+        asyncio.run(
+            client.fetch_code_scanning_alerts(
+                installation_id="123",
+                owner="octo",
+                repo="demo",
+                ref="https://example.com/repo",
+            )
+        )
+
+    with pytest.raises(GitHubIntegrationError, match="Unsupported code-scanning tool name"):
+        asyncio.run(
+            client.fetch_code_scanning_alerts(
+                installation_id="123",
+                owner="octo",
+                repo="demo",
+                tool_name="CustomTool",
+            )
+        )
 
 
 def test_github_client_summarizes_check_runs_with_redaction_and_bounds() -> None:
