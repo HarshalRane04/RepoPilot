@@ -7,11 +7,22 @@
 
 ## Brief Description
 
-RepoPilot is a local-first, single-tenant GitHub App control plane for human-approved issue triage, implementation planning, agent execution, validation, security review, and gated draft pull requests.
+RepoPilot is a self-hosted control plane for running AI-assisted software-engineering work against GitHub repositories without giving models unrestricted access. It turns an issue into an auditable workflow: repository context, a human-reviewed plan, isolated implementation, validation and security evidence, and a gated draft pull request.
 
-The system combines a FastAPI API, Next.js operator console, PostgreSQL with pgvector, Redis/Celery workers, and an isolated sandbox service. GitHub writes are disabled by default. Live model calls, source transfer, implementation, and pull-request creation require explicit configuration and policy gates.
+The operator console shows what a run is doing, why it is blocked, which tools the agent invoked, which checks passed, and what action is safe next. FastAPI and Celery orchestrate the workflow, PostgreSQL with pgvector stores state and evidence, and the sandbox runner executes allowlisted commands inside isolated workspaces.
 
-> **Project status:** the local control plane and mock-first workflow are implemented. Live-provider quality, credentialed GitHub writes, and production deployment evidence must be validated in the target environment before production use. RepoPilot does not merge pull requests autonomously.
+![RepoPilot operator console showing an active run, approval state, validation results, and the next safe action](Docs/assets/readme/repopilot-overview-ui.png)
+
+_The overview keeps the current task, lifecycle stage, trust gates, and next safe action in one review surface._
+
+## What RepoPilot Does
+
+1. Connects a GitHub repository or receives a supported issue event.
+2. Retrieves bounded repository context and creates an implementation plan with source citations.
+3. Pauses for a human to approve, reject, or revise the plan.
+4. Runs approved implementation work through typed tools in an isolated workspace.
+5. Records the patch, tool calls, tests, security checks, artifacts, and model metadata as reviewable evidence.
+6. Opens a draft pull request only when repository authorization and required trust gates pass.
 
 ## Features
 
@@ -128,27 +139,19 @@ issue
 | `make deployment-validate` | Validate deployment topology and documentation |
 | `make release-verify` | Run the strict credentialed release gate |
 
-## Gallery
+## Screenshots
 
-The committed placeholders identify the screenshots required for public documentation. Replace each SVG at the same path with a current application capture before a tagged public release.
+### Agent Run Timeline
 
-### Operator Console
+![RepoPilot agent run timeline showing execution steps, risk, runtime, cost, and pull-request context](Docs/assets/readme/repopilot-run-trace-ui.png)
 
-![Screenshot placeholder showing the RepoPilot operator console](Docs/assets/readme/operator-console-placeholder.svg)
-
-_Capture the dashboard with repository context, task status, and active-run evidence visible._
-
-### Run Trace
-
-![Screenshot placeholder showing an auditable RepoPilot run trace](Docs/assets/readme/run-trace-placeholder.svg)
-
-_Capture the trace timeline with tool calls, validation evidence, artifacts, and model metadata._
+_Every orchestration, tool, implementation, validation, security, and pull-request step is recorded in order with its outcome._
 
 ### Security Review
 
-![Screenshot placeholder showing RepoPilot security findings and review controls](Docs/assets/readme/security-review-placeholder.svg)
+![RepoPilot security workspace showing scanner results and enforced workflow policies](Docs/assets/readme/repopilot-security-ui.png)
 
-_Capture finding severity, patch provenance, review status, and the available lifecycle actions._
+_The security workspace combines workflow findings with approval requirements, secret-reading protection, and the disabled auto-merge policy._
 
 ## Safety Model
 
