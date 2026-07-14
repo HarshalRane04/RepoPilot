@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -8,7 +9,7 @@ import time
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import UUID
 
@@ -148,6 +149,27 @@ class ArtifactStore:
             return ".bin"
         return extension
 
+    def resolve_record(self, record: ArtifactRecord, *, verify_checksum: bool = True) -> Path:
+        """Resolve a local artifact without allowing storage-key traversal or symlink escape."""
+        if record.storage_backend != "local":
+            raise ArtifactUnavailable(f"Unsupported artifact storage backend: {record.storage_backend}")
+        key = PurePosixPath(record.storage_key)
+        if key.is_absolute() or ".." in key.parts or not key.parts or "\\" in record.storage_key:
+            raise ArtifactUnavailable("Artifact storage key is unsafe.")
+        root = self.root.resolve(strict=False)
+        requested = root.joinpath(*key.parts)
+        try:
+            candidate = requested.resolve(strict=True)
+        except OSError as exc:
+            raise ArtifactUnavailable("Artifact file is no longer available.") from exc
+        if candidate == root or root not in candidate.parents or not candidate.is_file():
+            raise ArtifactUnavailable("Artifact file resolved outside the configured store.")
+        if verify_checksum:
+            digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            if not record.sha256 or not hmac.compare_digest(digest, record.sha256):
+                raise ArtifactIntegrityError("Artifact checksum verification failed.")
+        return candidate
+
     def plan_retention(
         self,
         *,
@@ -237,6 +259,14 @@ class ArtifactStore:
             skipped_count=0,
             storage_keys=storage_keys,
         )
+
+
+class ArtifactUnavailable(RuntimeError):
+    pass
+
+
+class ArtifactIntegrityError(ArtifactUnavailable):
+    pass
 
 
 @dataclass(frozen=True)

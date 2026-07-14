@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import io
 import json
 import subprocess
 import sys
+import urllib.error
 
+import pytest
 from app.db.models import EvalRun
 from app.services.eval_runner import EvalRunner
 from cryptography.fernet import Fernet
@@ -27,6 +30,7 @@ from repopilot_evals import (
 )
 from repopilot_evals.provider_credentials import redact_for_output
 from repopilot_evals.provider_harness import default_provider_api_key_env, default_provider_base_url
+from repopilot_evals.provider_retrieval_harness import ProviderEmbeddingClient
 
 
 class ScalarResult:
@@ -819,11 +823,53 @@ def test_provider_chat_client_uses_gemini_generate_content_adapter(monkeypatch) 
     assert calls[0]["timeout"] == 9
 
 
+def test_provider_chat_client_retries_transient_rate_limit(monkeypatch) -> None:
+    calls = 0
+
+    def fake_urlopen(request, timeout):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise urllib.error.HTTPError(
+                request.full_url,
+                429,
+                "rate limited",
+                {"Retry-After": "0"},
+                io.BytesIO(b'{"error":{"message":"temporarily rate limited"}}'),
+            )
+        return FakeUrlopenResponse({"choices": [{"message": {"content": '{"summary":"retry ok"}'}}]})
+
+    monkeypatch.setattr("repopilot_evals.provider_harness.urllib.request.urlopen", fake_urlopen)
+
+    payload = ProviderChatClient(
+        provider="openrouter",
+        base_url="https://openrouter.example/api/v1",
+        api_key="openrouter-test",
+        max_retries=1,
+        retry_backoff_seconds=0,
+    ).complete_json(
+        model="example/free",
+        messages=[{"role": "system", "content": "Return JSON."}, {"role": "user", "content": "Plan."}],
+        timeout_seconds=5,
+    )
+
+    assert payload == {"summary": "retry ok"}
+    assert calls == 2
+
+
 def test_provider_harness_defaults_provider_key_env_and_base_url() -> None:
     assert default_provider_api_key_env("openrouter") == "OPENROUTER_API_KEY"
     assert default_provider_api_key_env("anthropic") == "ANTHROPIC_API_KEY"
     assert default_provider_api_key_env("google") == "GEMINI_API_KEY"
     assert default_provider_base_url("google") == "https://generativelanguage.googleapis.com"
+
+
+def test_provider_clients_reject_non_https_urls() -> None:
+    with pytest.raises(ValueError, match="must use HTTPS"):
+        ProviderChatClient(provider="openrouter", base_url="file:///tmp/provider", api_key="test")
+
+    with pytest.raises(ValueError, match="must use HTTPS"):
+        ProviderEmbeddingClient(base_url="http://127.0.0.1:8080", api_key="test")
 
 
 def test_provider_credentials_use_runtime_secret_store(tmp_path, monkeypatch) -> None:
@@ -866,7 +912,8 @@ def test_provider_credentials_keep_environment_override(tmp_path, monkeypatch) -
         json.dumps(
             {
                 "values": {
-                    "MODEL_PROVIDER": fernet.encrypt(b"openrouter").decode(),
+                    "MODEL_PROVIDER": fernet.encrypt(b"anthropic").decode(),
+                    "MODEL_API_KEY_PROVIDER": fernet.encrypt(b"openrouter").decode(),
                     "MODEL_API_KEY": fernet.encrypt(b"runtime-key").decode(),
                 }
             }
@@ -908,6 +955,10 @@ def test_provider_credentials_ignore_runtime_secret_for_other_provider(tmp_path,
 
     assert credentials.api_key is None
     assert credentials.source == "missing"
+
+    openrouter_credentials = resolve_provider_credentials(provider="openrouter")
+    assert openrouter_credentials.api_key == "runtime-key"
+    assert openrouter_credentials.source == "runtime_secret_store"
 
 
 def test_provider_error_redaction_handles_json_identifiers() -> None:

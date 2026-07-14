@@ -7,9 +7,11 @@ import json
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
-from app.db.models import AgentRun, LLMTrace
-from app.services.github_ingestion import _free_form_audit_metadata, store_webhook_event
+from app.api.routes.webhooks import DispatchAttempt, _apply_dispatch_attempt
+from app.db.models import AgentRun, GitHubEvent, LLMTrace
+from app.services.github_ingestion import DuplicateDelivery, _free_form_audit_metadata, process_github_event, store_webhook_event
 from app.services.github_webhooks import (
     GitHubEventNormalizer,
     GitHubSignatureVerifier,
@@ -47,11 +49,48 @@ class FakeWebhookDb:
     async def scalar(self, _statement):
         return None
 
+    def begin_nested(self):
+        return FakeNestedTransaction()
+
     def add(self, item: object) -> None:
         self.added.append(item)
 
     async def flush(self) -> None:
         pass
+
+
+class FakeNestedTransaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args) -> None:
+        return None
+
+
+class FakeConcurrentDuplicateDb(FakeWebhookDb):
+    def __init__(self, existing: GitHubEvent) -> None:
+        super().__init__()
+        self.existing = existing
+        self.scalar_calls = 0
+
+    async def scalar(self, _statement):
+        self.scalar_calls += 1
+        return None if self.scalar_calls == 1 else self.existing
+
+    async def flush(self) -> None:
+        raise IntegrityError("duplicate delivery", {}, Exception("unique constraint"))
+
+
+class FakeProcessedWebhookDb:
+    def __init__(self, event: GitHubEvent) -> None:
+        self.event = event
+        self.flushes = 0
+
+    async def scalar(self, _statement):
+        return self.event
+
+    async def flush(self) -> None:
+        self.flushes += 1
 
 
 def signature(secret: str, body: bytes) -> str:
@@ -122,6 +161,7 @@ def test_normalizer_extracts_workflow_run_pr_signal() -> None:
         "installation": {"id": 123},
         "repository": {"name": "demo", "default_branch": "main", "owner": {"login": "octo"}},
         "workflow_run": {
+            "id": 987,
             "name": "ci",
             "conclusion": "success",
             "pull_requests": [{"number": 4}],
@@ -135,6 +175,7 @@ def test_normalizer_extracts_workflow_run_pr_signal() -> None:
     assert isinstance(event, NormalizedWorkflowRunEvent)
     assert event.workflow_name == "ci"
     assert event.pull_request_number == 4
+    assert event.workflow_run_id == 987
 
 
 def test_normalizer_extracts_check_run_pr_signal() -> None:
@@ -195,6 +236,83 @@ def test_webhook_storage_minimizes_and_redacts_issue_payload() -> None:
     normalized = GitHubEventNormalizer().normalize("issues", event.payload_json)
     assert normalized.issue_number == 7
     assert "[REDACTED_SECRET]" in normalized.issue_body
+
+
+def test_webhook_storage_recovers_concurrent_duplicate_insert() -> None:
+    existing = GitHubEvent(
+        id=uuid4(),
+        delivery_id="delivery-race-1",
+        event_type="issues",
+        payload_json={},
+        status="queued",
+    )
+    db = FakeConcurrentDuplicateDb(existing)
+
+    with pytest.raises(DuplicateDelivery) as caught:
+        asyncio.run(
+            store_webhook_event(
+                db,
+                delivery_id="delivery-race-1",
+                event_type="issues",
+                payload={"sender": {"login": "alice"}},
+            )
+        )
+
+    assert caught.value.event is existing
+    assert db.scalar_calls == 2
+
+
+def test_failed_webhook_dispatch_is_durable_and_redacted(monkeypatch) -> None:
+    monkeypatch.setattr("app.api.routes.webhooks.settings.webhook_dispatch_max_retries", 3)
+    event = GitHubEvent(
+        delivery_id="delivery-retry-1",
+        event_type="issues",
+        payload_json={},
+        status="received",
+        retry_count=0,
+    )
+
+    _apply_dispatch_attempt(
+        event,
+        DispatchAttempt(queued=False, error="broker rejected ghp_abcdefghijklmnopqrstuvwxyz123456"),
+    )
+
+    assert event.status == "enqueue_failed"
+    assert event.retry_count == 1
+    assert event.next_retry_at is not None
+    assert "ghp_" not in (event.last_error or "")
+
+    _apply_dispatch_attempt(event, DispatchAttempt(queued=True))
+    assert event.status == "queued"
+    assert event.enqueued_at is not None
+    assert event.next_retry_at is None
+    assert event.last_error is None
+
+
+def test_processed_webhook_delivery_is_idempotent_on_redelivery() -> None:
+    event = GitHubEvent(
+        id=uuid4(),
+        delivery_id="delivery-complete-1",
+        event_type="issues",
+        payload_json={},
+        status="processed",
+    )
+    db = FakeProcessedWebhookDb(event)
+
+    result = asyncio.run(process_github_event(db, event_id=event.id))
+
+    assert result == {"status": "processed", "event_id": str(event.id)}
+    assert db.flushes == 0
+
+
+def test_webhook_reconciliation_is_registered_as_periodic_task() -> None:
+    from app.worker.celery_app import celery_app
+    from app.worker.tasks import reconcile_github_event_dispatch_task
+
+    assert reconcile_github_event_dispatch_task.name == "repopilot.github.reconcile_dispatch"
+    schedule = celery_app.conf.beat_schedule["repopilot.github.reconcile_dispatch"]
+    assert schedule["task"] == "repopilot.github.reconcile_dispatch"
+    assert schedule["schedule"] > 0
 
 
 def test_webhook_storage_minimizes_and_redacts_comment_command_payload() -> None:

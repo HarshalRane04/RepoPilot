@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from repopilot_contracts import IntegrationState, IntegrationStatus, RuntimeReadiness
 
 from app.core.config import Settings, settings
 from app.services.model_catalog import OPENROUTER_PROVIDER_ID, model_ids_for_provider, provider_by_id
 from app.services.runtime_secrets import effective_settings
+from app.services.sandbox import SandboxRunner
 
 
 PLACEHOLDER_MARKERS = {"", "change-me", "change-me-local-dev", "change-me-session-secret", "placeholder", "todo"}
@@ -19,11 +23,13 @@ class IntegrationReadinessService:
             self._webhook_secret(),
             self._github_app_credentials(),
             self._github_oauth_credentials(),
+            self._github_oauth_owner_boundary(),
             self._github_write_mode(),
             self._runtime_secret_key(),
             self._model_gateway(),
             self._model_fallback_policy(),
             self._embedding_source_transfer_policy(),
+            self._sandbox_execution(),
             self._security_tools(),
             self._observability(),
             self._session_secret(),
@@ -103,6 +109,21 @@ class IntegrationReadinessService:
             mode="oauth_configured" if state == IntegrationState.CONFIGURED else "oauth_missing",
             detail="Required for real GitHub user sessions and repository import from the dashboard.",
             next_step="Set GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, SESSION_SECRET_KEY, GITHUB_OAUTH_CALLBACK_URL, and WEB_APP_URL.",
+        )
+
+    def _github_oauth_owner_boundary(self) -> IntegrationStatus:
+        configured = self._configured(self.config.github_owner_login)
+        return IntegrationStatus(
+            name="GitHub OAuth owner boundary",
+            state=IntegrationState.CONFIGURED if configured else IntegrationState.UNVERIFIED,
+            mode="owner_allowlist_configured" if configured else "first_owner_bootstrap",
+            required_for_production=True,
+            detail=(
+                f"Only GitHub login {self.config.github_owner_login} may bootstrap or enter this single-tenant workspace."
+                if configured
+                else "No explicit owner login is configured; a fresh local workspace uses first-user owner bootstrap."
+            ),
+            next_step="Set REPOPILOT_GITHUB_OWNER_LOGIN to the intended GitHub workspace owner before production use.",
         )
 
     def _github_write_mode(self) -> IntegrationStatus:
@@ -279,18 +300,93 @@ class IntegrationReadinessService:
             "CodeQL": self.config.codeql_enabled,
             "dependency audit": self.config.dependency_audit_enabled,
         }.items() if value]
+        evidence = self._security_scan_evidence()
+        if evidence is not None:
+            fingerprint = str(evidence.get("source_fingerprint") or "")
+            expected_fingerprint = str(self.config.release_source_fingerprint or "")
+            if not self._local_environment() and not expected_fingerprint:
+                return IntegrationStatus(
+                    name="External security tools",
+                    state=IntegrationState.UNVERIFIED,
+                    mode="release_fingerprint_missing",
+                    detail="Scanner execution evidence passed, but production has no expected release source fingerprint to bind it to.",
+                    next_step="Set REPOPILOT_RELEASE_SOURCE_FINGERPRINT to the fingerprint emitted by the strict scanner artifact.",
+                )
+            if expected_fingerprint and fingerprint != expected_fingerprint:
+                return IntegrationStatus(
+                    name="External security tools",
+                    state=IntegrationState.UNVERIFIED,
+                    mode="release_fingerprint_mismatch",
+                    detail="Scanner execution evidence belongs to a different source fingerprint than the configured release.",
+                    next_step="Rerun make security-scanner-snapshot-strict for this release and update the configured fingerprint.",
+                )
+            return IntegrationStatus(
+                name="External security tools",
+                state=IntegrationState.VERIFIED,
+                mode="release_scan_evidence_verified",
+                detail=(
+                    "Semgrep, Python dependency audit, npm dependency audit, and CodeQL evidence passed for source fingerprint "
+                    f"{fingerprint[:12]}."
+                ),
+                next_step="Rerun the strict scanner target whenever the source fingerprint changes.",
+            )
         return IntegrationStatus(
             name="External security tools",
-            state=IntegrationState.CONFIGURED if enabled else IntegrationState.PLACEHOLDER,
-            mode="external_scanners_enabled" if enabled else "regex_scanner_only",
-            detail=f"Enabled tools: {', '.join(enabled) if enabled else 'deterministic regex scanner only'}.",
-            next_step="Enable SEMGREP_ENABLED, CODEQL_ENABLED, and DEPENDENCY_AUDIT_ENABLED after tool installation/workflows exist.",
+            state=IntegrationState.UNVERIFIED if enabled else IntegrationState.PLACEHOLDER,
+            mode="external_scanners_declared" if enabled else "regex_scanner_only",
+            detail=(
+                f"Scanner flags are enabled for {', '.join(enabled)}, but runtime readiness does not treat flags as proof that a current scan passed."
+                if enabled
+                else "Only the deterministic regex scanner is enabled."
+            ),
+            next_step="Run current-SHA scanner commands and bind their results to release evidence before production claims.",
+        )
+
+    def _security_scan_evidence(self) -> dict[str, object] | None:
+        path = Path(self.config.security_scanner_evidence_path).expanduser()
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict) or payload.get("release_scanner_proof_ready") is not True:
+            return None
+        fingerprint = payload.get("source_fingerprint")
+        executions = payload.get("scan_executions")
+        if not isinstance(fingerprint, str) or len(fingerprint) != 64 or not isinstance(executions, list):
+            return None
+        required = {"semgrep", "pip-audit", "npm-audit"}
+        passed = {
+            str(item.get("name"))
+            for item in executions
+            if isinstance(item, dict) and item.get("status") == "passed" and item.get("exit_code") == 0
+        }
+        return payload if required <= passed else None
+
+    def _sandbox_execution(self) -> IntegrationStatus:
+        runner = SandboxRunner(config=self.config)
+        healthy, detail = runner.healthcheck()
+        if healthy:
+            state = IntegrationState.VERIFIED
+            mode = "remote_runner_verified" if self.config.sandbox_backend == "remote" else "local_runner"
+        elif self.config.sandbox_backend == "remote":
+            state = IntegrationState.UNVERIFIED
+            mode = "remote_runner_unreachable"
+        else:
+            state = IntegrationState.DISABLED
+            mode = f"unsupported_{self.config.sandbox_backend}_backend"
+        return IntegrationStatus(
+            name="Sandbox execution plane",
+            state=state,
+            mode=mode,
+            required_for_production=True,
+            detail=detail,
+            next_step="Start the isolated sandbox-runner and verify its authenticated Unix socket before agent execution.",
         )
 
     def _observability(self) -> IntegrationStatus:
         if self.config.enable_otel and self._configured(self.config.otel_exporter_otlp_endpoint):
-            state = IntegrationState.CONFIGURED
-            detail = "OpenTelemetry instrumentation and exporter endpoint are configured."
+            state = IntegrationState.UNVERIFIED
+            detail = "An OTLP endpoint is configured, but successful export has not been verified."
         elif self.config.enable_otel:
             state = IntegrationState.PLACEHOLDER
             detail = "OpenTelemetry instrumentation is enabled but no OTLP exporter endpoint is configured."
@@ -300,7 +396,7 @@ class IntegrationReadinessService:
         return IntegrationStatus(
             name="OpenTelemetry export",
             state=state,
-            mode="otel_export_configured" if state == IntegrationState.CONFIGURED else "otel_export_unconfigured",
+            mode="otel_export_unverified" if state == IntegrationState.UNVERIFIED else "otel_export_unconfigured",
             required_for_production=False,
             detail=detail,
             next_step="Set OTEL_EXPORTER_OTLP_ENDPOINT for real trace export.",

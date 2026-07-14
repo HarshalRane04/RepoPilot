@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -17,6 +19,7 @@ from app.core.config import Settings, settings
 GITHUB_OAUTH_RUNTIME_SECRET_FIELDS = {
     "GITHUB_CLIENT_ID": "github_client_id",
     "GITHUB_CLIENT_SECRET": "github_client_secret",
+    "REPOPILOT_GITHUB_OWNER_LOGIN": "github_owner_login",
     "GITHUB_OAUTH_CALLBACK_URL": "github_oauth_callback_url",
     "WEB_APP_URL": "web_app_url",
     "SESSION_SECRET_KEY": "session_secret_key",
@@ -45,6 +48,7 @@ MODEL_RUNTIME_SECRET_FIELDS = {
     "MODEL_PROVIDER": "model_provider",
     "MODEL_NAME": "model_name",
     "MODEL_API_KEY": "model_api_key",
+    "MODEL_API_KEY_PROVIDER": "model_api_key_provider",
     "MODEL_BASE_URL": "model_base_url",
     "MODEL_REASONING_LEVEL": "model_reasoning_level",
     "MODEL_PROVIDER_VERIFIED_AT": "model_provider_verified_at",
@@ -75,10 +79,18 @@ class RuntimeSecretField:
 
 
 class RuntimeSecretStore:
+    _value_cache: ClassVar[dict[tuple[object, ...], dict[str, str]]] = {}
+    _cache_lock: ClassVar[threading.RLock] = threading.RLock()
+
     def __init__(self, config: Settings | None = None) -> None:
         self.config = config or settings
 
     def load_values(self) -> dict[str, str]:
+        cache_key = self._cache_signature()
+        with self._cache_lock:
+            cached = self._value_cache.get(cache_key)
+            if cached is not None:
+                return dict(cached)
         data = self._read_store()
         encrypted_values = data.get("values", {})
         if not isinstance(encrypted_values, dict):
@@ -100,6 +112,10 @@ class RuntimeSecretStore:
                 continue
         for key in cleared:
             values.setdefault(key, "")
+        with self._cache_lock:
+            if len(self._value_cache) >= 32:
+                self._value_cache.clear()
+            self._value_cache[cache_key] = dict(values)
         return values
 
     def save_values(self, values: dict[str, str]) -> None:
@@ -134,6 +150,7 @@ class RuntimeSecretStore:
         if clean_cleared:
             payload["cleared"] = clean_cleared
         self._atomic_write(self._store_path(), json.dumps(payload, sort_keys=True, indent=2).encode("utf-8"))
+        self._invalidate_cache()
 
     def summary(self, field_names: set[str] | None = None) -> dict[str, Any]:
         stored = self.load_values()
@@ -201,6 +218,25 @@ class RuntimeSecretStore:
     def _key_path(self) -> Path:
         return Path(self.config.runtime_secrets_key_path).expanduser()
 
+    def _cache_signature(self) -> tuple[object, ...]:
+        store_path = self._store_path()
+        key_path = self._key_path()
+        key_digest = sha256((self.config.runtime_secrets_key or "").encode("utf-8")).hexdigest()
+        return (
+            str(store_path.resolve(strict=False)),
+            *_file_signature(store_path),
+            str(key_path.resolve(strict=False)),
+            *_file_signature(key_path),
+            key_digest,
+        )
+
+    def _invalidate_cache(self) -> None:
+        store_path = str(self._store_path().resolve(strict=False))
+        with self._cache_lock:
+            stale = [key for key in self._value_cache if key and key[0] == store_path]
+            for key in stale:
+                self._value_cache.pop(key, None)
+
     def _atomic_write(self, path: Path, content: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
@@ -239,15 +275,70 @@ def runtime_secret_store(config: Settings | None = None) -> RuntimeSecretStore:
     return RuntimeSecretStore(config or settings)
 
 
+def model_api_key_for_provider(provider_id: str, config: Settings | None = None) -> str | None:
+    base = config or settings
+    stored = _load_runtime_values(base)
+    return _configured_model_api_keys(base, stored).get(_normalized_provider_id(provider_id))
+
+
+def configured_model_api_key_providers(config: Settings | None = None) -> tuple[str, ...]:
+    base = config or settings
+    stored = _load_runtime_values(base)
+    return tuple(sorted(_configured_model_api_keys(base, stored)))
+
+
 def effective_settings(config: Settings | None = None) -> Settings:
     base = config or settings
-    try:
-        stored = RuntimeSecretStore(base).load_values()
-    except Exception:
-        stored = {}
+    stored = _load_runtime_values(base)
     updates = {
         attr_name: stored[env_name]
         for env_name, attr_name in RUNTIME_SECRET_FIELDS.items()
         if env_name in stored
     }
+    configured_keys = _configured_model_api_keys(base, stored)
+    active_provider = _normalized_provider_id(updates.get("model_provider", base.model_provider))
+    updates["model_api_key"] = configured_keys.get(active_provider)
+    updates["model_api_key_provider"] = next(iter(configured_keys), None)
     return base.model_copy(update=updates)
+
+
+def _load_runtime_values(config: Settings) -> dict[str, str]:
+    try:
+        return RuntimeSecretStore(config).load_values()
+    except Exception:
+        return {}
+
+
+def _configured_model_api_keys(config: Settings, stored: dict[str, str]) -> dict[str, str]:
+    if "MODEL_API_KEY" in stored:
+        api_key = stored.get("MODEL_API_KEY")
+        provider_id = (
+            stored.get("MODEL_API_KEY_PROVIDER")
+            or stored.get("MODEL_PROVIDER")
+            or config.model_api_key_provider
+            or config.model_provider
+        )
+    else:
+        api_key = config.model_api_key
+        provider_id = stored.get("MODEL_API_KEY_PROVIDER") or config.model_api_key_provider or config.model_provider
+    normalized_provider = _normalized_provider_id(provider_id)
+    if not normalized_provider or not _configured_runtime_value(api_key):
+        return {}
+    return {normalized_provider: str(api_key).strip()}
+
+
+def _normalized_provider_id(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _configured_runtime_value(value: object) -> bool:
+    normalized = str(value or "").strip().lower()
+    return bool(normalized) and normalized not in PLACEHOLDER_VALUES and not normalized.startswith("change-me")
+
+
+def _file_signature(path: Path) -> tuple[int, int]:
+    try:
+        stat = path.stat()
+    except OSError:
+        return 0, 0
+    return stat.st_mtime_ns, stat.st_size

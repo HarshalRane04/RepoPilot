@@ -303,9 +303,20 @@ def test_github_client_fetches_workflow_logs_as_safe_metadata(monkeypatch) -> No
 
     class FakeResponse:
         status_code = 200
-        text = ""
-        content = body
-        headers = {"content-type": "application/zip"}
+        headers = {"content-type": "application/zip", "content-length": str(len(body))}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def aread(self):
+            return body
+
+        async def aiter_bytes(self, chunk_size=1024 * 1024):
+            del chunk_size
+            yield body
 
     class FakeAsyncClient:
         last_url = ""
@@ -321,7 +332,7 @@ def test_github_client_fetches_workflow_logs_as_safe_metadata(monkeypatch) -> No
         async def __aexit__(self, *_args):
             return None
 
-        async def get(self, url, headers):
+        def stream(self, _method, url, headers):
             FakeAsyncClient.last_url = url
             FakeAsyncClient.last_headers = headers
             return FakeResponse()

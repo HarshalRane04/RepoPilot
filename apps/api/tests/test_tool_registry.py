@@ -69,12 +69,16 @@ def test_tool_registry_exposes_model_facing_definitions() -> None:
     assert "repo.read_files" in definitions
     assert "workspace.write_file" in definitions
     assert "sandbox.run_command" in definitions
-    assert "github.create_branch" in definitions
+    assert "github.fetch_ci_logs" in definitions
+    assert "github.create_branch" not in definitions
+    assert "validation.record_result" not in definitions
+    assert "agent.ask_user" not in definitions
     assert definitions["repo.read_file"].permission == "read"
     assert definitions["repo.read_files"].permission == "read"
     assert definitions["workspace.write_file"].requires_approved_plan is True
-    assert definitions["github.create_branch"].enabled is True
-    assert definitions["github.create_branch"].requires_github_write_mode is True
+    assert definitions["github.fetch_ci_logs"].permission == "external_read"
+    assert definitions["repo.index"].permission == "db_mutation"
+    assert definitions["plan.generate"].permission == "db_mutation"
     assert "properties" in definitions["repo.read_file"].input_schema
 
 
@@ -465,6 +469,58 @@ def test_executor_blocks_workspace_write_to_unapproved_path() -> None:
     assert not (workspace / "app" / "not_approved.py").exists()
 
 
+def test_apply_patch_rechecks_actual_diff_paths_and_rolls_back(monkeypatch) -> None:
+    plan_id = uuid4()
+    issue_id = uuid4()
+    run = AgentRun(id=uuid4(), plan_id=plan_id, state=AgentRunState.IMPLEMENT_PATCH.value)
+    plan = Plan(
+        id=plan_id,
+        issue_id=issue_id,
+        approval_status=PlanApprovalStatus.APPROVED.value,
+        plan_json=approved_plan_payload(
+            plan_id=plan_id,
+            issue_id=issue_id,
+            files_to_modify=["app/approved.py"],
+        ),
+    )
+    workspace = WORKSPACE_ROOT / str(run.id)
+    shutil.rmtree(workspace, ignore_errors=True)
+    (workspace / "app").mkdir(parents=True)
+    unapproved = workspace / "app" / "unapproved.py"
+    unapproved.write_text("VALUE = 1\n", encoding="utf-8")
+    from app.services.tools import registry
+
+    monkeypatch.setattr(registry, "_diff_paths", lambda _diff: {"app/approved.py"})
+    diff = (
+        "diff --git a/app/unapproved.py b/app/unapproved.py\n"
+        "--- a/app/unapproved.py\n"
+        "+++ b/app/unapproved.py\n"
+        "@@ -1 +1 @@\n"
+        "-VALUE = 1\n"
+        "+VALUE = 2\n"
+    )
+
+    try:
+        result = asyncio.run(
+            ToolExecutor().execute(
+                FakeDb(run=run, plan=plan),
+                request=ToolCallRequest(
+                    run_id=run.id,
+                    state=AgentRunState.IMPLEMENT_PATCH,
+                    tool_name="workspace.apply_patch",
+                    actor="agent",
+                    arguments={"workspace_path": str(workspace), "diff": diff},
+                ),
+            )
+        )
+
+        assert result.status == "blocked"
+        assert "not approved" in (result.blocked_reason or "")
+        assert unapproved.read_text(encoding="utf-8") == "VALUE = 1\n"
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
 def test_executor_allows_workspace_write_under_approved_test_directory() -> None:
     plan_id = uuid4()
     issue_id = uuid4()
@@ -494,19 +550,19 @@ def test_executor_allows_workspace_write_under_approved_test_directory() -> None
                     state=AgentRunState.CREATE_BRANCH,
                     tool_name="workspace.write_file",
                     actor="agent",
-                    arguments={"workspace_path": str(workspace), "path": "tests/test_approved.py", "content": "def test_ok():\n    assert True\n"},
+                    arguments={"workspace_path": str(workspace), "path": "apps/api/tests/test_approved.py", "content": "def test_ok():\n    assert True\n"},
                 ),
             )
         )
-        assert (workspace / "tests" / "test_approved.py").is_file()
+        assert (workspace / "apps" / "api" / "tests" / "test_approved.py").is_file()
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
     assert result.status == "succeeded"
-    assert result.output["path"] == "tests/test_approved.py"
+    assert result.output["path"] == "apps/api/tests/test_approved.py"
 
 
-def test_security_dependency_audit_adapter_skips_when_disabled(monkeypatch) -> None:
+def test_unsafe_in_process_dependency_audit_adapter_is_not_exposed(monkeypatch) -> None:
     monkeypatch.setattr(settings, "dependency_audit_enabled", False)
     plan_id = uuid4()
     issue_id = uuid4()
@@ -544,12 +600,11 @@ def test_security_dependency_audit_adapter_skips_when_disabled(monkeypatch) -> N
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
-    assert result.status == "succeeded"
-    assert result.output["adapter"] == "dependency_audit"
-    assert result.output["status"] == "skipped"
+    assert result.status == "blocked"
+    assert result.block_type == ToolBlockType.UNKNOWN_TOOL
 
 
-def test_security_semgrep_adapter_fails_closed_when_enabled_but_unavailable(monkeypatch) -> None:
+def test_unsafe_in_process_semgrep_adapter_is_not_exposed(monkeypatch) -> None:
     monkeypatch.setattr(settings, "semgrep_enabled", True)
     monkeypatch.setattr("app.services.tools.registry.shutil.which", lambda executable: None)
     plan_id = uuid4()
@@ -587,14 +642,11 @@ def test_security_semgrep_adapter_fails_closed_when_enabled_but_unavailable(monk
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
-    assert result.status == "succeeded"
-    assert result.output["adapter"] == "semgrep"
-    assert result.output["status"] == "failed"
-    assert result.output["finding_count"] == 1
-    assert any(getattr(item, "tool", "") == "semgrep" for item in db.added)
+    assert result.status == "blocked"
+    assert result.block_type == ToolBlockType.UNKNOWN_TOOL
 
 
-def test_security_dependency_audit_parses_npm_audit_json(monkeypatch) -> None:
+def test_removed_dependency_adapter_cannot_execute_host_subprocess(monkeypatch) -> None:
     monkeypatch.setattr(settings, "dependency_audit_enabled", True)
     monkeypatch.setattr("app.services.tools.registry.shutil.which", lambda executable: f"/usr/bin/{executable}")
 
@@ -642,9 +694,5 @@ def test_security_dependency_audit_parses_npm_audit_json(monkeypatch) -> None:
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
-    assert result.status == "succeeded"
-    assert result.output["adapter"] == "dependency_audit"
-    assert result.output["status"] == "failed"
-    assert result.output["finding_count"] == 1
-    assert result.output["findings"][0]["severity"] == "high"
-    assert any(getattr(item, "tool", "") == "dependency-audit" for item in db.added)
+    assert result.status == "blocked"
+    assert result.block_type == ToolBlockType.UNKNOWN_TOOL

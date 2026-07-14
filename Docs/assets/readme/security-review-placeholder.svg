@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title description">
+  <title id="title">RepoPilot security review screenshot placeholder</title>
+  <desc id="description">Placeholder for a security review screenshot showing finding severity, patch provenance, status, and review actions.</desc>
+  <rect width="1200" height="675" fill="#071019"/>
+  <rect x="32" y="32" width="1136" height="611" rx="18" fill="#0d1924" stroke="#2e5268" stroke-width="2"/>
+  <rect x="58" y="58" width="1084" height="92" rx="12" fill="#101f2b"/>
+  <rect x="58" y="178" width="700" height="421" rx="12" fill="#101f2b"/>
+  <rect x="786" y="178" width="356" height="198" rx="12" fill="#101f2b"/>
+  <rect x="786" y="400" width="356" height="199" rx="12" fill="#101f2b"/>
+  <rect x="92" y="218" width="632" height="64" rx="8" fill="#162b39" stroke="#d68a4a"/>
+  <rect x="92" y="306" width="632" height="64" rx="8" fill="#162b39" stroke="#d2c45c"/>
+  <rect x="92" y="394" width="632" height="64" rx="8" fill="#162b39" stroke="#65d7e8"/>
+  <text x="600" y="94" fill="#65d7e8" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="700" text-anchor="middle">SCREENSHOT PLACEHOLDER · SECURITY REVIEW</text>
+  <text x="600" y="126" fill="#829aaa" font-family="Inter, Arial, sans-serif" font-size="16" text-anchor="middle">Severity · provenance · lifecycle status · review controls</text>
+</svg>

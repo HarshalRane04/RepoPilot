@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 from uuid import uuid4
 
+import pytest
 from repopilot_contracts import DraftPullRequestRequest, SecuritySeverity
 
 from app.core.config import settings
@@ -14,6 +16,7 @@ from app.services.eval_runner import EvalRunner
 from app.services.integration_readiness import IntegrationReadinessService
 from app.services.security_scanner import SecurityScanner
 from app.services.state_machine import can_transition, next_states
+from app.services.tools.registry import WORKSPACE_ROOT, _workspace_diff_payload, _write_baseline
 
 
 class FakeCIGateway:
@@ -206,6 +209,37 @@ def test_draft_pr_base_sha_guard_rejects_synthetic_index_markers() -> None:
     assert service._looks_like_commit_sha("19593aa1a73b28134c215020b853c8c650f6bbc4") is True
     assert service._looks_like_commit_sha("live-smoke-2026-06-19") is False
     assert service._looks_like_commit_sha(None) is False
+
+
+def test_github_write_rechecks_workspace_patch_and_preserves_executable_mode() -> None:
+    run_id = uuid4()
+    workspace = WORKSPACE_ROOT / str(run_id)
+    shutil.rmtree(workspace, ignore_errors=True)
+    script = workspace / "scripts" / "check.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/sh\necho before\n", encoding="utf-8")
+    script.chmod(0o755)
+    _write_baseline(workspace)
+    script.write_text("#!/bin/sh\necho after\n", encoding="utf-8")
+    patch = _workspace_diff_payload(workspace)
+    payload = {
+        "working_workspace_path": str(workspace),
+        "patch_hash": patch["patch_hash"],
+        "changed_files": patch["changed_files"],
+    }
+    service = DraftPullRequestService()
+
+    try:
+        contents = service._changed_file_contents(payload, run_id=run_id)
+        assert contents == [
+            {"path": "scripts/check.sh", "content": "#!/bin/sh\necho after\n", "mode": "100755"}
+        ]
+
+        script.write_text("#!/bin/sh\necho mutated after validation\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="changed after validation"):
+            service._changed_file_contents(payload, run_id=run_id)
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
 
 
 def test_real_github_write_rejects_oauth_synced_repository() -> None:

@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import UUID
 
 from repopilot_contracts import CodeContextChunk, CodeContextPack, RepositoryIndexRequest, RepositoryIndexResult
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -159,6 +159,69 @@ class RepositoryIndexer:
         files = list(self._iter_indexable_files(source_root, max_files=request.max_files, max_file_bytes=request.max_file_bytes))
         content_fingerprint = self._content_fingerprint(source_root, files)
         commit_sha = request.commit_sha or content_fingerprint
+        latest_index = await db.scalar(
+            select(RepositoryIndex)
+            .where(RepositoryIndex.repository_id == repository.id, RepositoryIndex.status == "ready")
+            .order_by(RepositoryIndex.created_at.desc())
+            .limit(1)
+        )
+        if (
+            latest_index is not None
+            and latest_index.content_fingerprint == content_fingerprint
+            and not self.index_metadata_is_stale(latest_index)
+        ):
+            await db.execute(
+                update(CodeChunk)
+                .where(CodeChunk.repository_id == repository.id)
+                .values(commit_sha=commit_sha)
+            )
+            reused_index = RepositoryIndex(
+                repository_id=repository.id,
+                source_path=str(source_root),
+                commit_sha=commit_sha,
+                content_fingerprint=content_fingerprint,
+                files_indexed=latest_index.files_indexed,
+                chunks_indexed=latest_index.chunks_indexed,
+                skipped_files=latest_index.skipped_files,
+                embedding_provider=latest_index.embedding_provider,
+                embedding_model=latest_index.embedding_model,
+                embedding_dimensions=latest_index.embedding_dimensions,
+                chunker_version=CHUNKER_VERSION,
+                status="ready",
+                metadata_json={**latest_index.metadata_json, "reused_embeddings": True},
+            )
+            db.add(reused_index)
+            await db.flush()
+            repository.last_indexed_sha = commit_sha
+            await record_audit(
+                db,
+                actor_type="system",
+                action="repository.index_reused",
+                entity_type="repository",
+                entity_id=str(repository.id),
+                metadata={
+                    "source_path": str(source_root),
+                    "index_id": str(reused_index.id),
+                    "previous_index_id": str(latest_index.id),
+                    "commit_sha": commit_sha,
+                    "content_fingerprint": content_fingerprint,
+                },
+            )
+            await db.commit()
+            return RepositoryIndexResult(
+                index_id=str(reused_index.id),
+                repository_id=str(repository.id),
+                source_path=str(source_root),
+                commit_sha=commit_sha,
+                content_fingerprint=content_fingerprint,
+                files_indexed=reused_index.files_indexed,
+                chunks_indexed=reused_index.chunks_indexed,
+                skipped_files=reused_index.skipped_files,
+                embedding_provider=reused_index.embedding_provider,
+                embedding_model=reused_index.embedding_model,
+                embedding_dimensions=reused_index.embedding_dimensions,
+                chunker_version=CHUNKER_VERSION,
+            )
         chunks: list[SourceChunk] = []
         skipped_files = 0
 
@@ -275,8 +338,6 @@ class RepositoryIndexer:
         query: str,
         limit: int = 6,
     ) -> CodeContextPack:
-        result = await db.execute(select(CodeChunk).where(CodeChunk.repository_id == repository_id))
-        chunks = result.scalars().all()
         query_terms = self._terms(query)
         query_embedding_response = await ModelGateway().embed(
             db,
@@ -286,6 +347,35 @@ class RepositoryIndexer:
             allow_live=settings.embedding_source_transfer_enabled,
         )
         query_embedding = self._normalize_embedding(query_embedding_response.embeddings[0]) if query_embedding_response.embeddings else self._embed_text(query)
+        candidate_limit = min(240, max(48, limit * 12))
+        semantic_result = await db.execute(
+            select(CodeChunk)
+            .where(CodeChunk.repository_id == repository_id, CodeChunk.embedding.is_not(None))
+            .order_by(CodeChunk.embedding.cosine_distance(query_embedding))
+            .limit(candidate_limit)
+        )
+        candidate_groups = [semantic_result.scalars().all()]
+        if query_terms:
+            lexical_predicates = [
+                predicate
+                for term in sorted(query_terms)
+                for predicate in (CodeChunk.chunk_text.ilike(f"%{term}%"), CodeChunk.file_path.ilike(f"%{term}%"))
+            ]
+            lexical_result = await db.execute(
+                select(CodeChunk)
+                .where(CodeChunk.repository_id == repository_id, or_(*lexical_predicates))
+                .limit(candidate_limit)
+            )
+            candidate_groups.append(lexical_result.scalars().all())
+        chunks: list[CodeChunk] = []
+        seen: set[object] = set()
+        for group in candidate_groups:
+            for chunk in group:
+                identity: object = chunk.id if chunk.id is not None else id(chunk)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                chunks.append(chunk)
 
         scored: list[tuple[RetrievalScore, CodeChunk, int, int, str]] = []
         for chunk in chunks:
@@ -574,8 +664,6 @@ class RepositoryIndexer:
         query_embedding: list[float],
         chunk_embedding: list[float] | None,
     ) -> RetrievalScore:
-        if not query_terms:
-            return RetrievalScore(total=0.0, lexical=0.0, semantic=0.0, path=0.0, reason="No searchable query terms.")
         searchable = f"{file_path}\n{text}".lower()
         hits = sum(1 for term in query_terms if term in searchable)
         lexical_score = hits / max(len(query_terms), 1)
@@ -590,6 +678,8 @@ class RepositoryIndexer:
             reasons.append("query terms matched file path")
         if semantic_score > 0:
             reasons.append("embedding similarity contributed")
+        if not query_terms:
+            reasons.append("query had no lexical terms; selected by embedding similarity")
         return RetrievalScore(
             total=total,
             lexical=lexical_score,
@@ -611,9 +701,7 @@ class RepositoryIndexer:
     def index_is_stale_for_embeddings(self, chunks: list[CodeChunk]) -> bool:
         if not chunks:
             return False
-        configured_provider = settings.embedding_provider
-        configured_model = settings.embedding_model
-        configured_dimensions = int(settings.embedding_dimensions)
+        configured_provider, configured_model, configured_dimensions = self._expected_embedding_identity()
         return any(
             chunk.embedding_provider != configured_provider
             or chunk.embedding_model != configured_model
@@ -624,12 +712,18 @@ class RepositoryIndexer:
     def index_metadata_is_stale(self, index: RepositoryIndex | None) -> bool:
         if index is None:
             return False
+        provider, model, dimensions = self._expected_embedding_identity()
         return (
-            index.embedding_provider != settings.embedding_provider
-            or index.embedding_model != settings.embedding_model
-            or index.embedding_dimensions != int(settings.embedding_dimensions)
+            index.embedding_provider != provider
+            or index.embedding_model != model
+            or index.embedding_dimensions != dimensions
             or index.chunker_version != CHUNKER_VERSION
         )
+
+    def _expected_embedding_identity(self) -> tuple[str, str, int]:
+        if settings.embedding_provider == "mock" or not settings.embedding_source_transfer_enabled:
+            return "mock", "mock-embedding", int(settings.embedding_dimensions)
+        return settings.embedding_provider, settings.embedding_model, int(settings.embedding_dimensions)
 
     def _content_fingerprint(self, root: Path, files: list[Path]) -> str:
         digest = hashlib.sha256()

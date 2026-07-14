@@ -272,11 +272,14 @@ class GitHubApiClient:
         for file in changed_files:
             path = str(file["path"])
             content = file.get("content")
+            mode = str(file.get("mode") or "100644")
+            if mode not in {"100644", "100755"}:
+                raise GitHubIntegrationError(f"Unsupported Git tree mode for {path}: {mode}")
             if content is None:
-                tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
+                tree_items.append({"path": path, "mode": mode, "type": "blob", "sha": None})
                 continue
             blob_sha = await self.create_blob(installation_id=installation_id, owner=owner, repo=repo, content=content)
-            tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": blob_sha})
+            tree_items.append({"path": path, "mode": mode, "type": "blob", "sha": blob_sha})
 
         tree_sha = await self.create_tree(
             installation_id=installation_id,
@@ -352,19 +355,39 @@ class GitHubApiClient:
         url = self._api_url(
             f"/repos/{path_segment(owner)}/{path_segment(repo)}/actions/runs/{path_segment(str(run_id))}/logs"
         )
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            response = await client.get(
+        max_bytes = self.config.github_workflow_log_max_bytes
+        chunks: list[bytes] = []
+        received = 0
+        content_type = "application/octet-stream"
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=20), follow_redirects=True) as client:
+            async with client.stream(
+                "GET",
                 url,
                 headers={
                     "Accept": "application/vnd.github+json",
                     "Authorization": f"Bearer {token}",
                     "X-GitHub-Api-Version": "2022-11-28",
                 },
-            )
-        if response.status_code >= 400:
-            raise GitHubIntegrationError(f"GitHub workflow logs request failed: {response.status_code} {response.text[:300]}")
-        content = response.content or b""
-        content_type = response.headers.get("content-type", "application/octet-stream")
+            ) as response:
+                if response.status_code >= 400:
+                    error_body = (await response.aread())[:300].decode("utf-8", errors="replace")
+                    raise GitHubIntegrationError(
+                        f"GitHub workflow logs request failed: {response.status_code} {error_body}"
+                    )
+                declared = response.headers.get("content-length")
+                if declared:
+                    try:
+                        if int(declared) > max_bytes:
+                            raise GitHubIntegrationError("GitHub workflow log archive exceeds the configured size limit.")
+                    except ValueError as exc:
+                        raise GitHubIntegrationError("GitHub workflow logs returned an invalid content length.") from exc
+                content_type = response.headers.get("content-type", content_type)
+                async for chunk in response.aiter_bytes(chunk_size=1024 * 1024):
+                    received += len(chunk)
+                    if received > max_bytes:
+                        raise GitHubIntegrationError("GitHub workflow log archive exceeds the configured size limit.")
+                    chunks.append(chunk)
+        content = b"".join(chunks)
         log_summary = self.summarize_workflow_log_archive(content, content_type=content_type)
         return {
             "run_id": run_id,

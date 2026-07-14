@@ -15,6 +15,7 @@ from app.db.models import AgentRun, AgentStep, Installation, Issue, Repository
 from app.db.session import get_db
 from app.services.audit import record_audit
 from app.services.auth import CurrentUser, get_current_user
+from app.services.authorization import require_repository_access, require_role
 from app.services.planning import PlanningService
 from app.services.runtime_secrets import effective_settings
 from app.services.security_envelope import rate_limit, redact_text
@@ -37,7 +38,8 @@ async def submit_prompt(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    repository = await _resolve_repository(db, repository_id=request.repository_id)
+    require_role(current_user, "write")
+    repository = await _resolve_repository(db, repository_id=request.repository_id, current_user=current_user)
     issue_number = await _next_issue_number(db, repository=repository)
     issue = Issue(
         repository_id=repository.id,
@@ -106,16 +108,32 @@ async def submit_prompt(
     }
 
 
-async def _resolve_repository(db: AsyncSession, *, repository_id: str | None) -> Repository:
+async def _resolve_repository(
+    db: AsyncSession,
+    *,
+    repository_id: str | None,
+    current_user: CurrentUser,
+) -> Repository:
     if repository_id:
-        repository = await db.get(Repository, UUID(repository_id))
-        if repository is None:
-            raise HTTPException(status_code=404, detail="Repository not found")
-        return repository
+        try:
+            parsed_repository_id = UUID(repository_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="repository_id must be a valid UUID") from exc
+        return await require_repository_access(
+            db,
+            repository_id=parsed_repository_id,
+            current_user=current_user,
+            action="write",
+        )
 
     repository = await db.scalar(select(Repository).order_by(Repository.created_at.desc()))
     if repository is not None:
-        return repository
+        return await require_repository_access(
+            db,
+            repository_id=repository.id,
+            current_user=current_user,
+            action="write",
+        )
 
     installation = await db.scalar(select(Installation).where(Installation.github_installation_id == "local-prompts"))
     if installation is None:

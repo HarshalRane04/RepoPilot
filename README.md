@@ -1,166 +1,216 @@
-# RepoPilot AI
+# RepoPilot
 
-RepoPilot AI is a local-first, single-tenant GitHub App control plane and operator console for human-approved issue triage, planning, validation evidence, security checks, and gated draft PR workflows.
+[![CI](https://github.com/HarshalRane04/RepoPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/HarshalRane04/RepoPilot/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB.svg)](apps/api/Dockerfile)
+[![Node.js 22](https://img.shields.io/badge/Node.js-22-339933.svg)](apps/web/Dockerfile)
 
-The current codebase contains a strong local control plane, but the full AI coding loop is still under active implementation. See [Docs/ROADMAP.md](Docs/ROADMAP.md) for the safety-first release-candidate roadmap from the current MVP to a production-grade LLM-powered PR agent.
+## Brief Description
 
-## Current Implementation Status
+RepoPilot is a local-first, single-tenant GitHub App control plane for human-approved issue triage, implementation planning, agent execution, validation, security review, and gated draft pull requests.
 
-Implemented today:
+The system combines a FastAPI API, Next.js operator console, PostgreSQL with pgvector, Redis/Celery workers, and an isolated sandbox service. GitHub writes are disabled by default. Live model calls, source transfer, implementation, and pull-request creation require explicit configuration and policy gates.
 
-- FastAPI backend with protected API routes, health checks, and OpenAPI docs.
-- PostgreSQL + pgvector schema through Alembic.
-- Redis + Celery worker plumbing.
-- Shared Pydantic contracts for issues, plans, runs, tools, validation, security, PRs, traces, readiness, and evals.
-- GitHub webhook HMAC verification, delivery dedupe, event storage, normalization, audit events, and queue dispatch.
-- GitHub OAuth login that imports the authenticated user's repositories.
-- Repository indexing for server-managed local source paths, with gateway-mediated deterministic embeddings, embedding metadata, and stale-index detection.
-- Deterministic issue triage with model-gateway structured-output attempts, confidence scores, and prompt-injection prechecks.
-- Deterministic implementation planning from retrieved citations, with planning structured-output attempts routed through the mock-first `ModelGateway`.
-- Human approval, rejection, and revision gates for implementation plans, with approved-plan hash enforcement before write/implementation/PR actions.
-- Mock-first model gateway for completions, structured JSON validation, deterministic embeddings, budget checks, prompt/response hashes, and LLM trace rows.
-- Deny-by-default policy checks for risky files and commands.
-- Sandbox validation runner with scrubbed environment and allowlisted commands. Local Compose uses the explicit `local` backend for development; production-style deployments can use the Docker backend with network disabled, resource limits, and the sandbox image.
-- Model-facing `ToolRegistry` and `ToolExecutor` boundary for audited tool calls.
-- Executor-mediated implementation lane that asks the model for bounded workspace tool calls, applies writes only through `ToolExecutor`, captures a diff hash, and validates inside the isolated run workspace.
-- Security scanner for generated patches and workspaces, plus finding lifecycle updates with reasoned acknowledgement/fixed/false-positive states.
-- Local draft PR records after approval, validation, and security checks, with real GitHub branch/commit/PR writer plumbing behind write-mode readiness gates.
-- CI analyzer for workflow/check events, failure-log summaries, and fresh revision-plan creation after CI failure.
-- Observability endpoints for run traces, audit logs, metrics, readiness, and eval reports.
-- Fixture-backed local eval runner with 31 benchmark tasks, per-task outcomes, category pass rates, observed plan-quality/context-precision/patch-quality/human-edit-distance/provider-comparison scoring, and release quality gates.
-- Local Markdown/JSON eval report generation with `make eval-report`; reports are written to the git-ignored `Docs/eval-reports/` workspace or uploaded as workflow artifacts.
-- Planning-only live-provider eval harness with `make provider-planning-eval`, using provider keys from the shell environment rather than source files.
-- Manual GitHub Actions provider-planning workflow for credentialed model tests with secret-name inputs and downloadable eval artifacts.
-- Source-boundary manifest generation with `make source-boundary-manifest`; reports are written to the git-ignored `Docs/release-artifacts/` workspace or uploaded as workflow artifacts.
-- Redacted credential readiness snapshot generation with `make readiness-snapshot`; reports are written to the git-ignored `Docs/release-artifacts/` workspace.
-- Security scanner posture snapshot generation with `make security-scanner-snapshot`; reports are written to the git-ignored `Docs/release-artifacts/` workspace or uploaded as workflow artifacts.
-- Source-boundary hygiene report generation with `make release-hygiene`; reports are written to the git-ignored `Docs/release-artifacts/` workspace.
-- Deployment topology/docs validation with `make deployment-validate`; reports are written to the git-ignored `Docs/release-artifacts/` workspace.
-- Local runtime deployment smoke with `make deployment-smoke`; reports are written to the git-ignored `Docs/release-artifacts/` workspace.
-- Next.js operator dashboard for repositories, issues, runs, PRs, security finding lifecycle actions, CI revision plans, evals, audit logs, and settings.
+> **Project status:** the local control plane and mock-first workflow are implemented. Live-provider quality, credentialed GitHub writes, and production deployment evidence must be validated in the target environment before production use. RepoPilot does not merge pull requests autonomously.
 
-Not production-complete yet:
+## Features
 
-- Live-provider quality validation for LLM triage, planning reasoning, and code generation.
-- Provider-backed embeddings.
-- End-to-end smoke test against a real GitHub demo repository with user-provided GitHub App credentials.
-- Full live GitHub Actions archive parsing and credentialed provider-backed plan/patch-quality/human-edit-distance comparisons.
-- Release proof for public GHCR image visibility, a fresh-host `make ghcr-start-local` smoke, successful CodeQL upload/alert evidence on a code-scanning-enabled repository, and production-like deployment smoke.
+- **Operator console:** manage repositories, tasks, plans, runs, pull requests, security findings, evaluations, audit records, and runtime settings.
+- **Human approval gates:** require approved plans before implementation or GitHub write operations.
+- **Agent tool boundary:** route model actions through typed, permissioned, audited tools instead of arbitrary functions or shell access.
+- **Repository context:** acquire repositories safely, index source, and retrieve bounded lexical/vector context with citations.
+- **Isolated execution:** run allowlisted commands in authenticated, network-disabled sandbox workspaces with resource limits.
+- **Evidence-based review:** bind validation and security evidence to the current patch before a run can advance.
+- **GitHub integration:** support OAuth, GitHub App installations, signed webhooks, repository sync, CI evidence, and gated draft pull requests.
+- **Provider-aware model routing:** validate models dynamically and bind encrypted API keys to the selected provider.
+- **Auditability:** record state transitions, tool calls, artifacts, model traces, validation results, security findings, and pull-request actions.
+- **Evaluation and release tooling:** provide fixture-backed evals, readiness checks, source-boundary scans, deployment validation, and security posture reports.
 
-The root `services/*` directories are planned extraction boundaries unless their README says otherwise. Runtime behavior for v1 currently lives in `apps/api`, `apps/web`, shared `packages`, Docker Compose, and the active `services/sandbox_runner` image.
+## Architecture
+
+| Component | Technology | Responsibility |
+| --- | --- | --- |
+| Operator console | Next.js 16, React 19, TypeScript | Human review, configuration, evidence inspection, and workflow control |
+| API | FastAPI, Pydantic, SQLAlchemy | Authentication, orchestration, policy enforcement, contracts, and GitHub/model integration |
+| Database | PostgreSQL 16, pgvector, Alembic | Durable workflow state, audit records, artifacts, and repository embeddings |
+| Queue | Redis, Celery | Asynchronous ingestion, implementation, validation, and reconciliation |
+| Sandbox | Isolated Python service and Docker runtime | Authenticated, allowlisted, resource-bounded command execution |
+| Integrations | GitHub App/OAuth and provider adapters | Repository events, draft pull requests, model calls, and CI evidence |
+
+Runtime code lives in `apps/api`, `apps/web`, `packages`, and `services/sandbox_runner`. See [Architecture](Docs/ARCHITECTURE.md) for component boundaries and [Security](Docs/SECURITY.md) for the threat model.
+
+## Installation
+
+### Prerequisites
+
+- Docker Desktop or a compatible Docker Engine with Compose
+- Git
+- GNU Make
+- A POSIX-compatible shell
+- Optional for host-side tooling: Python 3.12, Node.js 22, `uv`, `curl`, and `jq`
+
+### Local installation
+
+```bash
+git clone https://github.com/HarshalRane04/RepoPilot.git
+cd RepoPilot
+make start-local
+```
+
+`make start-local` creates local-safe configuration, builds and starts the Compose stack, and applies database migrations.
+
+Open:
+
+- Operator console: [http://localhost:3001](http://localhost:3001)
+- API health: [http://localhost:8000/health](http://localhost:8000/health)
+- API readiness: [http://localhost:8000/ready](http://localhost:8000/ready)
+- OpenAPI documentation: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+For a step-by-step setup, published-container instructions, and credentialed smoke-test order, see the [Self-Hosted Quickstart](Docs/QUICKSTART.md).
+
+### Configuration
+
+The generated `.env` file contains local service wiring only and is excluded from Git. Save GitHub and model-provider credentials through **Settings** in the operator console or through the encrypted runtime-secret helper:
+
+```bash
+make configure-runtime-secrets
+```
+
+Important defaults:
+
+- `GITHUB_WRITES_ENABLED=false`
+- `ALLOW_MODEL_FALLBACK=false` outside local development
+- `EMBEDDING_SOURCE_TRANSFER_ENABLED=false`
+- runtime secrets stored under the ignored `.local/repopilot-secrets/` directory
+
+Use an external secret manager and `REPOPILOT_RELEASE_PROFILE=production` for non-local deployments. Never commit `.env`, provider keys, GitHub private keys, session secrets, or runtime-secret stores.
+
+## Usage
+
+### Operator workflow
+
+1. Configure a model provider and GitHub integration in **Settings**.
+2. Connect or select a repository.
+3. Create a task from the operator console or ingest a supported GitHub issue event.
+4. Review the generated plan and approve, reject, or request a revision.
+5. Start the approved run.
+6. Inspect tool calls, patch provenance, validation output, security findings, and CI evidence.
+7. Create a draft pull request only after required gates pass.
+
+The intended lifecycle is:
+
+```text
+issue
+  -> triage
+  -> retrieve context
+  -> generate plan
+  -> human approval
+  -> isolated implementation
+  -> validation
+  -> security review
+  -> draft pull request
+```
+
+### Common commands
+
+| Command | Purpose |
+| --- | --- |
+| `make start-local` | Initialize and start the local stack |
+| `make logs` | Follow Compose service logs |
+| `make down` | Stop the local stack |
+| `make migrate` | Apply database migrations |
+| `make api-test` | Run the API test suite |
+| `make api-lint` | Run Ruff across Python source and tests |
+| `pnpm -C apps/web test` | Run frontend regression tests |
+| `pnpm -C apps/web typecheck` | Run TypeScript validation |
+| `make web-build` | Build the production web image |
+| `make readiness-snapshot` | Generate a redacted readiness report |
+| `make deployment-validate` | Validate deployment topology and documentation |
+| `make release-verify` | Run the strict credentialed release gate |
+
+## Gallery
+
+The committed placeholders identify the screenshots required for public documentation. Replace each SVG at the same path with a current application capture before a tagged public release.
+
+### Operator Console
+
+![Screenshot placeholder showing the RepoPilot operator console](Docs/assets/readme/operator-console-placeholder.svg)
+
+_Capture the dashboard with repository context, task status, and active-run evidence visible._
+
+### Run Trace
+
+![Screenshot placeholder showing an auditable RepoPilot run trace](Docs/assets/readme/run-trace-placeholder.svg)
+
+_Capture the trace timeline with tool calls, validation evidence, artifacts, and model metadata._
+
+### Security Review
+
+![Screenshot placeholder showing RepoPilot security findings and review controls](Docs/assets/readme/security-review-placeholder.svg)
+
+_Capture finding severity, patch provenance, review status, and the available lifecycle actions._
 
 ## Safety Model
 
-RepoPilot is designed around these invariants:
+RepoPilot is designed around the following invariants:
 
 - No autonomous merges.
-- No code changes before a human-approved plan.
-- No raw model access to arbitrary Python functions or arbitrary shell.
-- Model actions must pass through `ToolExecutor` or an equivalent audited executor boundary.
-- Generated code is applied only inside isolated run workspaces.
-- GitHub writes stay disabled unless credentials, write mode, validation evidence, security gates, and permission checks are all satisfied.
-- Live model and embedding calls are explicit data-transfer boundaries. Keep `EMBEDDING_SOURCE_TRANSFER_ENABLED=false` unless the repository owner approves sending repository paths and selected source/context chunks to the configured embedding provider.
-- Every state transition, tool call, write action, validation result, security finding, and PR action is audited.
+- No implementation before human plan approval.
+- No unrestricted shell or arbitrary function access for models.
+- No generated code applied outside isolated run workspaces.
+- No GitHub writes without credentials, explicit write mode, authorization, validation evidence, and security gates.
+- No implicit repository-source transfer to embedding providers.
+- Every privileged action is attributable through audit and trace records.
 
-## Local Start
+Review [Docs/SECURITY.md](Docs/SECURITY.md) before enabling live providers or GitHub writes.
 
-For a step-by-step self-hosted install path, use [Docs/QUICKSTART.md](Docs/QUICKSTART.md). The short path is:
+## Validation
 
-Prerequisites and common first-run gotchas:
-
-- Install Docker Desktop or another Docker daemon, and make sure it is running before `make start-local`.
-- Install `make`, Git, and a POSIX shell. The local bootstrap scripts generate `.env` values, then Docker Compose builds API/web images from source.
-- The first run can take several minutes because it builds containers, applies migrations, and builds the sandbox image.
-- If Docker Compose reports missing `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `GITHUB_WEBHOOK_SECRET`, or `SESSION_SECRET_KEY`, run `make init-local-env` before starting Compose.
-- `make init-local-env` enables local header-based dev auth for the dashboard/API so a fresh clone is usable without OAuth. Do not use that local auth posture as a production deployment setting.
-- Real GitHub, OAuth, scanner, and model-provider values should be saved through dashboard Settings or `make configure-runtime-secrets`, not committed to source.
-
-1. Clone the repo and start the local stack:
-
-   ```bash
-   git clone https://github.com/HarshalRane04/RepoPilot.git
-   cd RepoPilot
-   make start-local
-   ```
-
-   This runs `make init-local-env`, builds/starts Docker Compose, applies migrations, and builds the sandbox image. The generated `.env` uses git-ignored local-only values for Compose startup, keeps real GitHub/model credentials blank, and leaves `GITHUB_WRITES_ENABLED=false`. Treat real database, Redis, webhook, session, OAuth, GitHub App, and model values as secrets. For a credentialed GitHub App smoke test, save `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY` or `GITHUB_PRIVATE_KEY_PATH`, OAuth credentials, and model-provider keys through the dashboard Settings screen or `make configure-runtime-secrets`. Keep `GITHUB_WRITES_ENABLED=false` until `/settings/readiness` reports `github_mode=read_only_verified` and a disposable demo repository has passed the write smoke test.
-
-2. Open:
-
-   - API health: http://localhost:8000/health
-   - API docs: http://localhost:8000/docs
-   - Dashboard: http://localhost:3001
-
-Manual source-build fallback:
+Run the local validation set before opening a pull request:
 
 ```bash
-make init-local-env
-make up
-make migrate
-make sandbox-image
-```
-
-To run published containers instead of source-building API/web images, set `REPOPILOT_IMAGE_TAG` in `.env` and use the GHCR bootstrap target:
-
-```bash
-make ghcr-start-local
-```
-
-`ghcr-start-local` runs `make init-local-env`, pulls images, starts Compose, and applies migrations. The released-image path uses `docker-compose.ghcr.yml` and pulls `ghcr.io/harshalrane04/repopilot-api`, `ghcr.io/harshalrane04/repopilot-web`, and `ghcr.io/harshalrane04/repopilot-sandbox`. Keep this path marked release-candidate until a fresh-host GHCR smoke proves the published images are public and runnable.
-
-## Common Checks
-
-```bash
-docker compose config
+docker compose config --quiet
 make api-test
-make web-typecheck
+make api-lint
+pnpm -C apps/web test
+pnpm -C apps/web typecheck
+python3 scripts/ui_truth_guard.py
+python3 scripts/deployment_validate.py
+python3 scripts/release_hygiene.py --allow-warnings
+make web-build
 make sandbox-image
-make eval-report
-make provider-planning-eval
-make source-boundary-manifest
-make readiness-snapshot
-make security-scanner-snapshot
-make release-hygiene
-make deployment-validate
-make deployment-smoke
 ```
 
-After live credentials and runtime services are configured, the strict release gate is:
+Credentialed release environments should also run:
 
 ```bash
 make release-verify
 ```
 
-For live model testing from GitHub, add the provider key as a repository secret and run the manual **Provider Planning Eval** workflow. See [Docs/MODEL_TESTING.md](Docs/MODEL_TESTING.md).
+## Documentation
 
-## API Highlights
+- [Documentation index](Docs/README.md)
+- [Self-hosted quickstart](Docs/QUICKSTART.md)
+- [Architecture](Docs/ARCHITECTURE.md)
+- [GitHub App setup](Docs/GITHUB_APP_SETUP.md)
+- [Model testing](Docs/MODEL_TESTING.md)
+- [Runbook](Docs/RUNBOOK.md)
+- [Deployment guide](Docs/DEPLOYMENT_GUIDE.md)
+- [Roadmap](Docs/ROADMAP.md)
+- [Release checklist](Docs/RELEASE_CHECKLIST.md)
 
-- `POST /webhooks/github`: verifies GitHub webhook signatures, dedupes deliveries, stores payloads, audits receipt, and queues processing.
-- `GET /auth/session`: returns the signed session identity.
-- `GET /auth/github/login`: starts GitHub OAuth when configured.
-- `GET /auth/github/callback`: validates OAuth state, imports repositories, and creates a session cookie.
-- `GET /repos`: lists tracked repositories.
-- `POST /repos/{repo_id}/index`: indexes a server-managed local repository source path.
-- `GET /repos/{repo_id}/context`: retrieves cited context chunks.
-- `POST /issues/{issue_id}/triage`: reruns deterministic triage.
-- `POST /issues/{issue_id}/plan`: generates a deterministic cited plan and waits for approval.
-- `POST /plans/{plan_id}/approve`: approves allowed plans and enforces escalation checks.
-- `POST /runs/{run_id}/implement`: creates an isolated workspace, executes model-proposed write tools through `ToolExecutor`, validates, and records patch evidence.
-- `POST /runs/{run_id}/security-scan`: scans generated evidence for secrets, risky paths, and prompt-injection phrases.
-- `POST /runs/{run_id}/open-draft-pr`: creates a local draft PR record after gates pass.
-- `GET /runs/{run_id}/trace`: returns an auditable trace across steps, validation, security, PRs, audits, and LLM metadata.
-- `POST /prs/{pr_id}/ci`: stores a CI conclusion and promotes clean runs when evidence passes.
-- `POST /prs/{pr_id}/revision-plan`: creates a fresh waiting plan from CI failure evidence.
-- `PATCH /security/findings/{finding_id}/status`: updates finding lifecycle state with required review reasons for acknowledgement and false-positive decisions.
-- `POST /evals/run`: runs the local fixture-backed benchmark scorer and stores per-task outcomes plus optional observed plan/patch-quality and provider-comparison evidence from `model_config`.
-- `GET /settings/readiness`: shows production-readiness blockers for GitHub, OAuth, model, security, and observability integrations.
+## Contributing
 
-## Roadmap
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before submitting changes.
 
-The active implementation roadmap is:
+Contributions must:
 
-```text
-hygiene -> safety envelope -> model gateway -> semantic planning -> human review -> executor-mediated patching -> validation/security -> GitHub writes -> CI/evals/release
-```
+1. Keep behavior changes scoped and documented.
+2. Add or update regression tests.
+3. Preserve human approval, policy, sandbox, and audit boundaries.
+4. Avoid committing secrets, generated artifacts, or local runtime state.
+5. Pass the validation commands above.
 
-The next major milestones are a real GitHub demo-repo smoke test with user-provided credentials, provider-backed embedding/model validation, and deployment packaging from [Docs/ROADMAP.md](Docs/ROADMAP.md).
+## License
+
+RepoPilot is available under the [MIT License](LICENSE).

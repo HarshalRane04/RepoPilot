@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import Any
 
 from repopilot_contracts import AgentRunState
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AgentRun, AgentStep
+from app.db.models import AgentRun, AgentStep, utc_now
 from app.services.audit import record_audit
 
 
@@ -78,6 +77,7 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
         AgentRunState.CANCELLED.value,
     },
     AgentRunState.READY_FOR_REVIEW.value: {
+        AgentRunState.WAIT_FOR_CI.value,
         AgentRunState.MERGED_OR_CLOSED.value,
         AgentRunState.CANCELLED.value,
     },
@@ -109,17 +109,15 @@ async def transition_run(
     actor_id: str | None = None,
     reason: str,
     metadata: dict[str, Any] | None = None,
-    allowed_from: Iterable[str] | None = None,
 ) -> None:
     target = next_state.value if isinstance(next_state, AgentRunState) else next_state
     current = run.state
-    allowed = set(allowed_from or ())
-    if allowed and current in allowed:
-        pass
-    elif not can_transition(current, target):
+    if not can_transition(current, target):
         raise InvalidStateTransition(f"Invalid agent run transition: {current} -> {target}")
 
     run.state = target
+    if target in TERMINAL_STATES:
+        run.completed_at = utc_now()
     transition_metadata = {
         "from_state": current,
         "to_state": target,

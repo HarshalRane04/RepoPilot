@@ -11,9 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AgentRun, AgentStep, PullRequest, SecurityFinding, ValidationResult
 from app.services.audit import record_audit
+from app.services.evidence_state import security_scan_evidence_summary, validation_evidence_summary
 from app.services.model_gateway import ModelGateway
 from app.services.security_envelope import redact_text
-from app.services.state_machine import transition_run
+from app.services.state_machine import TERMINAL_STATES, transition_run
 
 
 class CISummarySuggestion(BaseModel):
@@ -35,6 +36,8 @@ class CIAnalyzer:
         *,
         pr_id: UUID,
         request: CIAnalysisRequest,
+        trusted_evidence: bool = True,
+        actor_id: str | None = None,
     ) -> CIAnalysisResult:
         pr = await db.get(PullRequest, pr_id)
         if pr is None:
@@ -70,40 +73,71 @@ class CIAnalyzer:
             failing_command = model_summary.failing_command or failing_command
             root_cause = model_summary.root_cause or root_cause
             proposed_fix_path = model_summary.proposed_fix_path or proposed_fix_path
-        pr.ci_status = request.conclusion
-        ready_for_review = request.conclusion == "success" and await self._can_mark_ready(db, run_id=run.id)
-        if ready_for_review:
-            pr.status = "ready_for_review"
-            await transition_run(
-                db,
-                run=run,
-                next_state=AgentRunState.READY_FOR_REVIEW,
-                actor_type="github",
-                reason="CI succeeded and validation/security evidence is clean.",
-                metadata={"pr_id": str(pr.id), "workflow_name": request.workflow_name},
-                allowed_from={AgentRunState.READY_FOR_REVIEW.value},
+        ready_for_review = False
+        state_before = run.state
+        state_change_applied = False
+        if trusted_evidence:
+            pr.ci_status = request.conclusion
+            evidence_is_ready = (
+                run.state not in TERMINAL_STATES
+                and request.conclusion == "success"
+                and await self._can_mark_ready(db, run_id=run.id)
             )
-        else:
-            run.state = AgentRunState.WAIT_FOR_CI.value
+            if evidence_is_ready and run.state == AgentRunState.WAIT_FOR_CI.value:
+                pr.status = "ready_for_review"
+                await transition_run(
+                    db,
+                    run=run,
+                    next_state=AgentRunState.READY_FOR_REVIEW,
+                    actor_type="github",
+                    reason="CI succeeded and validation/security evidence is clean.",
+                    metadata={"pr_id": str(pr.id), "workflow_name": request.workflow_name},
+                )
+                state_change_applied = True
+            elif evidence_is_ready and run.state == AgentRunState.READY_FOR_REVIEW.value:
+                pr.status = "ready_for_review"
+            elif request.conclusion in {"failure", "cancelled"} and run.state not in TERMINAL_STATES:
+                pr.status = "blocked"
+                if run.state == AgentRunState.READY_FOR_REVIEW.value:
+                    await transition_run(
+                        db,
+                        run=run,
+                        next_state=AgentRunState.WAIT_FOR_CI,
+                        actor_type="github",
+                        reason="A later trusted CI result invalidated review readiness.",
+                        metadata={"pr_id": str(pr.id), "workflow_name": request.workflow_name},
+                    )
+                    state_change_applied = True
+            ready_for_review = evidence_is_ready and run.state == AgentRunState.READY_FOR_REVIEW.value
 
         db.add(
             AgentStep(
                 run_id=run.id,
-                step_name=AgentRunState.WAIT_FOR_CI.value,
+                step_name=AgentRunState.WAIT_FOR_CI.value if trusted_evidence else "CI_SIMULATION",
                 output_json={
                     "workflow_name": request.workflow_name,
                     "conclusion": request.conclusion,
+                    "trusted_evidence": trusted_evidence,
                     "summary": summary,
                     "failure_reasons": failure_reasons,
                     "failed_job": failed_job,
                     "failing_command": failing_command,
                     "root_cause": root_cause,
                     "proposed_fix_path": proposed_fix_path,
+                    "run_state_before": state_before,
+                    "run_state_after": run.state,
+                    "state_change_applied": state_change_applied,
                 },
-                status="succeeded" if request.conclusion == "success" else "failed",
+                status=(
+                    "succeeded"
+                    if request.conclusion == "success"
+                    else "failed"
+                    if request.conclusion in {"failure", "cancelled"}
+                    else "pending"
+                ),
             )
         )
-        if ready_for_review:
+        if trusted_evidence and ready_for_review:
             db.add(
                 AgentStep(
                     run_id=run.id,
@@ -114,18 +148,26 @@ class CIAnalyzer:
             )
         await record_audit(
             db,
-            actor_type="github",
-            action="ci.analyzed",
+            actor_type="github" if trusted_evidence else "user",
+            actor_id=actor_id,
+            action="ci.analyzed" if trusted_evidence else "ci.simulated",
             entity_type="pull_request",
             entity_id=str(pr.id),
-            metadata={"conclusion": request.conclusion, "ready_for_review": ready_for_review},
+            metadata={
+                "conclusion": request.conclusion,
+                "ready_for_review": ready_for_review,
+                "trusted_evidence": trusted_evidence,
+                "run_state_before": state_before,
+                "run_state_after": run.state,
+                "state_change_applied": state_change_applied,
+            },
         )
         await db.commit()
 
         return CIAnalysisResult(
             pr_id=str(pr.id),
             run_id=str(run.id),
-            ci_status=pr.ci_status or request.conclusion,
+            ci_status=(pr.ci_status or request.conclusion) if trusted_evidence else request.conclusion,
             summary=summary,
             failure_reasons=failure_reasons,
             ready_for_review=ready_for_review,
@@ -217,16 +259,59 @@ class CIAnalyzer:
         return suggestion
 
     async def _can_mark_ready(self, db: AsyncSession, *, run_id: UUID) -> bool:
-        validations = await db.execute(select(ValidationResult).where(ValidationResult.run_id == run_id))
-        has_passed_validation = any(validation.status == "passed" for validation in validations.scalars().all())
-        findings = await db.execute(
+        patch_hash = await self._latest_patch_hash(db, run_id=run_id)
+        if not patch_hash:
+            return False
+        validations = (
+            await db.execute(select(ValidationResult).where(ValidationResult.run_id == run_id))
+        ).scalars().all()
+        if validation_evidence_summary(validations, patch_hash=patch_hash)["status"] != "passed":
+            return False
+        security_steps = (
+            await db.execute(
+                select(AgentStep)
+                .where(
+                    AgentStep.run_id == run_id,
+                    AgentStep.step_name.in_(["RUN_SECURITY_CHECKS", "CODEQL_INGEST"]),
+                )
+                .order_by(AgentStep.created_at.desc())
+            )
+        ).scalars().all()
+        findings = (
+            await db.execute(
+                select(SecurityFinding).where(
+                    SecurityFinding.run_id == run_id,
+                    SecurityFinding.patch_hash == patch_hash,
+                )
+            )
+        ).scalars().all()
+        if security_scan_evidence_summary(
+            security_steps,
+            patch_hash=patch_hash,
+            findings=findings,
+        )["status"] != "passed":
+            return False
+        blocking_findings = await db.execute(
             select(SecurityFinding).where(
                 SecurityFinding.run_id == run_id,
+                SecurityFinding.patch_hash == patch_hash,
                 SecurityFinding.status == "open",
                 SecurityFinding.severity.in_([SecuritySeverity.HIGH.value, SecuritySeverity.CRITICAL.value]),
             )
         )
-        return has_passed_validation and findings.scalars().first() is None
+        return blocking_findings.scalars().first() is None
+
+    async def _latest_patch_hash(self, db: AsyncSession, *, run_id: UUID) -> str | None:
+        result = await db.execute(
+            select(AgentStep)
+            .where(AgentStep.run_id == run_id, AgentStep.step_name == AgentRunState.IMPLEMENT_PATCH.value)
+            .order_by(AgentStep.created_at.desc())
+        )
+        step = result.scalars().first()
+        if not step or not isinstance(step.output_json, dict):
+            return None
+        value = step.output_json.get("patch_hash")
+        return str(value) if value else None
 
 
 _SOURCE_EXTENSIONS = (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".md", ".yml", ".yaml")

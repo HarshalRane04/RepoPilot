@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from app.core.config import Settings
 from app.services.integration_readiness import IntegrationReadinessService
 
@@ -109,3 +111,38 @@ def test_live_embedding_source_transfer_opt_in_is_visible() -> None:
     assert policy.mode == "source_transfer_enabled"
     assert policy.required_for_production is False
     assert "may send repository file paths" in policy.detail
+
+
+def test_security_readiness_requires_matching_release_scan_fingerprint(tmp_path) -> None:
+    fingerprint = "a" * 64
+    evidence_path = tmp_path / "security-scanner-snapshot.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "release_scanner_proof_ready": True,
+                "source_fingerprint": fingerprint,
+                "scan_executions": [
+                    {"name": name, "status": "passed", "exit_code": 0}
+                    for name in ("semgrep", "pip-audit", "npm-audit")
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    verified = IntegrationReadinessService(
+        production_ready_settings(
+            security_scanner_evidence_path=str(evidence_path),
+            release_source_fingerprint=fingerprint,
+        )
+    ).readiness()
+    mismatched = IntegrationReadinessService(
+        production_ready_settings(
+            security_scanner_evidence_path=str(evidence_path),
+            release_source_fingerprint="b" * 64,
+        )
+    ).readiness()
+
+    assert integration(verified, "External security tools").state == "verified"
+    assert integration_mode(verified, "External security tools") == "release_scan_evidence_verified"
+    assert integration_mode(mismatched, "External security tools") == "release_fingerprint_mismatch"

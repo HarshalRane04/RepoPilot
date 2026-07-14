@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from pathlib import PurePosixPath
 from uuid import UUID
 
 from repopilot_contracts import (
@@ -55,11 +55,14 @@ class DraftPullRequestService:
             raise ValueError("Run cannot open a draft PR until its plan is approved.")
         if not approved_plan_hash_matches(plan):
             raise ValueError("Run cannot open a draft PR because the approved plan hash no longer matches the current plan.")
-        if not await self._has_passed_validation(db, run_id=run.id):
-            raise ValueError("Run cannot open a draft PR without passing validation evidence.")
+        patch_hash = await self._latest_patch_hash(db, run_id=run.id)
+        if not patch_hash:
+            raise ValueError("Run cannot open a draft PR without current generated patch evidence.")
+        if not await self._has_passed_validation(db, run_id=run.id, patch_hash=patch_hash):
+            raise ValueError("Run cannot open a draft PR without passing validation evidence for the current patch.")
 
-        await self._ensure_security_scan(db, run_id=run.id)
-        blocking_findings = await self._blocking_security_findings(db, run_id=run.id)
+        await self._ensure_security_scan(db, run_id=run.id, patch_hash=patch_hash)
+        blocking_findings = await self._blocking_security_findings(db, run_id=run.id, patch_hash=patch_hash)
         if blocking_findings:
             raise ValueError("Run has blocking high or critical security findings.")
 
@@ -72,7 +75,6 @@ class DraftPullRequestService:
         issue = await db.get(Issue, run.issue_id) if run.issue_id else None
         repository = await db.get(Repository, issue.repository_id) if issue else None
         branch_name = self._branch_name(request=request, issue=issue, run=run)
-        patch_hash = await self._latest_patch_hash(db, run_id=run.id)
         body = request.body or await self._default_body(db, run=run, plan=plan)
         body_hash = self._body_hash(body)
         title = request.title or self._default_title(issue=issue)
@@ -108,6 +110,7 @@ class DraftPullRequestService:
             pr_number = int(real_write_evidence["pr_number"])
         pr = PullRequest(
             run_id=run.id,
+            repository_id=repository.id if repository else None,
             pr_number=pr_number,
             url=str(real_write_evidence.get("url") or self._pr_url(repository=repository, pr_number=pr_number)),
             status="draft",
@@ -122,7 +125,6 @@ class DraftPullRequestService:
             actor_type="agent",
             reason="Opening draft PR after validation and security gates.",
             metadata={"github_writes_enabled": runtime_settings.github_writes_enabled, "pr_number": pr_number},
-            allowed_from={AgentRunState.RUN_LOCAL_VALIDATION.value, AgentRunState.RUN_SECURITY_CHECKS.value},
         )
         db.add(
             AgentStep(
@@ -163,21 +165,41 @@ class DraftPullRequestService:
         mode = "real GitHub write" if real_write_evidence else "local draft PR record"
         return self._result(pr=pr, branch=branch, summary=f"Draft PR opened as {mode} with validation and security evidence.")
 
-    async def _ensure_security_scan(self, db: AsyncSession, *, run_id: UUID) -> None:
+    async def _ensure_security_scan(self, db: AsyncSession, *, run_id: UUID, patch_hash: str) -> None:
         result = await db.execute(
             select(AgentStep).where(AgentStep.run_id == run_id, AgentStep.step_name == AgentRunState.RUN_SECURITY_CHECKS.value)
         )
-        if result.scalars().first() is None:
+        current_scan = next(
+            (
+                step
+                for step in result.scalars().all()
+                if isinstance(step.output_json, dict)
+                and step.output_json.get("patch_hash") == patch_hash
+                and step.status == "succeeded"
+            ),
+            None,
+        )
+        if current_scan is None:
             await SecurityScanner().scan_run(db, run_id=run_id, request=SecurityScanRequest())
 
-    async def _has_passed_validation(self, db: AsyncSession, *, run_id: UUID) -> bool:
+    async def _has_passed_validation(self, db: AsyncSession, *, run_id: UUID, patch_hash: str) -> bool:
         result = await db.execute(select(ValidationResult).where(ValidationResult.run_id == run_id))
-        return any(validation.status == "passed" for validation in result.scalars().all())
+        return any(
+            validation.status == "passed" and validation.patch_hash == patch_hash
+            for validation in result.scalars().all()
+        )
 
-    async def _blocking_security_findings(self, db: AsyncSession, *, run_id: UUID) -> list[SecurityFinding]:
+    async def _blocking_security_findings(
+        self,
+        db: AsyncSession,
+        *,
+        run_id: UUID,
+        patch_hash: str,
+    ) -> list[SecurityFinding]:
         result = await db.execute(
             select(SecurityFinding).where(
                 SecurityFinding.run_id == run_id,
+                SecurityFinding.patch_hash == patch_hash,
                 SecurityFinding.status == "open",
                 SecurityFinding.severity.in_([SecuritySeverity.HIGH.value, SecuritySeverity.CRITICAL.value]),
             )
@@ -267,7 +289,7 @@ class DraftPullRequestService:
                 repo=repository.name,
                 branch_name=branch_name,
                 message=f"RepoPilot: {issue.title}",
-                changed_files=self._changed_file_contents(patch_payload),
+                changed_files=self._changed_file_contents(patch_payload, run_id=run.id),
             )
             pr_payload = await client.open_pull_request(
                 installation_id=installation.github_installation_id,
@@ -279,6 +301,12 @@ class DraftPullRequestService:
                 body=body,
                 draft=True,
             )
+        except GitHubIntegrationError as exc:
+            raise ValueError(f"Real GitHub PR creation failed: {exc}") from exc
+
+        issue_comment_posted = True
+        issue_comment_error: str | None = None
+        try:
             await client.comment_issue(
                 installation_id=installation.github_installation_id,
                 owner=repository.owner,
@@ -287,7 +315,16 @@ class DraftPullRequestService:
                 body=f"RepoPilot opened draft PR #{pr_payload.get('number')} with validation and security evidence.",
             )
         except GitHubIntegrationError as exc:
-            raise ValueError(f"Real GitHub PR creation failed: {exc}") from exc
+            issue_comment_posted = False
+            issue_comment_error = redact_text(str(exc))[:300]
+            await record_audit(
+                db,
+                actor_type="system",
+                action="draft_pr.issue_comment_failed",
+                entity_type="agent_run",
+                entity_id=str(run.id),
+                metadata={"error": issue_comment_error, "pr_number": pr_payload.get("number")},
+            )
 
         return {
             "base_sha": base_sha,
@@ -296,13 +333,39 @@ class DraftPullRequestService:
             "url": pr_payload.get("html_url") or pr_payload.get("url"),
             "patch_hash": patch_hash,
             "body_hash": body_hash,
+            "issue_comment_posted": issue_comment_posted,
+            "issue_comment_error": issue_comment_error,
         }
 
     def _looks_like_commit_sha(self, value: str | None) -> bool:
         return bool(value and re.fullmatch(r"[0-9a-fA-F]{40}", value))
 
-    def _changed_file_contents(self, patch_payload: dict[str, object]) -> list[dict[str, str | None]]:
-        workspace = Path(str(patch_payload.get("working_workspace_path") or "")).expanduser()
+    def _changed_file_contents(
+        self,
+        patch_payload: dict[str, object],
+        *,
+        run_id: UUID,
+    ) -> list[dict[str, str | None]]:
+        from app.services.tools.registry import _is_sensitive_workspace_path, _isolated_workspace, _workspace_diff_payload
+
+        workspace = _isolated_workspace(run_id, str(patch_payload.get("working_workspace_path") or ""))
+        current_diff = _workspace_diff_payload(workspace)
+        expected_patch_hash = str(patch_payload.get("patch_hash") or "")
+        if not expected_patch_hash or current_diff.get("patch_hash") != expected_patch_hash:
+            raise ValueError("Run workspace changed after validation; generate and validate a fresh patch before GitHub writes.")
+        expected_paths = {
+            str(change.get("path") or "")
+            for change in patch_payload.get("changed_files", [])
+            if isinstance(change, dict) and change.get("path")
+        }
+        actual_paths = {
+            str(change.get("path") or "")
+            for change in current_diff.get("changed_files", [])
+            if isinstance(change, dict) and change.get("path")
+        }
+        if expected_paths != actual_paths:
+            raise ValueError("Run workspace changed-file manifest no longer matches the validated patch.")
+
         changed_files: list[dict[str, str | None]] = []
         for change in patch_payload.get("changed_files", []):
             if not isinstance(change, dict):
@@ -310,9 +373,28 @@ class DraftPullRequestService:
             path = str(change.get("path") or "")
             if not path:
                 continue
-            candidate = workspace / path
-            content = candidate.read_text(encoding="utf-8", errors="ignore") if candidate.is_file() else None
-            changed_files.append({"path": path, "content": content})
+            relative = PurePosixPath(path.replace("\\", "/"))
+            if relative.is_absolute() or ".." in relative.parts or _is_sensitive_workspace_path(relative.as_posix()):
+                raise ValueError(f"Validated patch contains an unsafe GitHub write path: {path}")
+            unresolved = workspace / relative.as_posix()
+            if unresolved.is_symlink():
+                raise ValueError(f"Validated patch path is not a regular file: {path}")
+            candidate = unresolved.resolve(strict=False)
+            if candidate != workspace and not candidate.is_relative_to(workspace):
+                raise ValueError(f"Validated patch path escaped the run workspace: {path}")
+            if not candidate.exists():
+                changed_files.append({"path": relative.as_posix(), "content": None, "mode": "100644"})
+                continue
+            if not candidate.is_file() or candidate.is_symlink():
+                raise ValueError(f"Validated patch path is not a regular file: {path}")
+            if candidate.stat().st_size > 2_000_000:
+                raise ValueError(f"Validated patch file exceeds the GitHub write size limit: {path}")
+            try:
+                content = candidate.read_text(encoding="utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValueError(f"Binary GitHub writes are not supported by this patch workflow: {path}") from exc
+            mode = "100755" if candidate.stat().st_mode & 0o111 else "100644"
+            changed_files.append({"path": relative.as_posix(), "content": content, "mode": mode})
         if not changed_files:
             raise ValueError("Real GitHub PR creation requires changed files in the latest patch payload.")
         return changed_files

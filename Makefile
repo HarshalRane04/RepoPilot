@@ -4,16 +4,17 @@ PYTHON ?= python3
 PROVIDER ?= openrouter
 MODEL ?= gemma-4-31b-it:free
 TASK_COUNT ?= 5
+PROVIDER_REPORT_SUFFIX ?=
 API_KEY_ENV ?=
 BASE_URL ?=
 LOCAL_RUNTIME_SECRET_ENV = REPOPILOT_RUNTIME_SECRETS_KEY_PATH=.local/repopilot-secrets/runtime-secrets.key REPOPILOT_RUNTIME_SECRETS_STORE_PATH=.local/repopilot-secrets/runtime-secrets.json
 
-.PHONY: init-local-env start-local bootstrap up down logs migrate migration-verify api-test web-typecheck ui-truth-guard sandbox-image ghcr-config ghcr-pull ghcr-up ghcr-start-local ghcr-down ghcr-logs ghcr-migrate configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval provider-applied-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke credential-smoke credential-smoke-strict source-boundary-manifest readiness-snapshot security-scanner-snapshot security-scanner-snapshot-strict release-gifs release-hygiene release-hygiene-strict deployment-validate deployment-validate-strict deployment-smoke deployment-smoke-strict release-verify
+.PHONY: init-local-env start-local bootstrap up down logs migrate migration-verify api-test api-lint web-typecheck web-build ui-truth-guard sandbox-image ghcr-config ghcr-pull ghcr-up ghcr-start-local ghcr-down ghcr-logs ghcr-migrate configure-runtime-secrets eval-report provider-planning-eval provider-retrieval-eval provider-patch-eval provider-applied-patch-eval model-provider-smoke github-app-smoke github-oauth-smoke credential-smoke credential-smoke-strict source-boundary-manifest readiness-snapshot security-scanner-snapshot security-scanner-snapshot-strict release-gifs release-hygiene release-hygiene-strict deployment-validate deployment-validate-strict deployment-smoke deployment-smoke-strict release-verify
 
 init-local-env:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/init_local_env.py
 
-start-local: init-local-env up migrate sandbox-image
+start-local: init-local-env up migrate
 	@printf "\nRepoPilot local stack is ready.\n"
 	@printf "Dashboard: http://localhost:3001\n"
 	@printf "API health: http://localhost:8000/health\n"
@@ -37,16 +38,41 @@ migration-verify:
 	$(COMPOSE) exec api python -m app.db.migration_verifier
 
 api-test:
-	$(COMPOSE) exec api pytest
+	$(COMPOSE) run --rm --no-deps \
+		-v "$(CURDIR):/workspace:ro" \
+		-w /workspace \
+		-e HOME=/tmp \
+		-e PYTHONDONTWRITEBYTECODE=1 \
+		-e PYTHONPYCACHEPREFIX=/tmp/pycache \
+		-e PYTHONPATH=/workspace:/workspace/apps/api:/workspace/packages/shared_contracts:/workspace/packages/evals:/workspace/packages/policy_engine:/workspace/packages/llm_client:/workspace/packages/github_client \
+		-e MODEL_PROVIDER=mock \
+		-e MODEL_NAME=mock-planner \
+		-e EMBEDDING_PROVIDER=mock \
+		-e EMBEDDING_MODEL=mock-embedding \
+		-e REPOPILOT_RUNTIME_SECRETS_KEY_PATH=/tmp/missing-runtime-secrets.key \
+		-e REPOPILOT_RUNTIME_SECRETS_STORE_PATH=/tmp/missing-runtime-secrets.json \
+		sandbox-runner pytest -p no:cacheprovider apps/api/tests
+
+api-lint:
+	$(COMPOSE) run --rm --no-deps \
+		-v "$(CURDIR):/workspace:ro" \
+		-w /workspace \
+		-e RUFF_CACHE_DIR=/tmp/ruff-cache \
+		sandbox-runner ruff check apps/api/app apps/api/tests packages services/sandbox_runner
 
 web-typecheck:
 	$(COMPOSE) exec web npm run typecheck
+
+# Build the production runner image without replacing the live development
+# server's shared `.next` volume.
+web-build:
+	docker build --target runner -t repopilot-web:verify -f apps/web/Dockerfile .
 
 ui-truth-guard:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/ui_truth_guard.py
 
 sandbox-image:
-	$(COMPOSE) --profile tools build sandbox-image
+	$(COMPOSE) build sandbox-runner
 
 ghcr-config: init-local-env
 	$(COMPOSE_GHCR) config --quiet
@@ -79,16 +105,16 @@ eval-report:
 	env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=packages/evals:packages/shared_contracts uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.report --out-dir Docs/eval-reports --report-name v1-local-latest --allow-failed-gates
 
 provider-planning-eval:
-	env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-planning --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
+	env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-planning$(PROVIDER_REPORT_SUFFIX) --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
 
 provider-retrieval-eval:
-	env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_retrieval_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-retrieval --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
+	env PYTHONDWRITEBYTECODE=1 PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_retrieval_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-retrieval$(PROVIDER_REPORT_SUFFIX) --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
 
 provider-patch-eval:
-	env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_patch_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-patch --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
+	env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_patch_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-patch$(PROVIDER_REPORT_SUFFIX) --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
 
 provider-applied-patch-eval:
-	env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_applied_patch_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-applied-patch --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
+	env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=packages/evals:packages/shared_contracts:packages/llm_client $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python -m repopilot_evals.provider_applied_patch_harness --provider $(PROVIDER) --model $(MODEL) --task-count $(TASK_COUNT) --out-dir Docs/eval-reports --report-name v1-provider-applied-patch$(PROVIDER_REPORT_SUFFIX) --allow-failed-gates $(if $(API_KEY_ENV),--api-key-env $(API_KEY_ENV),) $(if $(BASE_URL),--base-url $(BASE_URL),)
 
 model-provider-smoke:
 	PYTHONDONTWRITEBYTECODE=1 $(LOCAL_RUNTIME_SECRET_ENV) uv run --with-requirements apps/api/requirements.txt python scripts/model_provider_smoke.py --allow-blocked
@@ -112,10 +138,10 @@ readiness-snapshot:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/readiness_snapshot.py
 
 security-scanner-snapshot:
-	PYTHONDONTWRITEBYTECODE=1 SEMGREP_ENABLED=true DEPENDENCY_AUDIT_ENABLED=true CODEQL_ENABLED=true uv run --with semgrep --with pip-audit python scripts/security_scanner_snapshot.py --allow-warnings --allow-blockers
+	PYTHONDONTWRITEBYTECODE=1 SEMGREP_ENABLED=true DEPENDENCY_AUDIT_ENABLED=true CODEQL_ENABLED=true uv run --with semgrep --with pip-audit --with-requirements apps/api/requirements.txt python scripts/security_scanner_snapshot.py --allow-warnings --allow-blockers
 
 security-scanner-snapshot-strict:
-	PYTHONDONTWRITEBYTECODE=1 SEMGREP_ENABLED=true DEPENDENCY_AUDIT_ENABLED=true CODEQL_ENABLED=true uv run --with semgrep --with pip-audit python scripts/security_scanner_snapshot.py
+	PYTHONDONTWRITEBYTECODE=1 SEMGREP_ENABLED=true DEPENDENCY_AUDIT_ENABLED=true CODEQL_ENABLED=true uv run --with semgrep --with pip-audit --with-requirements apps/api/requirements.txt python scripts/security_scanner_snapshot.py
 
 release-gifs:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/release_gifs.py

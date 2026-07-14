@@ -19,6 +19,10 @@ class GitHubOAuthError(RuntimeError):
     pass
 
 
+class GitHubOAuthAuthorizationError(GitHubOAuthError):
+    """Raised when a valid GitHub identity is not allowed into this workspace."""
+
+
 @dataclass(frozen=True)
 class GitHubOAuthProfile:
     github_user_id: str
@@ -125,21 +129,11 @@ class GitHubOAuthService:
         *,
         profile: GitHubOAuthProfile,
         repositories: list[dict[str, Any]],
+        user: User | None = None,
     ) -> Installation:
-        user = await db.scalar(select(User).where(User.github_user_id == profile.github_user_id))
-        if user is None:
-            user = User(
-                github_user_id=profile.github_user_id,
-                username=profile.username,
-                email=profile.email,
-                role="owner",
-            )
-            db.add(user)
-            await db.flush()
-        else:
-            user.username = profile.username
-            user.email = profile.email or user.email
-            user.role = user.role or "owner"
+        user = user or await self.authorize_profile(db, profile=profile)
+        user.username = profile.username
+        user.email = profile.email or user.email
 
         installation = await db.scalar(
             select(Installation).where(Installation.github_installation_id == f"oauth:{profile.github_user_id}")
@@ -191,6 +185,51 @@ class GitHubOAuthService:
         )
         await db.commit()
         return installation
+
+    async def authorize_profile(self, db: AsyncSession, *, profile: GitHubOAuthProfile) -> User:
+        """Resolve an OAuth identity without granting owner access to arbitrary signers.
+
+        An explicit owner login is the production-safe path. For local-first installs,
+        the first GitHub identity may bootstrap the workspace; later unknown identities
+        are denied until an administrator provisions a real membership model.
+        """
+
+        configured_owner = (self.config.github_owner_login or "").strip().casefold()
+        if configured_owner and profile.username.casefold() != configured_owner:
+            raise GitHubOAuthAuthorizationError(
+                f"GitHub user '{profile.username}' is not authorized for this RepoPilot workspace."
+            )
+
+        user = await db.scalar(select(User).where(User.github_user_id == profile.github_user_id))
+        if user is not None:
+            user.username = profile.username
+            user.email = profile.email or user.email
+            return user
+
+        existing_oauth_user = await db.scalar(select(User).where(User.github_user_id.is_not(None)).limit(1))
+        if existing_oauth_user is not None:
+            raise GitHubOAuthAuthorizationError(
+                "This RepoPilot workspace already has an OAuth owner; ask that owner to provision access."
+            )
+
+        user = User(
+            github_user_id=profile.github_user_id,
+            username=profile.username,
+            email=profile.email,
+            role="owner",
+        )
+        db.add(user)
+        await db.flush()
+        await record_audit(
+            db,
+            actor_type="github",
+            actor_id=profile.username,
+            action="github.oauth.owner_bootstrapped",
+            entity_type="user",
+            entity_id=str(user.id),
+            metadata={"configured_owner": bool(configured_owner)},
+        )
+        return user
 
     def _headers(self, token: str) -> dict[str, str]:
         return {

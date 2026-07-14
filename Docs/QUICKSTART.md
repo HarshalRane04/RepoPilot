@@ -64,9 +64,10 @@ Open:
 
 - Dashboard: `http://localhost:3001`
 - API health: `http://localhost:8000/health`
+- API component readiness: `http://localhost:8000/ready`
 - API docs: `http://localhost:8000/docs`
 
-Local prompt/demo mode does not require live GitHub writes. Use the dashboard Prompt view to submit a prompt, create a local tracked issue/run, review the generated plan, approve it, execute sandbox validation, and inspect the local PR record. Real GitHub branches and draft PRs stay disabled until the Settings readiness checks and write smoke are proven.
+Local prompt/demo mode does not require live GitHub writes. Use the dashboard New Task view to submit a task, review and approve its generated plan, then run the approved workflow through implementation, sandbox validation, security, and a local draft-PR record in one action. Real GitHub branches and draft PRs stay disabled until Settings readiness and a disposable-repository write smoke are proven.
 
 ## 3. Check Local Readiness
 
@@ -129,6 +130,10 @@ Use local developer targets while credentials are absent:
 
 ```bash
 make source-boundary-manifest
+make api-lint
+make api-test
+make web-typecheck
+make web-build
 make release-hygiene
 make security-scanner-snapshot
 make deployment-smoke

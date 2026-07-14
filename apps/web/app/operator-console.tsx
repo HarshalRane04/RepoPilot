@@ -4,7 +4,6 @@ import {
   AlertCircle,
   AlertTriangle,
   BarChart3,
-  Bell,
   Bot,
   Box,
   Check,
@@ -44,8 +43,41 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  SETTINGS_TABS,
+  activityNavigationTarget,
+  activeRefreshKeys,
+  boundedSearchQuery,
+  ciAnalysisConclusion,
+  completedRunStatistics,
+  consoleHash,
+  dashboardAttentionRecords,
+  dashboardNavigationTarget,
+  dispatchIssueQueueAction,
+  evaluationEvidenceModel,
+  formatUsd,
+  formatUsdPerToken,
+  issueQueueAction,
+  issueQueueMutation,
+  isCommandSearchShortcut,
+  latestRepositoryIndexTimestamp,
+  parseStoredChecklist,
+  parseConsoleHash,
+  providerHasConfiguredApiKey,
+  reviewChecklistStorageKey,
+  repositoryMatchesId,
+  securityEvidencePresentation,
+  validationEvidencePresentation,
+  viewSupportsSearch,
+  type ConsoleRoute,
+  type SettingsTab,
+  type View
+} from "./lib/operator-console-state.ts";
 import type {
   ActivityItem,
+  ActivitySummaryResponse,
+  AgentRunDetailResponse,
+  AuditLogPage,
   EvalReport,
   GitHubAppConfigStatus,
   GitHubAppVerificationResponse,
@@ -53,42 +85,21 @@ import type {
   GitHubLoginResponse,
   InstallationResponse,
   IssueResponse,
-  MetricsResponse,
   ModelCatalogModel,
   ModelCatalogResponse,
   ModelProviderConfigStatus,
   ModelProviderVerificationResponse,
   OperatorData,
   PolicyResponse,
+  PromptSubmitPayload,
+  PromptSubmitResponse,
   PullRequestSummary,
   ReadinessResponse,
   RepositoryResponse,
   RunSummary,
   SecurityFindingResponse,
   SessionResponse,
-  WebhookEvent
 } from "../lib/api";
-
-type View =
-  | "landing"
-  | "connect"
-  | "setup"
-  | "dashboard"
-  | "repositories"
-  | "repository-detail"
-  | "issues"
-  | "issue-detail"
-  | "agent-runs"
-  | "run-trace"
-  | "pull-requests"
-  | "pull-request-detail"
-  | "ci-debugger"
-  | "security"
-  | "security-detail"
-  | "evaluations"
-  | "audit-logs"
-  | "settings"
-  | "profile";
 
 type TraceData = {
   run?: {
@@ -97,6 +108,7 @@ type TraceData = {
     model_used: string | null;
     total_tokens: number;
     total_cost: number;
+    cost_currency?: "USD";
     started_at: string;
     completed_at: string | null;
   };
@@ -109,6 +121,19 @@ type TraceData = {
   }>;
   validation_results?: PullRequestSummary["validation_results"];
   security_findings?: PullRequestSummary["security_findings"];
+  artifacts?: Array<{
+    id: string;
+    artifact_type: string;
+    storage_backend: string;
+    sha256: string;
+    byte_size: number;
+    content_type: string;
+    metadata: Record<string, unknown>;
+    created_at: string;
+    deleted_at: string | null;
+    available: boolean;
+    download_url: string;
+  }>;
   pull_requests?: Array<{
     id: string;
     number: number;
@@ -141,15 +166,18 @@ type TraceData = {
 
 type ConsoleState = OperatorData;
 
-type GitHubOAuthConfigPayload = {
+type GitHubOAuthConfigForm = {
   github_client_id: string;
   github_client_secret: string;
+  github_owner_login: string;
   session_secret_key: string;
   github_oauth_callback_url: string;
   web_app_url: string;
   github_api_base_url: string;
   github_web_base_url: string;
 };
+
+type GitHubOAuthConfigPayload = Partial<GitHubOAuthConfigForm>;
 
 type GitHubAppConfigPayload = {
   github_webhook_secret?: string;
@@ -182,20 +210,38 @@ type IssueRiskFilter = "all" | "low" | "medium" | "high";
 type PrStatusFilter = "all" | "draft" | "ready_for_review" | "blocked";
 type PrCiFilter = "all" | "passed" | "failed" | "unknown";
 type PrSecurityFilter = "all" | "passed" | "open";
-type AuditStatusFilter = "all" | "success" | "warning" | "failed";
-type AuditRiskFilter = "all" | "low" | "medium" | "high";
+type AuditStatusFilter = "all" | "recorded" | "success" | "warning" | "failed";
+type AuditRiskFilter = "all" | "unknown" | "low" | "medium" | "high";
 
-const navItems: Array<{ view: View; label: string; icon: LucideIcon }> = [
-  { view: "dashboard", label: "Dashboard", icon: Home },
-  { view: "repositories", label: "Repositories", icon: Database },
-  { view: "issues", label: "Issues", icon: AlertCircle },
-  { view: "agent-runs", label: "Agent Runs", icon: Bot },
-  { view: "pull-requests", label: "Pull Requests", icon: GitBranch },
-  { view: "security", label: "Security", icon: Shield },
-  { view: "evaluations", label: "Evaluations", icon: BarChart3 },
-  { view: "audit-logs", label: "Audit Logs", icon: FileText },
-  { view: "settings", label: "Settings", icon: Settings }
+const navGroups: Array<{ label: string; items: Array<{ view: View; label: string; icon: LucideIcon }> }> = [
+  {
+    label: "Work",
+    items: [
+      { view: "dashboard", label: "Overview", icon: Home },
+      { view: "new-task", label: "New task", icon: Sparkles },
+      { view: "issues", label: "Tasks", icon: AlertCircle },
+      { view: "agent-runs", label: "Runs", icon: Bot }
+    ]
+  },
+  {
+    label: "Evidence",
+    items: [
+      { view: "pull-requests", label: "Reviews", icon: GitBranch },
+      { view: "security", label: "Security", icon: Shield }
+    ]
+  },
+  {
+    label: "System",
+    items: [
+      { view: "repositories", label: "Repositories", icon: Database },
+      { view: "evaluations", label: "Evaluations", icon: BarChart3 },
+      { view: "audit-logs", label: "Audit trail", icon: FileText },
+      { view: "settings", label: "Settings", icon: Settings }
+    ]
+  }
 ];
+
+const navItems = navGroups.flatMap((group) => group.items);
 
 const stateOrder = [
   "NEW_EVENT",
@@ -216,19 +262,43 @@ const stateOrder = [
   "READY_FOR_REVIEW"
 ];
 
-const issueColumns = [
-  "needs_info",
-  "agent_ready",
-  "planning",
-  "wait_for_approval",
-  "in_progress",
-  "pr_opened",
-  "blocked"
+const issueBoardColumns = [
+  { key: "needs-info", label: "Needs info", states: ["needs_info"] },
+  { key: "ready", label: "Ready", states: ["agent_ready", "planning"] },
+  { key: "approval", label: "Approval", states: ["wait_for_approval"] },
+  { key: "execution", label: "Execution & review", states: ["in_progress", "pr_opened"] },
+  { key: "blocked", label: "Blocked", states: ["blocked"] }
 ];
 
-const settingsTabs = ["GitHub", "Models", "Policies", "Tool Permissions", "Cost Limits", "Notifications", "Display"] as const;
-type SettingsTab = typeof settingsTabs[number];
 type MotionPreference = "no" | "reduced" | "standard" | "enhanced";
+type TextDialogRequest = {
+  title: string;
+  description: string;
+  label: string;
+  defaultValue: string;
+  submitLabel: string;
+  minLength?: number;
+  multiline?: boolean;
+  choice?: {
+    label: string;
+    defaultValue: string;
+    options: Array<{ value: string; label: string }>;
+  };
+  onSubmit: (value: string, choice?: string) => Promise<void>;
+};
+type DetailRouteStatus = "idle" | "loading" | "ready" | "missing" | "not-found" | "error";
+type ModelCatalogLoadStatus = "idle" | "loading" | "ready" | "error";
+
+class ApiRequestError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
 const useBrowserLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: OperatorData; apiBaseUrl: string }) {
@@ -237,12 +307,16 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pendingRunAction, setPendingRunAction] = useState<string | null>(null);
+  const pendingRunActionRef = useRef<string | null>(null);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
   const [selectedRepoId, setSelectedRepoId] = useState(initialData.repositories[0]?.id ?? "");
   const [selectedIssueId, setSelectedIssueId] = useState(initialData.issues[0]?.id ?? "");
   const [selectedRunId, setSelectedRunId] = useState(initialData.runs[0]?.id ?? "");
   const [selectedPrId, setSelectedPrId] = useState(initialData.pullRequests[0]?.pr_id ?? "");
   const [selectedFindingId, setSelectedFindingId] = useState(initialData.securityFindings[0]?.id ?? "");
+  const [routeEntityId, setRouteEntityId] = useState<string | null>(null);
+  const [detailRouteStatus, setDetailRouteStatus] = useState<DetailRouteStatus>("idle");
   const [trace, setTrace] = useState<TraceData | null>(null);
   const [traceTab, setTraceTab] = useState<"timeline" | "tools" | "prompts" | "artifacts" | "audit">("timeline");
   const [issuesMode, setIssuesMode] = useState<"board" | "queue">("board");
@@ -252,6 +326,7 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
   const [selectedAuditKey, setSelectedAuditKey] = useState("");
   const [modelVerification, setModelVerification] = useState<ModelProviderVerificationResponse | null>(null);
   const [githubAppVerification, setGithubAppVerification] = useState<GitHubAppVerificationResponse | null>(null);
+  const [modelCatalogLoadStatus, setModelCatalogLoadStatus] = useState<ModelCatalogLoadStatus>(initialData.modelCatalog ? "ready" : "idle");
   const [repoStatusFilter, setRepoStatusFilter] = useState<RepoStatusFilter>("all");
   const [issueRepositoryFilter, setIssueRepositoryFilter] = useState("all");
   const [issueRiskFilter, setIssueRiskFilter] = useState<IssueRiskFilter>("all");
@@ -265,6 +340,17 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
   const [auditStatusFilter, setAuditStatusFilter] = useState<AuditStatusFilter>("all");
   const [auditRiskFilter, setAuditRiskFilter] = useState<AuditRiskFilter>("all");
   const [motionPreference, setMotionPreference] = useState<MotionPreference>("standard");
+  const [textDialog, setTextDialog] = useState<TextDialogRequest | null>(null);
+  const [textDialogValue, setTextDialogValue] = useState("");
+  const [textDialogChoice, setTextDialogChoice] = useState("");
+  const [textDialogError, setTextDialogError] = useState<string | null>(null);
+  const [isTextDialogSubmitting, setIsTextDialogSubmitting] = useState(false);
+  const dataRef = useRef(data);
+  const activeRouteKeyRef = useRef("");
+  const activeRefreshContextRef = useRef("");
+  const commandSearchRef = useRef<HTMLInputElement>(null);
+  const modelCatalogRequestRef = useRef<Promise<ModelCatalogResponse> | null>(null);
+  dataRef.current = data;
 
   useBrowserLayoutEffect(() => {
     const stored = window.localStorage.getItem("repopilot-motion");
@@ -283,20 +369,52 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
     window.localStorage.setItem("repopilot-motion", motionPreference);
   }, [motionPreference]);
 
-  const selectedRepo = data.repositories.find((repo) => repo.id === selectedRepoId) ?? data.repositories[0] ?? null;
-  const selectedIssue = data.issues.find((issue) => issue.id === selectedIssueId) ?? data.issues[0] ?? null;
-  const selectedRun = data.runs.find((run) => run.id === selectedRunId) ?? data.runs[0] ?? null;
-  const selectedPr = data.pullRequests.find((pr) => pr.pr_id === selectedPrId) ?? data.pullRequests[0] ?? null;
-  const selectedFinding = data.securityFindings.find((finding) => finding.id === selectedFindingId) ?? data.securityFindings[0] ?? null;
+  useEffect(() => {
+    setQuery("");
+  }, [view]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isCommandSearchShortcut(event) || !viewSupportsSearch(view)) return;
+      event.preventDefault();
+      commandSearchRef.current?.focus();
+      commandSearchRef.current?.select();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [view]);
+
+  const selectedRepo = data.repositories.find((repo) => repositoryMatchesId(repo, selectedRepoId)) ?? null;
+  const selectedIssue = data.issues.find((issue) => issue.id === selectedIssueId) ?? null;
+  const selectedRun = data.runs.find((run) => run.id === selectedRunId) ?? null;
+  const selectedPr = data.pullRequests.find((pr) => pr.pr_id === selectedPrId) ?? null;
+  const selectedFinding = data.securityFindings.find((finding) => finding.id === selectedFindingId) ?? null;
+  const shellRun = data.runs.find((run) => !isTerminalRunState(run.state)) ?? null;
+  const shellIssue = shellRun ? data.issues.find((issue) => issue.id === shellRun.issue_id) ?? null : null;
   const setup = useMemo(() => setupState(data), [data]);
 
   useBrowserLayoutEffect(() => {
     const syncHash = () => {
-      const nextView = parseHash(window.location.hash);
-      setView(nextView);
-      const nextSettingsTab = parseSettingsTab(window.location.hash);
-      if (nextSettingsTab) {
-        setSettingsTab(nextSettingsTab);
+      const route = parseConsoleHash(window.location.hash);
+      const routeKey = `${route.view}:${route.entityId ?? ""}`;
+      activeRouteKeyRef.current = routeKey;
+      setView(route.view);
+      setRouteEntityId(route.entityId);
+      if (route.settingsTab) {
+        setSettingsTab(route.settingsTab);
+      }
+      selectRouteEntity(route);
+      if (isEntityRoute(route)) {
+        if (!route.entityId) {
+          setDetailRouteStatus("missing");
+        } else if (routeEntityExists(dataRef.current, route)) {
+          setDetailRouteStatus("ready");
+        } else {
+          setDetailRouteStatus("loading");
+          void hydrateDetailRoute(route, routeKey);
+        }
+      } else {
+        setDetailRouteStatus("idle");
       }
       const hashQueryIndex = window.location.hash.indexOf("?");
       if (hashQueryIndex >= 0) {
@@ -318,65 +436,143 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
     return () => window.removeEventListener("hashchange", syncHash);
   }, []);
 
+  function selectRouteEntity(route: ConsoleRoute) {
+    if (route.view === "repository-detail") setSelectedRepoId(route.entityId ?? "");
+    if (route.view === "issue-detail") setSelectedIssueId(route.entityId ?? "");
+    if ((route.view === "agent-runs" || route.view === "run-trace") && route.entityId) setSelectedRunId(route.entityId);
+    if (route.view === "run-trace" && !route.entityId) setSelectedRunId("");
+    if (route.view === "pull-request-detail") setSelectedPrId(route.entityId ?? "");
+    if (route.view === "security-detail") setSelectedFindingId(route.entityId ?? "");
+  }
+
+  async function hydrateDetailRoute(route: ConsoleRoute, routeKey: string) {
+    const entityId = route.entityId;
+    if (!entityId) return;
+    try {
+      if (route.view === "repository-detail") {
+        const repository = await fetchJson<RepositoryResponse>(`/repos/${encodeURIComponent(entityId)}`);
+        setData((current) => ({ ...current, repositories: upsertRepository(current.repositories, repository) }));
+      } else if (route.view === "issue-detail") {
+        const issue = await fetchJson<IssueResponse>(`/issues/${encodeURIComponent(entityId)}`);
+        setData((current) => ({ ...current, issues: upsertBy(current.issues, issue, (item) => item.id) }));
+      } else if (route.view === "agent-runs" || route.view === "run-trace") {
+        const run = await fetchJson<AgentRunDetailResponse>(`/runs/${encodeURIComponent(entityId)}`);
+        const latestStep = run.steps.at(-1) ?? null;
+        const summary: RunSummary = {
+          id: run.id,
+          issue_id: run.issue_id,
+          plan_id: run.plan_id,
+          state: run.state,
+          model_used: run.model_used,
+          total_tokens: run.total_tokens,
+          total_cost: run.total_cost,
+          started_at: run.started_at,
+          completed_at: run.completed_at,
+          latest_step: latestStep?.step_name ?? null,
+          latest_step_status: latestStep?.status ?? null,
+          validation_statuses: run.validation_results.map((result) => result.status)
+        };
+        setData((current) => ({ ...current, runs: upsertBy(current.runs, summary, (item) => item.id) }));
+      } else if (route.view === "pull-request-detail") {
+        const pr = await fetchJson<PullRequestSummary>(`/prs/${encodeURIComponent(entityId)}/summary`);
+        setData((current) => ({ ...current, pullRequests: upsertBy(current.pullRequests, pr, (item) => item.pr_id) }));
+      } else if (route.view === "security-detail") {
+        const finding = await fetchJson<SecurityFindingResponse>(`/security/findings/${encodeURIComponent(entityId)}`);
+        setData((current) => ({ ...current, securityFindings: upsertBy(current.securityFindings, finding, (item) => item.id) }));
+      }
+      if (activeRouteKeyRef.current === routeKey) setDetailRouteStatus("ready");
+    } catch (error) {
+      if (activeRouteKeyRef.current !== routeKey) return;
+      setDetailRouteStatus(error instanceof ApiRequestError && [404, 422].includes(error.status) ? "not-found" : "error");
+    }
+  }
+
   useEffect(() => {
     const timer = window.setInterval(() => {
-      void refresh({ quiet: true });
-    }, 20000);
+      void refresh({ quiet: true, activeOnly: true });
+    }, 30000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [settingsTab, view]);
+
+  useEffect(() => {
+    const context = `${view}:${settingsTab}`;
+    if (!activeRefreshContextRef.current) {
+      activeRefreshContextRef.current = context;
+      return;
+    }
+    if (activeRefreshContextRef.current !== context) {
+      activeRefreshContextRef.current = context;
+      void refresh({ quiet: true, activeOnly: true });
+    }
+  }, [settingsTab, view]);
+
+  useEffect(() => {
+    if (view === "audit-logs" && data.auditLogPage === null) {
+      void refresh({ quiet: true, activeOnly: true });
+    }
+  }, [data.auditLogPage, view]);
+
+  useEffect(() => {
+    if (view === "settings" && settingsTab === "Models" && modelCatalogLoadStatus === "idle") {
+      void refresh({ quiet: true, activeOnly: true });
+    }
+  }, [modelCatalogLoadStatus, settingsTab, view]);
+
+  useEffect(() => {
+    document.getElementById("main-content")?.scrollTo({ top: 0, behavior: "auto" });
+  }, [selectedFindingId, selectedIssueId, selectedPrId, selectedRepoId, selectedRunId, settingsTab, view]);
 
   useEffect(() => {
     if ((view === "agent-runs" || view === "run-trace") && selectedRun?.id) {
       void loadTrace(selectedRun.id);
     }
-  }, [selectedRun?.id, view]);
+  }, [selectedRun?.id, selectedRun?.latest_step, selectedRun?.latest_step_status, selectedRun?.state, view]);
 
-  async function refresh(options?: { quiet?: boolean }) {
+  async function refresh(options?: { quiet?: boolean; activeOnly?: boolean }) {
     if (!options?.quiet) {
       setIsRefreshing(true);
       setNotice(null);
     }
     try {
-      const next = await Promise.all([
-        fetchJson<SessionResponse>("/auth/session"),
-        fetchJson<MetricsResponse>("/metrics/overview"),
-        fetchJson<WebhookEvent[]>("/webhooks/events"),
-        fetchJson<RepositoryResponse[]>("/repos"),
-        fetchJson<InstallationResponse[]>("/installations"),
-        fetchJson<IssueResponse[]>("/issues?limit=300"),
-        fetchJson<PullRequestSummary[]>("/prs?limit=200"),
-        fetchJson<SecurityFindingResponse[]>("/security/findings?limit=300"),
-        fetchJson<ActivityItem[]>("/activity?limit=160"),
-        fetchJson<RunSummary[]>("/runs?limit=80"),
-        fetchJson<{ reports: EvalReport[] }>("/evals/reports"),
-        fetchJson<ReadinessResponse>("/settings/readiness"),
-        fetchJson<PolicyResponse>("/settings/policy"),
-        fetchJson<GitHubOAuthConfigStatus>("/settings/github/oauth"),
-        fetchJson<GitHubAppConfigStatus>("/settings/github/app"),
-        fetchJson<ModelCatalogResponse>("/settings/models/catalog"),
-        fetchJson<ModelProviderConfigStatus>("/settings/models/config")
-      ]);
-      setData((current) => ({
-        ...current,
-        session: next[0],
-        metrics: next[1],
-        events: next[2],
-        repositories: next[3],
-        installations: next[4],
-        issues: next[5],
-        pullRequests: next[6],
-        securityFindings: next[7],
-        activities: next[8],
-        runs: next[9],
-        evalReports: next[10].reports,
-        readiness: next[11],
-        policy: next[12],
-        githubOAuthConfig: next[13],
-        githubAppConfig: next[14],
-        modelCatalog: next[15],
-        modelConfig: next[16]
-      }));
+      const wanted = options?.activeOnly === false ? null : activeRefreshKeys(view, settingsTab);
+      const wants = (key: keyof ConsoleState) => wanted === null || wanted.has(key);
+      const requests: Array<Promise<Partial<ConsoleState>>> = [];
+      const add = <K extends keyof ConsoleState>(key: K, request: () => Promise<ConsoleState[K]>) => {
+        if (wants(key)) {
+          requests.push(request().then((value) => ({ [key]: value }) as Pick<ConsoleState, K>));
+        }
+      };
+      add("session", () => fetchJson<SessionResponse>("/auth/session"));
+      add("repositories", () => fetchJson<RepositoryResponse[]>("/repos"));
+      add("installations", () => fetchJson<InstallationResponse[]>("/installations"));
+      add("issues", () => fetchJson<IssueResponse[]>("/issues?limit=300"));
+      add("pullRequests", () => fetchJson<PullRequestSummary[]>("/prs?limit=200"));
+      add("securityFindings", () => fetchJson<SecurityFindingResponse[]>("/security/findings?limit=300"));
+      add("activities", () => fetchJson<ActivityItem[]>("/activity?limit=20"));
+      add("auditLogPage", () => fetchJson<AuditLogPage>("/activity/audit?limit=500&offset=0"));
+      add("activitySummary", () => fetchJson<ActivitySummaryResponse>("/activity/summary"));
+      add("runs", () => fetchJson<RunSummary[]>("/runs?limit=80"));
+      add("evalReports", () => fetchJson<{ reports: EvalReport[] }>("/evals/reports").then((result) => result.reports));
+      add("readiness", () => fetchJson<ReadinessResponse>("/settings/readiness"));
+      add("policy", () => fetchJson<PolicyResponse>("/settings/policy"));
+      add("githubOAuthConfig", () => fetchJson<GitHubOAuthConfigStatus>("/settings/github/oauth"));
+      add("githubAppConfig", () => fetchJson<GitHubAppConfigStatus>("/settings/github/app"));
+      add("modelCatalog", requestModelCatalog);
+      add("modelConfig", () => fetchJson<ModelProviderConfigStatus>("/settings/models/config"));
+      const settled = await Promise.allSettled(requests);
+      const updates = settled
+        .filter((result): result is PromiseFulfilledResult<Partial<ConsoleState>> => result.status === "fulfilled")
+        .map((result) => result.value);
+      if (updates.length === 0) {
+        const firstFailure = settled.find((result): result is PromiseRejectedResult => result.status === "rejected");
+        throw firstFailure?.reason ?? new Error("Refresh failed");
+      }
+      setData((current) => Object.assign({}, current, ...updates));
       setLastRefreshedAt(new Date().toISOString());
+      const failed = settled.length - updates.length;
+      if (failed > 0 && !options?.quiet) {
+        setNotice(`Refreshed available data; ${failed} source${failed === 1 ? " is" : "s are"} temporarily unavailable.`);
+      }
     } catch (error) {
       if (!options?.quiet) {
         setNotice(error instanceof Error ? error.message : "Refresh failed");
@@ -388,6 +584,50 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
     }
   }
 
+  function requestModelCatalog(): Promise<ModelCatalogResponse> {
+    if (modelCatalogRequestRef.current) return modelCatalogRequestRef.current;
+    if (!dataRef.current.modelCatalog) setModelCatalogLoadStatus("loading");
+    const request = fetchJson<ModelCatalogResponse>("/settings/models/catalog")
+      .then((catalog) => {
+        setModelCatalogLoadStatus("ready");
+        return catalog;
+      })
+      .catch((error) => {
+        setModelCatalogLoadStatus(dataRef.current.modelCatalog ? "ready" : "error");
+        throw error;
+      })
+      .finally(() => {
+        modelCatalogRequestRef.current = null;
+      });
+    modelCatalogRequestRef.current = request;
+    return request;
+  }
+
+  async function loadMoreAuditLogs() {
+    const current = dataRef.current.auditLogPage;
+    if (!current?.has_more) return;
+    try {
+      const next = await fetchJson<AuditLogPage>(`/activity/audit?limit=500&offset=${current.items.length}`);
+      setData((state) => {
+        const existing = state.auditLogPage;
+        if (!existing) return { ...state, auditLogPage: next };
+        const items = [...existing.items, ...next.items.filter((item) => !existing.items.some((currentItem) => currentItem.id === item.id))];
+        return {
+          ...state,
+          auditLogPage: {
+            ...next,
+            items,
+            offset: 0,
+            is_complete: items.length >= next.total,
+            has_more: items.length < next.total
+          }
+        };
+      });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "More audit records could not be loaded.");
+    }
+  }
+
   async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${apiBaseUrl}${path}`, {
       ...init,
@@ -395,19 +635,50 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
     });
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(body || `${response.status} ${response.statusText}`);
+      let detail = body;
+      try {
+        const parsed = JSON.parse(body) as { detail?: string | Array<{ loc?: Array<string | number>; msg?: string }> };
+        if (typeof parsed.detail === "string") {
+          detail = parsed.detail;
+        } else if (Array.isArray(parsed.detail)) {
+          detail = parsed.detail
+            .map((item) => `${item.loc?.slice(1).join(".") || "request"}: ${item.msg || "invalid value"}`)
+            .join("; ");
+        }
+      } catch {
+        // Preserve non-JSON response bodies from proxies and unexpected failures.
+      }
+      throw new ApiRequestError(response.status, detail || `${response.status} ${response.statusText}`);
+    }
+    if (response.status === 204) {
+      return undefined as T;
     }
     return (await response.json()) as T;
   }
 
-  function navigate(next: View) {
+  async function logout() {
+    setNotice(null);
+    try {
+      await fetchJson<void>("/auth/logout", { method: "POST" });
+      window.location.href = "/";
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Logout failed");
+    }
+  }
+
+  function navigate(next: View, entityId?: string | null) {
     setView(next);
-    window.location.hash = next === "settings" ? settingsHash(settingsTab) : next;
+    setRouteEntityId(entityId ?? null);
+    setDetailRouteStatus(isEntityView(next) ? (entityId ? "ready" : "missing") : "idle");
+    window.location.hash = consoleHash(next, { entityId, settingsTab });
   }
 
   function selectSettingsTab(next: SettingsTab) {
     setSettingsTab(next);
-    window.location.hash = settingsHash(next);
+    setView("settings");
+    setRouteEntityId(null);
+    setDetailRouteStatus("idle");
+    window.location.hash = consoleHash("settings", { settingsTab: next });
   }
 
   async function startGithubFlow() {
@@ -421,7 +692,7 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
         setShowGithubSecretForm(true);
         setSettingsTab("GitHub");
         setView("settings");
-        window.location.hash = settingsHash("GitHub");
+        window.location.hash = consoleHash("settings", { settingsTab: "GitHub" });
       }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "GitHub flow is unavailable");
@@ -496,44 +767,55 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
       const result = await fetchJson<ModelProviderVerificationResponse>("/settings/models/verify", { method: "POST" });
       setModelVerification(result);
       setNotice(result.ok ? "Live provider verification succeeded. No repository source is sent for this check." : result.detail);
+      await refresh({ quiet: true });
     } catch (error) {
       setModelVerification(null);
       setNotice(error instanceof Error ? error.message : "Model provider verification failed");
     }
   }
 
-  async function indexRepository(repo: RepositoryResponse) {
-    const previousSourcePath = window.localStorage.getItem("repopilot:last-index-source-path") ?? "";
-    const sourcePath = window.prompt(
-      "Absolute source path to index. The API container must be able to reach this path through its configured mounts.",
-      previousSourcePath
+  async function submitPrompt(payload: PromptSubmitPayload) {
+    setNotice(null);
+    const result = await fetchJson<PromptSubmitResponse>("/prompts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    setSelectedIssueId(result.issue.id);
+    setSelectedRunId(result.plan?.run_id ?? result.run.id);
+    await refresh({ quiet: true });
+    setNotice(
+      result.plan
+        ? `Task #${result.issue.number} created and its plan is ready for review.`
+        : `Task #${result.issue.number} created and triaged.`
     );
-    if (!sourcePath) {
-      return;
-    }
-    window.localStorage.setItem("repopilot:last-index-source-path", sourcePath);
+    navigate("issue-detail", result.issue.id);
+  }
+
+  async function indexRepository(repo: RepositoryResponse) {
     setNotice(null);
     try {
-      await fetchJson(`/repos/${repo.id}/index`, {
+      await fetchJson(`/repos/${repo.id}/acquire`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source_path: sourcePath })
+        body: "{}"
       });
-      setNotice(`Indexing completed for ${repo.owner}/${repo.name}.`);
+      setNotice(`Source acquired and indexed for ${repo.owner}/${repo.name}.`);
       await refresh();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Repository indexing failed");
+      setNotice(error instanceof Error ? error.message : "Repository acquisition failed");
     }
   }
 
   async function generatePlan(issue: IssueResponse) {
     setNotice(null);
     try {
-      const response = await fetchJson<{ plan_id: string; run_id: string }>(`/issues/${issue.id}/plan`, { method: "POST" });
+      const mutation = issueQueueMutation(issue, "generate-plan");
+      const response = await fetchJson<{ plan_id: string; run_id: string }>(mutation.path, { method: mutation.method });
       setSelectedRunId(response.run_id);
       setNotice(`Plan generated for issue #${issue.number}.`);
       await refresh();
-      navigate("issue-detail");
+      navigate("issue-detail", issue.id);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Plan generation failed");
     }
@@ -546,11 +828,41 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
     }
     setNotice(null);
     try {
-      await fetchJson(`/plans/${issue.plan.id}/approve`, { method: "POST" });
+      const mutation = issueQueueMutation(issue, "approve-plan");
+      await fetchJson(mutation.path, { method: mutation.method });
       setNotice(`Plan approved for issue #${issue.number}.`);
       await refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Plan approval failed");
+    }
+  }
+
+  function openTextDialog(request: TextDialogRequest) {
+    setTextDialog(request);
+    setTextDialogValue(request.defaultValue);
+    setTextDialogChoice(request.choice?.defaultValue ?? "");
+    setTextDialogError(null);
+    setIsTextDialogSubmitting(false);
+  }
+
+  async function submitTextDialog() {
+    if (!textDialog || isTextDialogSubmitting) return;
+    const value = textDialogValue.trim();
+    const minLength = textDialog.minLength ?? 1;
+    if (value.length < minLength) {
+      setTextDialogError(minLength === 1 ? "This field is required." : `Enter at least ${minLength} characters.`);
+      return;
+    }
+    setTextDialogError(null);
+    setIsTextDialogSubmitting(true);
+    try {
+      await textDialog.onSubmit(value, textDialog.choice ? textDialogChoice : undefined);
+      setTextDialog(null);
+      setTextDialogValue("");
+    } catch (error) {
+      setTextDialogError(error instanceof Error ? error.message : "The action could not be completed.");
+    } finally {
+      setIsTextDialogSubmitting(false);
     }
   }
 
@@ -559,22 +871,25 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
       setNotice("No plan is available for this issue yet.");
       return;
     }
-    const reason = window.prompt("Reason for rejecting this plan", "Scope or risk needs human revision.");
-    if (!reason) {
-      return;
-    }
-    setNotice(null);
-    try {
-      await fetchJson(`/plans/${issue.plan.id}/reject`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason })
-      });
-      setNotice(`Plan rejected for issue #${issue.number}.`);
-      await refresh();
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Plan rejection failed");
-    }
+    openTextDialog({
+      title: "Reject plan",
+      description: `Record why plan v${issue.plan.version} for issue #${issue.number} should not proceed.`,
+      label: "Rejection reason",
+      defaultValue: "Scope or risk needs human revision.",
+      submitLabel: "Reject plan",
+      minLength: 3,
+      multiline: true,
+      onSubmit: async (reason) => {
+        setNotice(null);
+        await fetchJson(`/plans/${issue.plan!.id}/reject`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason })
+        });
+        setNotice(`Plan rejected for issue #${issue.number}.`);
+        await refresh();
+      }
+    });
   }
 
   async function revisePlan(issue: IssueResponse) {
@@ -582,34 +897,92 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
       setNotice("No plan is available for this issue yet.");
       return;
     }
-    const instructions = window.prompt("Revision instructions", "Narrow the scope and add validation details.");
-    if (!instructions) {
-      return;
-    }
-    setNotice(null);
-    try {
-      const response = await fetchJson<{ new_plan_id: string; version: number }>(`/plans/${issue.plan.id}/revise`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instructions })
-      });
-      setNotice(`Plan revision v${response.version} created for issue #${issue.number}.`);
-      await refresh();
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Plan revision failed");
-    }
+    openTextDialog({
+      title: "Request plan revision",
+      description: `Describe the exact scope or evidence changes required for issue #${issue.number}. A fresh plan will require approval.`,
+      label: "Revision instructions",
+      defaultValue: "Narrow the scope and add validation details.",
+      submitLabel: "Create revision",
+      minLength: 3,
+      multiline: true,
+      onSubmit: async (instructions) => {
+        setNotice(null);
+        const response = await fetchJson<{ new_plan_id: string; version: number }>(`/plans/${issue.plan!.id}/revise`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ instructions })
+        });
+        setNotice(`Plan revision v${response.version} created for issue #${issue.number}.`);
+        await refresh();
+      }
+    });
   }
 
-  async function runAction(run: RunSummary, path: string, successMessage: string) {
+  async function runAction(
+    run: RunSummary,
+    path: string,
+    successMessage: string,
+    options?: { body?: Record<string, unknown>; actionKey?: string }
+  ) {
+    if (pendingRunActionRef.current) {
+      return;
+    }
+    const actionKey = `${run.id}:${options?.actionKey ?? path}`;
+    pendingRunActionRef.current = actionKey;
+    setPendingRunAction(actionKey);
     setNotice(null);
     try {
-      await fetchJson(`/runs/${run.id}${path}`, { method: "POST" });
+      await fetchJson(`/runs/${run.id}${path}`, {
+        method: "POST",
+        ...(options?.body
+          ? {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(options.body)
+            }
+          : {})
+      });
       setNotice(successMessage);
-      await refresh();
+      await refresh({ quiet: true });
       await loadTrace(run.id);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Run action failed");
+    } finally {
+      pendingRunActionRef.current = null;
+      setPendingRunAction(null);
     }
+  }
+
+  async function runPrimaryAction(run: RunSummary) {
+    const action = primaryRunAction(run);
+    if (!action) {
+      setNotice(runActionStatus(run.state));
+      return;
+    }
+    if (action.key === "retry") {
+      const actionKey = `${run.id}:retry`;
+      if (pendingRunActionRef.current) return;
+      pendingRunActionRef.current = actionKey;
+      setPendingRunAction(actionKey);
+      setNotice(null);
+      try {
+        const response = await fetchJson<{ run_id: string }>(`/runs/${run.id}/retry`, { method: "POST" });
+        setSelectedRunId(response.run_id);
+        setTrace(null);
+        setNotice("A fresh retry run was queued with the same approved plan.");
+        await refresh({ quiet: true });
+        await loadTrace(response.run_id);
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "Run retry failed");
+      } finally {
+        pendingRunActionRef.current = null;
+        setPendingRunAction(null);
+      }
+      return;
+    }
+    await runAction(run, action.path, action.successMessage, {
+      actionKey: action.key,
+      body: action.body
+    });
   }
 
   async function loadTrace(runId: string) {
@@ -637,65 +1010,97 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
   }
 
   async function analyzeCi(pr: PullRequestSummary) {
-    const logText = window.prompt("Paste the GitHub Actions log text to analyze", latestValidation(pr)?.parsed_summary ?? "");
-    if (logText === null) {
-      return;
-    }
-    setNotice(null);
-    try {
-      await fetchJson(`/prs/${pr.pr_id}/ci`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workflow_name: "github-actions",
-          conclusion: pr.ci_status === "passed" ? "success" : "failure",
-          log_text: logText
-        })
-      });
-      setNotice(`CI analysis updated for PR #${pr.pr_number}.`);
-      await refresh();
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "CI analysis failed");
-    }
+    const currentConclusion = ciAnalysisConclusion(pr.ci_status);
+    openTextDialog({
+      title: "Analyze CI evidence",
+      description: `Paste bounded GitHub Actions evidence for PR #${pr.pr_number}. This records evidence; it does not simulate a trusted CI promotion.`,
+      label: "CI log evidence",
+      defaultValue: latestValidation(pr)?.parsed_summary ?? "",
+      submitLabel: "Analyze evidence",
+      minLength: 1,
+      multiline: true,
+      choice: {
+        label: "Recorded CI conclusion",
+        defaultValue: currentConclusion,
+        options: [
+          { value: "success", label: "Success" },
+          { value: "failure", label: "Failure" },
+          { value: "cancelled", label: "Cancelled" },
+          { value: "skipped", label: "Skipped" },
+          { value: "pending", label: "Pending or still running" },
+          { value: "unknown", label: "Unknown or unsupported" }
+        ]
+      },
+      onSubmit: async (logText, conclusion) => {
+        setNotice(null);
+        await fetchJson(`/prs/${pr.pr_id}/ci`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workflow_name: "github-actions",
+            conclusion: conclusion ?? "unknown",
+            log_text: logText
+          })
+        });
+        setNotice(`CI analysis updated for PR #${pr.pr_number}.`);
+        await refresh();
+      }
+    });
   }
 
   async function createRevisionPlanFromCi(pr: PullRequestSummary) {
-    const instructions = window.prompt("Revision instructions", "Use CI failure evidence, keep changes inside the approved plan, and rerun validation/security.");
-    if (!instructions) {
-      return;
-    }
+    openTextDialog({
+      title: "Create CI revision plan",
+      description: `Use the recorded failure evidence for PR #${pr.pr_number} to define a fresh, reviewable revision.`,
+      label: "Revision instructions",
+      defaultValue: "Use CI failure evidence, keep changes inside the approved plan, and rerun validation/security.",
+      submitLabel: "Create revision",
+      minLength: 3,
+      multiline: true,
+      onSubmit: async (instructions) => {
+        setNotice(null);
+        const response = await fetchJson<{ plan_id: string; version: number }>(`/prs/${pr.pr_id}/revision-plan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ instructions })
+        });
+        setNotice(`Revision plan v${response.version} created for PR #${pr.pr_number}.`);
+        await refresh();
+      }
+    });
+  }
+
+  async function persistSecurityFindingStatus(finding: SecurityFindingResponse, status: string, reason: string) {
     setNotice(null);
-    try {
-      const response = await fetchJson<{ plan_id: string; version: number }>(`/prs/${pr.pr_id}/revision-plan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instructions })
-      });
-      setNotice(`Revision plan v${response.version} created for PR #${pr.pr_number}.`);
-      await refresh();
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Revision plan creation failed");
-    }
+    await fetchJson(`/security/findings/${finding.id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, reason })
+    });
+    setNotice(`Security finding marked ${labelize(status)}.`);
+    await refresh();
   }
 
   async function updateSecurityFindingStatus(finding: SecurityFindingResponse, status: string) {
     const needsReason = status === "acknowledged" || status === "false_positive";
-    const reason = needsReason ? window.prompt("Security review reason", finding.status_reason ?? "Reviewed by operator.") : "";
-    if (needsReason && !reason) {
+    if (!needsReason) {
+      try {
+        await persistSecurityFindingStatus(finding, status, "");
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "Security finding update failed");
+      }
       return;
     }
-    setNotice(null);
-    try {
-      await fetchJson(`/security/findings/${finding.id}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, reason })
-      });
-      setNotice(`Security finding marked ${labelize(status)}.`);
-      await refresh();
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Security finding update failed");
-    }
+    openTextDialog({
+      title: "Review security finding",
+      description: `Explain why this finding should be marked ${labelize(status)}. The reason is retained in the audit trail.`,
+      label: "Review reason",
+      defaultValue: finding.status_reason ?? "Reviewed by operator.",
+      submitLabel: `Mark ${labelize(status)}`,
+      minLength: 3,
+      multiline: true,
+      onSubmit: async (reason) => persistSecurityFindingStatus(finding, status, reason)
+    });
   }
 
   async function runEvaluation() {
@@ -713,45 +1118,45 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
     }
   }
 
-  async function triageIssue(issue: IssueResponse) {
-    setNotice(null);
-    try {
-      await fetchJson(`/issues/${issue.id}/triage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: issue.title })
-      });
-      setNotice(`Triage updated for issue #${issue.number}.`);
-      await refresh();
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Issue triage failed");
-    }
-  }
-
   function selectRepository(repo: RepositoryResponse) {
     setSelectedRepoId(repo.id);
-    navigate("repository-detail");
+    navigate("repository-detail", repo.id);
   }
 
   function selectIssue(issue: IssueResponse) {
     setSelectedIssueId(issue.id);
-    navigate("issue-detail");
+    navigate("issue-detail", issue.id);
   }
 
   function selectRun(run: RunSummary, target: View = "agent-runs") {
     setSelectedRunId(run.id);
     setTrace(null);
-    navigate(target);
+    navigate(target, run.id);
   }
 
   function selectPr(pr: PullRequestSummary, target: View = "pull-request-detail") {
     setSelectedPrId(pr.pr_id);
-    navigate(target);
+    navigate(target, pr.pr_id);
   }
 
   function selectFinding(finding: SecurityFindingResponse) {
     setSelectedFindingId(finding.id);
-    navigate("security-detail");
+    navigate("security-detail", finding.id);
+  }
+
+  function openRunById(runId: string, target: View = "agent-runs") {
+    setSelectedRunId(runId);
+    setTrace(null);
+    navigate(target, runId);
+  }
+
+  function handleIssueQueueAction(issue: IssueResponse) {
+    dispatchIssueQueueAction(issue, {
+      generatePlan: (item) => void generatePlan(item),
+      approvePlan: (item) => void approvePlan(item),
+      openRun: (runId) => openRunById(runId),
+      openIssue: selectIssue
+    });
   }
 
   if (view === "landing") {
@@ -771,16 +1176,21 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
           <span>RepoPilot AI</span>
         </button>
         <nav className="sidebarNav" aria-label="Primary navigation">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = isNavActive(view, item.view);
-            return (
-              <button className={active ? "navItem active" : "navItem"} key={item.view} onClick={() => navigate(item.view)} type="button" aria-current={active ? "page" : undefined}>
-                <Icon size={20} aria-hidden="true" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
+          {navGroups.map((group) => (
+            <div className="navGroup" key={group.label}>
+              <span className="navGroupLabel">{group.label}</span>
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const active = isNavActive(view, item.view);
+                return (
+                  <button className={active ? "navItem active" : "navItem"} key={item.view} onClick={() => navigate(item.view)} type="button" aria-current={active ? "page" : undefined}>
+                    <Icon size={19} aria-hidden="true" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
         <button className="workspaceCard" onClick={() => navigate("profile")} type="button" aria-label={`Open profile for ${data.session?.username ?? "Platform Admin"}`}>
           <span className="avatar small" aria-hidden="true">{initials(data.session?.username ?? "Platform Admin")}</span>
@@ -795,15 +1205,38 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
 
       <section className="mainFrame" aria-label="Main workspace">
         <header className="topbar" role="banner">
+          <button className="topbarContext" onClick={() => navigate("repositories")} type="button">
+            <small>Context</small>
+            <strong>All repositories <ChevronDown size={14} aria-hidden="true" /></strong>
+          </button>
+          {shellRun ? (
+            <button className="topbarRun" onClick={() => selectRun(shellRun)} type="button">
+              <small>Active run</small>
+              <strong>
+                #{shortId(shellRun.id)}
+                {shellIssue ? <span>· Issue #{shellIssue.number}</span> : null}
+                {!isTerminalRunState(shellRun.state) ? <i aria-label="Live run" /> : null}
+              </strong>
+            </button>
+          ) : (
+            <button className="topbarRun" onClick={() => navigate("new-task")} type="button">
+              <small>Active run</small>
+              <strong>No active run <span>· Create task</span></strong>
+            </button>
+          )}
           <label className="commandSearch">
             <Search size={20} aria-hidden="true" />
             <input
-              aria-label="Search repos, issues, and pull requests"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search repos, issues, PRs..."
+              aria-label={viewSupportsSearch(view) ? "Search the current RepoPilot view" : "Search is unavailable in this view"}
+              disabled={!viewSupportsSearch(view)}
+              maxLength={120}
+              onChange={(event) => setQuery(boundedSearchQuery(event.target.value))}
+              onKeyDown={(event) => { if (event.key === "Escape") setQuery(""); }}
+              placeholder={viewSupportsSearch(view) ? "Search this view..." : "Search unavailable"}
+              ref={commandSearchRef}
               value={query}
             />
-            <kbd aria-label="Keyboard shortcut Command K">⌘ K</kbd>
+            {viewSupportsSearch(view) ? <kbd aria-label="Keyboard shortcut Command K">⌘ K</kbd> : null}
           </label>
           <button
             className="iconOnly"
@@ -814,19 +1247,6 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
             type="button"
           >
             <RefreshCcw size={19} aria-hidden="true" className={isRefreshing ? "refreshSpinner" : ""} />
-          </button>
-          <button
-            className="iconOnly"
-            onClick={() => {
-              setSettingsTab("Notifications");
-              setView("settings");
-              window.location.hash = settingsHash("Notifications");
-            }}
-            aria-label="Open local notification settings. Delivery is not configured."
-            title="Local notification settings only. No delivery endpoint is configured."
-            type="button"
-          >
-            <Bell size={21} aria-hidden="true" />
           </button>
           <button className="profileButton" onClick={() => navigate("profile")} type="button" aria-label={`Open profile for ${data.session?.username ?? "Platform Admin"}`}>
             <span className="avatar" aria-hidden="true">{initials(data.session?.username ?? "Platform Admin")}</span>
@@ -840,28 +1260,51 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
 
         <main className="content" id="main-content">
           {view === "setup" ? <SetupScreen setup={setup} onContinue={() => navigate(nextSetupView(setup))} /> : null}
+          {view === "new-task" ? <NewTaskScreen initialRepositoryId={selectedRepo?.id ?? ""} onSubmit={submitPrompt} repositories={data.repositories} /> : null}
           {view === "dashboard" ? (
-            <DashboardScreen data={data} query={query} onIssue={selectIssue} onRun={selectRun} onSecurity={() => navigate("security")} isRefreshing={isRefreshing} />
+            <DashboardScreen
+              data={data}
+              query={query}
+              onIssue={selectIssue}
+              onNewTask={() => navigate("new-task")}
+              onPr={selectPr}
+              onRun={selectRun}
+              onRunTrace={(run) => {
+                const target = dashboardNavigationTarget("open-full-timeline", run.id);
+                openRunById(run.id, target.view);
+              }}
+              onSecurity={() => navigate("security")}
+              onTasks={() => {
+                const target = dashboardNavigationTarget("view-all-tasks");
+                setIssuesMode(target.issuesMode ?? "board");
+                navigate(target.view, target.entityId);
+              }}
+              isRefreshing={isRefreshing}
+            />
           ) : null}
           {view === "repositories" ? (
             <RepositoriesScreen
               data={data}
               query={query}
+              setQuery={setQuery}
               onConnect={startGithubFlow}
               onRepo={selectRepository}
               statusFilter={repoStatusFilter}
               setStatusFilter={setRepoStatusFilter}
             />
           ) : null}
-          {view === "repository-detail" ? (
+          {view === "repository-detail" && selectedRepo ? (
             <RepositoryDetailScreen
               issues={data.issues}
               onIndex={indexRepository}
               onIssue={selectIssue}
-              onIssues={() => navigate("issues")}
+              onIssues={() => {
+                setIssueRepositoryFilter(selectedRepo.id);
+                navigate("issues");
+              }}
               repo={selectedRepo}
             />
-          ) : null}
+          ) : view === "repository-detail" ? <DetailRouteState entityLabel="repository" requestedId={routeEntityId} status={detailRouteStatus} /> : null}
           {view === "issues" ? (
             <IssuesScreen
               issues={data.issues}
@@ -869,9 +1312,9 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
               riskFilter={issueRiskFilter}
               typeFilter={issueTypeFilter}
               mode={issuesMode}
-              onGeneratePlan={generatePlan}
+              onIssueAction={handleIssueQueueAction}
               onIssue={selectIssue}
-              onTriage={triageIssue}
+              onNewTask={() => navigate("new-task")}
               query={query}
               repositories={data.repositories}
               setRepositoryFilter={setIssueRepositoryFilter}
@@ -880,24 +1323,25 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
               setTypeFilter={setIssueTypeFilter}
             />
           ) : null}
-          {view === "issue-detail" ? (
+          {view === "issue-detail" && selectedIssue ? (
             <IssueDetailScreen issue={selectedIssue} onApprove={approvePlan} onGeneratePlan={generatePlan} onReject={rejectPlan} onRevise={revisePlan} />
-          ) : null}
-          {view === "agent-runs" ? (
+          ) : view === "issue-detail" ? <DetailRouteState entityLabel="issue" requestedId={routeEntityId} status={detailRouteStatus} /> : null}
+          {view === "agent-runs" && (!routeEntityId || selectedRun) ? (
             <AgentRunsScreen
               issues={data.issues}
+              isActionPending={Boolean(pendingRunAction && selectedRun && pendingRunAction.startsWith(`${selectedRun.id}:`))}
+              onPrimaryAction={(run) => void runPrimaryAction(run)}
               onRun={selectRun}
-              onStart={(run) => void runAction(run, "/start", "Run moved to CREATE_BRANCH.")}
-              onStop={(run) => void runAction(run, "/stop", "Run cancelled.")}
+              onStop={(run) => void runAction(run, "/stop", "Run cancelled.", { actionKey: "stop" })}
               query={query}
               runs={data.runs}
               selectedRun={selectedRun}
               trace={trace}
             />
-          ) : null}
-          {view === "run-trace" ? (
+          ) : view === "agent-runs" ? <DetailRouteState entityLabel="run" requestedId={routeEntityId} status={detailRouteStatus} /> : null}
+          {view === "run-trace" && selectedRun ? (
             <RunTraceScreen selectedRun={selectedRun} setTab={setTraceTab} tab={traceTab} trace={trace} />
-          ) : null}
+          ) : view === "run-trace" ? <DetailRouteState entityLabel="run" requestedId={routeEntityId} status={detailRouteStatus} /> : null}
           {view === "pull-requests" ? (
             <PullRequestsScreen
               ciFilter={prCiFilter}
@@ -916,31 +1360,31 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
               onPr={selectPr}
             />
           ) : null}
-          {view === "pull-request-detail" ? (
+          {view === "pull-request-detail" && selectedPr ? (
             <PullRequestDetailScreen
               onAnalyzeCi={analyzeCi}
               onOpenIssue={(issueId) => {
                 setSelectedIssueId(issueId);
-                navigate("issue-detail");
+                navigate("issue-detail", issueId);
               }}
               onOpenRun={(runId) => {
                 setSelectedRunId(runId);
-                navigate("run-trace");
+                navigate("run-trace", runId);
               }}
               onRevisionPlan={createRevisionPlanFromCi}
               onSecurityReview={runSecurityReview}
               pr={selectedPr}
             />
-          ) : null}
-          {view === "ci-debugger" ? <CiDebuggerScreen onAnalyzeCi={analyzeCi} pr={selectedPr} /> : null}
+          ) : view === "pull-request-detail" ? <DetailRouteState entityLabel="pull request" requestedId={routeEntityId} status={detailRouteStatus} /> : null}
           {view === "security" ? (
             <SecurityScreen findings={data.securityFindings} onFinding={selectFinding} policy={data.policy} query={query} />
           ) : null}
-          {view === "security-detail" ? <SecurityDetailScreen finding={selectedFinding} onUpdateStatus={updateSecurityFindingStatus} /> : null}
+          {view === "security-detail" && selectedFinding ? <SecurityDetailScreen finding={selectedFinding} onUpdateStatus={updateSecurityFindingStatus} /> : view === "security-detail" ? <DetailRouteState entityLabel="security finding" requestedId={routeEntityId} status={detailRouteStatus} /> : null}
           {view === "evaluations" ? <EvaluationsScreen evalReports={data.evalReports} onRunEvaluation={runEvaluation} repositories={data.repositories} runs={data.runs} /> : null}
           {view === "audit-logs" ? (
             <AuditLogsScreen
-              activities={data.activities}
+              page={data.auditLogPage}
+              onLoadMore={() => void loadMoreAuditLogs()}
               riskFilter={auditRiskFilter}
               selectedKey={selectedAuditKey}
               setRiskFilter={setAuditRiskFilter}
@@ -972,11 +1416,94 @@ export function OperatorConsole({ initialData, apiBaseUrl }: { initialData: Oper
               verification={modelVerification}
               onReset={() => void refresh()}
               motionPreference={motionPreference}
+              modelCatalogLoadStatus={modelCatalogLoadStatus}
               setMotionPreference={setMotionPreference}
             />
           ) : null}
-          {view === "profile" ? <ProfileScreen data={data} onGithub={startGithubFlow} /> : null}
+          {view === "profile" ? (
+            <ProfileScreen
+              data={data}
+              onLogout={logout}
+              onSettings={() => {
+                selectSettingsTab("GitHub");
+              }}
+            />
+          ) : null}
         </main>
+      </section>
+      {textDialog ? (
+        <TextActionDialog
+          error={textDialogError}
+          isSubmitting={isTextDialogSubmitting}
+          onCancel={() => {
+            if (!isTextDialogSubmitting) setTextDialog(null);
+          }}
+          onSubmit={() => void submitTextDialog()}
+          request={textDialog}
+          choice={textDialogChoice}
+          setChoice={setTextDialogChoice}
+          setValue={setTextDialogValue}
+          value={textDialogValue}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function TextActionDialog({
+  choice,
+  error,
+  isSubmitting,
+  onCancel,
+  onSubmit,
+  request,
+  setChoice,
+  setValue,
+  value
+}: {
+  choice: string;
+  error: string | null;
+  isSubmitting: boolean;
+  onCancel: () => void;
+  onSubmit: () => void;
+  request: TextDialogRequest;
+  setChoice: (value: string) => void;
+  setValue: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <div className="dialogBackdrop" role="presentation">
+      <section aria-describedby="text-action-dialog-description" aria-labelledby="text-action-dialog-title" aria-modal="true" className="textActionDialog" role="dialog">
+        <header className="dialogHeader">
+          <div>
+            <h2 id="text-action-dialog-title">{request.title}</h2>
+            <p id="text-action-dialog-description">{request.description}</p>
+          </div>
+          <button aria-label="Close dialog" className="iconOnly" disabled={isSubmitting} onClick={onCancel} type="button"><X size={18} /></button>
+        </header>
+        {request.choice ? (
+          <label className="taskField">
+            <span>{request.choice.label}</span>
+            <select onChange={(event) => setChoice(event.target.value)} value={choice}>
+              {request.choice.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+        ) : null}
+        <label className="taskField">
+          <span>{request.label}</span>
+          {request.multiline ? (
+            <textarea autoFocus maxLength={8000} onChange={(event) => setValue(event.target.value)} rows={8} value={value} />
+          ) : (
+            <input autoFocus maxLength={8000} onChange={(event) => setValue(event.target.value)} value={value} />
+          )}
+        </label>
+        {error ? <div className="connectNotice" role="alert">{error}</div> : null}
+        <div className="panelActions dialogActions">
+          <button className="ghostAction" disabled={isSubmitting} onClick={onCancel} type="button">Cancel</button>
+          <button className="primaryAction" disabled={isSubmitting} onClick={onSubmit} type="button">
+            {isSubmitting ? "Working..." : request.submitLabel}
+          </button>
+        </div>
       </section>
     </div>
   );
@@ -1011,7 +1538,7 @@ function LandingPage({
         <nav>
           <button onClick={() => document.getElementById("product-features")?.scrollIntoView({ behavior: "smooth" })} type="button">Product</button>
           <button onClick={onSecurity} type="button">Security</button>
-          <button onClick={() => window.open("https://github.com/RepoPilotAI/RepoPilot", "_blank", "noopener,noreferrer")} title="Full documentation is coming soon. View the project README for setup and usage." type="button">Docs <span style={{ fontSize: "11px", color: "var(--text-2)" }}>(README)</span></button>
+          <button onClick={() => window.open("https://github.com/HarshalRane04/RepoPilot", "_blank", "noopener,noreferrer")} title="View the RepoPilot README for setup and usage." type="button">Docs <span style={{ fontSize: "11px", color: "var(--text-2)" }}>(README)</span></button>
           <button onClick={onSignIn} type="button">
             Sign in
           </button>
@@ -1167,88 +1694,283 @@ function SetupScreen({ setup, onContinue }: { setup: ReturnType<typeof setupStat
   );
 }
 
+function NewTaskScreen({
+  initialRepositoryId,
+  onSubmit,
+  repositories
+}: {
+  initialRepositoryId: string;
+  onSubmit: (payload: PromptSubmitPayload) => Promise<void>;
+  repositories: RepositoryResponse[];
+}) {
+  const [repositoryId, setRepositoryId] = useState(initialRepositoryId || repositories[0]?.id || "");
+  const [title, setTitle] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [autoPlan, setAutoPlan] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canSubmit = title.trim().length >= 4 && prompt.trim().length >= 8 && !isSubmitting;
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSubmit) {
+      setError("Add a title of at least 4 characters and task details of at least 8 characters.");
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await onSubmit({
+        repository_id: repositoryId || undefined,
+        title: title.trim(),
+        prompt: prompt.trim(),
+        auto_plan: autoPlan
+      });
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to create the task.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="screen">
+      <ScreenHeader title="New Task" subtitle="Describe work for RepoPilot to triage and, when appropriate, prepare as a human-reviewed plan." />
+      <div className="detailGrid taskComposerGrid">
+        <form className="panel taskComposer" onSubmit={(event) => void submit(event)}>
+          <label className="taskField">
+            <span>Repository</span>
+            <select onChange={(event) => setRepositoryId(event.target.value)} value={repositoryId}>
+              <option value="">Automatic (latest repository or local task workspace)</option>
+              {repositories.map((repo) => (
+                <option key={repo.id} value={repo.id}>
+                  {repo.owner}/{repo.name} ({repo.source_mode === "github_app" ? "GitHub App" : repo.source_mode === "oauth_discovery" ? "OAuth" : "Local"})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="taskField">
+            <span>Task title</span>
+            <input
+              autoFocus
+              maxLength={180}
+              minLength={4}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Fix stale repository status after indexing"
+              required
+              value={title}
+            />
+          </label>
+          <label className="taskField">
+            <span>Task details</span>
+            <textarea
+              maxLength={8000}
+              minLength={8}
+              onChange={(event) => setPrompt(event.target.value)}
+              placeholder="Describe the problem, expected behavior, constraints, and useful acceptance criteria."
+              required
+              rows={12}
+              value={prompt}
+            />
+            <small>{prompt.length.toLocaleString()} / 8,000 characters</small>
+          </label>
+          <label className="taskCheckRow">
+            <input checked={autoPlan} onChange={(event) => setAutoPlan(event.target.checked)} type="checkbox" />
+            <span>
+              <strong>Prepare a plan after triage</strong>
+              <small>RepoPilot only creates a plan when triage marks the task ready. Implementation still requires human approval.</small>
+            </span>
+          </label>
+          {error ? <div className="connectNotice" role="alert">{error}</div> : null}
+          <div className="panelActions">
+            <button className="primaryAction" disabled={!canSubmit} type="submit">
+              <Sparkles size={18} />
+              {isSubmitting ? "Creating and triaging task..." : "Create task"}
+            </button>
+          </div>
+        </form>
+        <aside className="panel contextPanel taskPrivacyPanel">
+          <h2>Before you submit</h2>
+          <InfoLine icon={Shield} label="Human gate" value="No implementation starts until an authorized reviewer approves the generated plan." />
+          <InfoLine icon={Database} label="Repository context" value="Indexed repository snippets may be retrieved to ground the plan." />
+          <InfoLine icon={Eye} label="External model boundary" value="If a live provider is configured, task text and selected context may be sent to that provider." />
+          <InfoLine icon={Lock} label="Keep secrets out" value="Do not paste credentials, private keys, tokens, or customer-sensitive data into task text." />
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 function DashboardScreen({
   data,
   query,
   onIssue,
+  onNewTask,
+  onPr,
   onRun,
+  onRunTrace,
   onSecurity,
+  onTasks,
   isRefreshing
 }: {
   data: ConsoleState;
   query: string;
   onIssue: (issue: IssueResponse) => void;
+  onNewTask: () => void;
+  onPr: (pr: PullRequestSummary) => void;
   onRun: (run: RunSummary) => void;
+  onRunTrace: (run: RunSummary) => void;
   onSecurity: () => void;
+  onTasks: () => void;
   isRefreshing: boolean;
 }) {
-  const issues = filterIssues(data.issues, query);
-  const runs = filterRuns(data.runs, data.issues, query).slice(0, 3);
+  const matchingIssues = filterIssues(data.issues, query);
+  const activeRun = data.runs.find((run) => !isTerminalRunState(run.state)) ?? null;
+  const activeIssue = activeRun ? data.issues.find((issue) => issue.id === activeRun.issue_id) ?? null : null;
+  const activePr = activeRun ? data.pullRequests.find((pr) => pr.run_id === activeRun.id) ?? null : null;
+  const lastEvent = activeRun ? data.activities.find((item) => item.entity_id === activeRun.id) ?? null : null;
+  const planApproved = activeIssue?.plan?.approval_status === "approved";
+  const reviewReady = activeRun?.state.toUpperCase() === "READY_FOR_REVIEW";
+  const currentStage = activeRun ? runStageLabel(activeRun.state) : "No active run";
+  const validationEvidence = validationEvidencePresentation(activePr);
+  const securityEvidence = securityEvidencePresentation(activePr);
+  const lifecycle = activeRun ? [
+    { label: "Task", detail: "Complete", state: "done" },
+    { label: "Plan", detail: planApproved ? "Approved" : "Approval required", state: planApproved ? "done" : "current" },
+    { label: "Run", detail: reviewReady ? "Complete" : currentStage, state: reviewReady ? "done" : planApproved ? "current" : "pending" },
+    { label: "Review", detail: reviewReady ? "Ready" : "Pending", state: reviewReady ? "current" : "pending" }
+  ] : [];
+  const attentionRecords = dashboardAttentionRecords(data.issues, data.runs, data.pullRequests);
+  const attentionItems = attentionRecords.slice(0, 4);
   const activity = data.activities.slice(0, 5);
-  const risk = riskCounts(data.issues);
-  const avgCost = data.runs.length ? data.runs.reduce((sum, run) => sum + run.total_cost, 0) / data.runs.length : 0;
-  const ciRate = data.metrics?.ci_total_prs ? metricPercent(data.metrics.ci_pass_rate).label : ciPassRateLabel(data.pullRequests);
-  const firstRunCiRate = data.metrics?.ci_total_prs ? metricPercent(data.metrics.ci_first_run_ci_pass_rate).label : "N/A";
-  const revisionCiRate = data.metrics?.ci_revised_pr_count ? metricPercent(data.metrics.ci_pass_after_revision_rate).label : "N/A";
+
   return (
-    <div className="screen">
-      <ScreenHeader title="Dashboard" subtitle="Your issue planning, review, and readiness console." />
-      <section className={`statGrid ten${isRefreshing ? " is-loading" : ""}`}>
-        <StatCard label="Connected repositories" value={data.metrics?.repositories ?? data.repositories.length} />
-        <StatCard label="Agent-ready issues" value={data.issues.filter((issue) => normalizedStatus(issue.status) === "agent_ready").length} />
-        <StatCard label="Plans awaiting approval" value={data.issues.filter((issue) => issue.plan?.approval_status === "draft").length} />
-        <StatCard label="Draft PR records" value={data.metrics?.open_pull_requests ?? data.pullRequests.length} />
-        <StatCard label="CI pass rate" value={ciRate} />
-        <StatCard label="First-run CI" value={firstRunCiRate} />
-        <StatCard label="CI after revision" value={revisionCiRate} />
-        <StatCard label="Open security findings" value={data.metrics?.blocking_security_findings ?? 0} />
-        <StatCard label="Fixup attempts" value={data.metrics?.ci_revision_fixup_attempts ?? 0} />
-        <StatCard label="Avg cost/task" value={formatMoney(avgCost)} />
-      </section>
-      <div className="dashboardGrid">
-        <section className="panel">
-          <PanelHeader icon={Bot} title="Active Agent Runs" />
-          <div className="listRows" role="list" aria-label="Active agent runs list">
-            {runs.map((run) => {
-              const issue = data.issues.find((item) => item.id === run.issue_id);
-              return (
-                <button className="dataRow clickable" key={run.id} onClick={() => onRun(run)} type="button" aria-label={`Agent run ${issue ? `for issue #${issue.number} ${issue.title}` : shortId(run.id)}`}>
-                  <span className="iconTile violet">
-                    <GitBranch size={18} />
+    <div className={`screen instrumentDashboard${isRefreshing ? " is-loading" : ""}`}>
+      {!activeRun || !activeIssue ? (
+        <section className="instrumentEmpty">
+          <span className="instrumentEyebrow">Evidence-first engineering</span>
+          <h1>Start a governed task</h1>
+          <p>Describe the outcome once. RepoPilot will triage it, prepare an evidence-backed plan, and wait for explicit approval before implementation.</p>
+          <button className="primaryAction" onClick={onNewTask} type="button"><Sparkles size={18} /> Create task</button>
+        </section>
+      ) : (
+        <>
+          <section className="runHero" aria-labelledby="active-run-title">
+            <div className="runHeroHeading">
+              <div>
+                <button className="backLink" onClick={() => onRun(activeRun)} type="button">Open full run <ChevronRight size={15} /></button>
+                <span className="issuePill">Issue #{activeIssue.number}</span>
+                <h1 id="active-run-title">{activeIssue.title}</h1>
+                <p>Agent run #{shortId(activeRun.id)} <span>·</span> Started {formatClock(activeRun.started_at)} <span>·</span> Owner {data.session?.username ?? "local"}</p>
+              </div>
+              <div className={`currentStage ${statusTone(activeRun.state)}`}>
+                <Clock3 size={28} aria-hidden="true" />
+                <span>
+                  <small>Current stage</small>
+                  <strong>{currentStage}</strong>
+                  <em>{runActionStatus(activeRun.state)}</em>
+                </span>
+              </div>
+            </div>
+
+            <ol className="lifecycleRail" aria-label="Task lifecycle">
+              {lifecycle.map((stage, index) => (
+                <li className={stage.state} key={stage.label}>
+                  <span className="lifecycleNode" aria-hidden="true">{stage.state === "done" ? <Check size={17} /> : index + 1}</span>
+                  <div>
+                    <strong>{stage.label}</strong>
+                    <small>{stage.detail}</small>
+                  </div>
+                </li>
+              ))}
+            </ol>
+
+            <div className="runEvidenceStrip">
+              <div className="meaningfulEvent">
+                <small>Last meaningful event</small>
+                <span>
+                  <i><Clock3 size={20} /></i>
+                  <span>
+                    <strong>{lastEvent ? labelize(lastEvent.action) : labelize(activeRun.latest_step ?? activeRun.state)}</strong>
+                    <em>{lastEvent ? `${labelize(lastEvent.source)} · ${relativeTime(lastEvent.created_at)}` : "Run state recorded"}</em>
                   </span>
-                  <strong>{issue ? `Issue #${issue.number} ${issue.title}` : shortId(run.id)}</strong>
-                  <Badge tone={statusTone(run.state)}>{labelize(run.state)}</Badge>
-                  <Badge tone={riskTone(issue?.risk_score ?? 0)}>{riskLabel(issue?.risk_score ?? 0)}</Badge>
-                </button>
-              );
-            })}
-            {runs.length === 0 ? <EmptyState text="No agent runs match the current data." /> : null}
+                </span>
+              </div>
+              <div className="evidenceChecks">
+                <small>Validation &amp; security</small>
+                <span className={validationEvidence.passed ? "passed" : "pending"}><CheckCircle2 size={19} /> Validation {validationEvidence.label.toLowerCase()}</span>
+                <span className={securityEvidence.passed ? "passed" : "pending"}><Shield size={19} /> Security {securityEvidence.label.toLowerCase()}</span>
+                <span className={planApproved ? "passed" : "pending"}><CheckCircle2 size={19} /> Policy {planApproved ? "approved" : "pending"}</span>
+                <button className="inlineLink" onClick={() => activePr ? onPr(activePr) : onRun(activeRun)} type="button">View proof <ChevronRight size={15} /></button>
+              </div>
+              <div className="nextSafeAction">
+                <small>Next safe action</small>
+                <p>{runActionStatus(activeRun.state)}. Review the run evidence and continue only when the trust gates are satisfied.</p>
+                <button className="primaryAction" onClick={() => activePr ? onPr(activePr) : onRun(activeRun)} type="button">Review evidence <ExternalLink size={17} /></button>
+              </div>
+            </div>
+          </section>
+
+          <div className="instrumentGrid">
+            <section className="ledgerPanel">
+              <header>
+                <h2>Needs attention <span>{attentionRecords.length}</span></h2>
+                <button className="inlineLink" onClick={onNewTask} type="button">New task <Sparkles size={15} /></button>
+              </header>
+              <div className="attentionLedger">
+                {attentionItems.map((item) => {
+                  const Icon = item.tone === "danger" ? AlertTriangle : item.kind === "pull-request" ? GitBranch : Clock3;
+                  const onClick = () => {
+                    if (item.kind === "issue") {
+                      const issue = data.issues.find((candidate) => candidate.id === item.entityId);
+                      if (issue) onIssue(issue);
+                    } else if (item.kind === "run") {
+                      const run = data.runs.find((candidate) => candidate.id === item.entityId);
+                      if (run) onRun(run);
+                    } else {
+                      const pr = data.pullRequests.find((candidate) => candidate.pr_id === item.entityId);
+                      if (pr) onPr(pr);
+                    }
+                  };
+                  return (
+                    <button className="attentionRow" key={item.key} onClick={onClick} type="button">
+                      <span className={`attentionIcon ${item.tone}`}><Icon size={18} /></span>
+                      <span><strong>{item.title}</strong><small>{item.detail}</small></span>
+                      <ChevronRight size={17} aria-hidden="true" />
+                    </button>
+                  );
+                })}
+                {attentionRecords.length === 0 ? <EmptyState text="No work needs intervention right now." /> : null}
+              </div>
+              <button className="ledgerFooter" onClick={onTasks} type="button">View all tasks <ChevronRight size={15} /></button>
+            </section>
+
+            <section className="ledgerPanel activityLedgerPanel">
+              <header>
+                <h2>Activity stream</h2>
+                <span className={data.readiness?.production_ready ? "systemState ready" : "systemState"}>{data.readiness?.production_ready ? "Systems ready" : "Local mode"}</span>
+              </header>
+              <div className="instrumentActivity">
+                {activity.map((item, index) => (
+                  <button className="instrumentActivityRow" key={`${item.source}-${item.action}-${index}`} onClick={() => maybeOpenActivity(item, data, onIssue, onRun, onPr)} type="button">
+                    <i className={statusTone(item.status)} aria-hidden="true" />
+                    <span><strong>{labelize(item.action)}</strong><small>{labelize(item.source)} · {labelize(item.status)}</small></span>
+                    <time>{formatClock(item.created_at)}</time>
+                  </button>
+                ))}
+                {activity.length === 0 ? <EmptyState text="No activity has been recorded yet." /> : null}
+              </div>
+              <button className="ledgerFooter" onClick={() => onRunTrace(activeRun)} type="button">Open full timeline <ExternalLink size={15} /></button>
+            </section>
           </div>
-          <button className="panelLink" onClick={() => onRun(data.runs[0])} disabled={!data.runs[0]} type="button">
-            View all agent runs <ChevronRight size={16} />
-          </button>
-        </section>
-        <section className="panel">
-          <PanelHeader icon={Shield} title="Risk Summary" />
-          <RiskRows risk={risk} onSecurity={onSecurity} />
-        </section>
-      </div>
-      <section className="panel">
-        <PanelHeader icon={Clock3} title="Recent Activity" />
-        <div className="activityTable" role="list" aria-label="Recent activity feed">
-          {activity.map((item, index) => (
-            <button className="activityLine" key={`${item.source}-${item.action}-${index}`} onClick={() => maybeOpenActivity(item, data, onIssue, onRun)} type="button" aria-label={`${labelize(item.source)} ${item.action} ${item.status} at ${formatClock(item.created_at)}`}>
-              <time>{formatClock(item.created_at)}</time>
-              <span className="iconTile blue">{activityIcon(item.source)}</span>
-              <strong>{labelize(item.source)}</strong>
-              <span>{item.action}</span>
-              <Badge tone={statusTone(item.status)}>{labelize(item.status)}</Badge>
-            </button>
-          ))}
-          {activity.length === 0 ? <EmptyState text="No activity has been recorded yet." /> : null}
-        </div>
-      </section>
-      {issues.length === 0 && query ? <EmptyState text="No dashboard issues match the current search." /> : null}
+
+          <footer className="instrumentFooter">
+            <span>Evidence-first AI software engineering control plane.</span>
+            <button onClick={onSecurity} type="button"><i /> {data.readiness?.blockers.length ? `${data.readiness.blockers.length} readiness blockers` : "All configured systems operational"}</button>
+          </footer>
+        </>
+      )}
+      {matchingIssues.length === 0 && query ? <EmptyState text="No tasks match the current search." /> : null}
     </div>
   );
 }
@@ -1258,6 +1980,7 @@ function RepositoriesScreen({
   query,
   onConnect,
   onRepo,
+  setQuery,
   setStatusFilter,
   statusFilter
 }: {
@@ -1265,6 +1988,7 @@ function RepositoriesScreen({
   query: string;
   onConnect: () => void;
   onRepo: (repo: RepositoryResponse) => void;
+  setQuery: (query: string) => void;
   setStatusFilter: (filter: RepoStatusFilter) => void;
   statusFilter: RepoStatusFilter;
 }) {
@@ -1274,13 +1998,13 @@ function RepositoriesScreen({
     if (statusFilter === "indexed") return Boolean(repo.last_indexed_sha);
     if (statusFilter === "needs-indexing") return !repo.last_indexed_sha;
     if (statusFilter === "ci-failing") {
-      return data.pullRequests.some((pr) => pr.repository?.id === repo.id && failedCi(pr.ci_status));
+      return data.pullRequests.some((pr) => repositoryMatchesId(repo, pr.repository?.id) && failedCi(pr.ci_status));
     }
     return true;
   });
   const indexed = data.repositories.filter((repo) => repo.last_indexed_sha).length;
   const needsIndex = data.repositories.filter((repo) => !repo.last_indexed_sha).length;
-  const ciFailing = data.repositories.filter((repo) => data.pullRequests.some((pr) => pr.repository?.id === repo.id && failedCi(pr.ci_status))).length;
+  const ciFailing = data.repositories.filter((repo) => data.pullRequests.some((pr) => repositoryMatchesId(repo, pr.repository?.id) && failedCi(pr.ci_status))).length;
   return (
     <div className="screen">
       <ScreenHeader title="Repositories" subtitle="Connected GitHub repositories and indexing status." />
@@ -1288,7 +2012,16 @@ function RepositoriesScreen({
       <div className="toolbar">
         <label className="inlineSearch">
           <Search size={18} />
-          <input readOnly value={query} placeholder="Search repositories..." />
+          <input
+            aria-label="Search repositories"
+            maxLength={120}
+            onChange={(event) => setQuery(boundedSearchQuery(event.target.value))}
+            onKeyDown={(event) => { if (event.key === "Escape") setQuery(""); }}
+            placeholder="Search repositories..."
+            type="search"
+            value={query}
+          />
+          {query ? <button aria-label="Clear repository search" onClick={() => setQuery("")} type="button"><X size={16} /></button> : null}
         </label>
         <Segment label={`All (${data.repositories.length})`} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
         <Segment label={`Indexed (${indexed})`} active={statusFilter === "indexed"} onClick={() => setStatusFilter("indexed")} />
@@ -1321,14 +2054,14 @@ function RepositoriesScreen({
                   <td>
                     <span className="repoName">
                       <Github size={20} />
-                      {repo.name}
+                      {repo.owner}/{repo.name}
                     </span>
                   </td>
                   <td>{repo.language ?? "Unavailable"}</td>
                   <td>{repo.framework ?? "Unavailable"}</td>
                   <td><code>{repo.last_indexed_sha ? repo.last_indexed_sha.slice(0, 7) : "not indexed"}</code></td>
                   <td>{repo.issue_count}</td>
-                  <td className="greenText">{data.issues.filter((issue) => issue.repository_id === repo.id && normalizedStatus(issue.status) === "agent_ready").length}</td>
+                  <td className="greenText">{data.issues.filter((issue) => repositoryMatchesId(repo, issue.repository_id) && normalizedStatus(issue.status) === "agent_ready").length}</td>
                   <td>{repo.test_file_count ?? 0}</td>
                   <td>Unavailable</td>
                   <td><Badge tone={repositoryIndexTone(repo)}>{repositoryIndexLabel(repo)}</Badge></td>
@@ -1340,9 +2073,9 @@ function RepositoriesScreen({
         </section>
         <aside className="panel summaryPanel">
           <h2>Indexing Health</h2>
-          <SummaryItem icon={Database} label="Indexed repos" value={indexed} tone="success" />
-          <SummaryItem icon={Clock3} label="Needs indexing" value={needsIndex} tone="warning" />
-          <SummaryItem icon={X} label="CI failing repos" value={ciFailing} tone="danger" />
+          <SummaryItem icon={Database} label="Indexed repos" onClick={() => setStatusFilter("indexed")} value={indexed} tone="success" />
+          <SummaryItem icon={Clock3} label="Needs indexing" onClick={() => setStatusFilter("needs-indexing")} value={needsIndex} tone="warning" />
+          <SummaryItem icon={X} label="CI failing repos" onClick={() => setStatusFilter("ci-failing")} value={ciFailing} tone="danger" />
           <SummaryItem icon={RefreshCcw} label="Last full sync" value={lastIndexedLabel(data.repositories)} tone="info" />
         </aside>
       </div>
@@ -1366,17 +2099,23 @@ function RepositoryDetailScreen({
   if (!repo) {
     return <EmptyState text="Select a repository to view details." />;
   }
-  const repoIssues = issues.filter((issue) => issue.repository_id === repo.id);
+  const repoIssues = issues.filter((issue) => repositoryMatchesId(repo, issue.repository_id));
   const highRisk = repoIssues.filter((issue) => issue.risk_score >= 70);
   const agentReady = repoIssues.filter((issue) => normalizedStatus(issue.status) === "agent_ready");
   return (
     <div className="screen">
-      <Breadcrumb trail={["Repositories", repo.name]} />
+      <Breadcrumb trail={[{ label: "Repositories", view: "repositories" }, { label: repo.name }]} />
       <div className="titleRow">
         <ScreenHeader title={repo.name} subtitle={`${repo.framework ?? repo.language ?? "Repository"} monitored by RepoPilot AI.`} />
-        <button className="primaryAction" onClick={() => onIndex(repo)} type="button">
+        <button
+          className="primaryAction"
+          disabled={repo.acquirable === false}
+          onClick={() => onIndex(repo)}
+          title={repo.acquirable === false ? "Install the GitHub App on this OAuth-discovered repository before acquisition." : "Acquire the current GitHub ref and rebuild its index."}
+          type="button"
+        >
           <RefreshCcw size={20} />
-          Index repository
+          {repo.acquirable === false ? "GitHub App required" : "Acquire & index"}
         </button>
         <button className="ghostAction" onClick={onIssues} type="button">
           <ListChecks size={20} />
@@ -1387,6 +2126,7 @@ function RepositoryDetailScreen({
         <MetaCard icon={Code2} label="Language" value={repo.language ?? "Unavailable"} />
         <MetaCard icon={Sparkles} label="Framework" value={repo.framework ?? "Unavailable"} />
         <MetaCard icon={GitBranch} label="Default branch" value={repo.default_branch} />
+        <MetaCard icon={Github} label="Source access" value={repo.source_mode === "github_app" ? "GitHub App" : "OAuth discovery only"} />
         <MetaCard icon={FileCode2} label="Last indexed commit" value={repo.last_indexed_sha?.slice(0, 8) ?? "Not indexed"} mono />
         <MetaCard icon={Database} label="Index status" value={repositoryIndexLabel(repo)} tone={repositoryIndexTone(repo)} />
         <MetaCard icon={Box} label="Chunker" value={repo.chunker_version ?? "Unavailable"} mono />
@@ -1429,19 +2169,6 @@ function RepositoryDetailScreen({
           {highRisk.length === 0 ? <EmptyState text="No high-risk issue areas are currently open." /> : null}
         </section>
       </div>
-      <section className="panel">
-        <PanelHeader title="Suggested Improvements" />
-        <div className="suggestionList">
-          {repoIssues.slice(0, 4).map((issue) => (
-            <button key={issue.id} onClick={() => onIssue(issue)} type="button">
-              <CheckCircle2 size={18} />
-              <span>{issue.title}</span>
-              <ChevronRight size={18} />
-            </button>
-          ))}
-          {repoIssues.length === 0 ? <EmptyState text="Suggestions appear after issues are triaged." /> : null}
-        </div>
-      </section>
     </div>
   );
 }
@@ -1459,8 +2186,8 @@ function IssuesScreen({
   setRiskFilter,
   setTypeFilter,
   onIssue,
-  onGeneratePlan,
-  onTriage
+  onIssueAction,
+  onNewTask
 }: {
   issues: IssueResponse[];
   repositories: RepositoryResponse[];
@@ -1474,58 +2201,61 @@ function IssuesScreen({
   setRiskFilter: (filter: IssueRiskFilter) => void;
   setTypeFilter: (filter: string) => void;
   onIssue: (issue: IssueResponse) => void;
-  onGeneratePlan: (issue: IssueResponse) => void;
-  onTriage: (issue: IssueResponse) => void;
+  onIssueAction: (issue: IssueResponse) => void;
+  onNewTask: () => void;
 }) {
   const issueTypes = Array.from(new Set(issues.map((issue) => issue.issue_type).filter((value): value is string => Boolean(value)))).sort();
+  const selectedRepository = repositories.find((repo) => repo.id === repositoryFilter) ?? null;
   const filtered = filterIssues(issues, query).filter((issue) => {
-    if (repositoryFilter !== "all" && issue.repository_id !== repositoryFilter) return false;
+    if (repositoryFilter !== "all" && (!selectedRepository || !repositoryMatchesId(selectedRepository, issue.repository_id))) return false;
     if (riskFilter !== "all" && riskBucket(issue.risk_score) !== riskFilter) return false;
     if (typeFilter !== "all" && issue.issue_type !== typeFilter) return false;
     return true;
   });
   return (
     <div className="screen">
-      <ScreenHeader title={mode === "board" ? "Issues Board" : "Issue Queue"} subtitle="Track issues from triage through plan approval and PR readiness." />
+      <ScreenHeader title={mode === "board" ? "Task board" : "Task queue"} subtitle="Move work from triage through approval, execution, and review." />
+      {filtered.length === 0 ? (
+        <section className="panel emptyActionPanel compact">
+          <span>
+            <strong>{issues.length === 0 ? "No tasks yet" : "No issues match the current filters"}</strong>
+            <small>{issues.length === 0 ? "Create a task to start triage and plan preparation." : "You can create a new task or adjust the filters above the board."}</small>
+          </span>
+          <button className="primaryAction" onClick={onNewTask} type="button"><Sparkles size={18} /> New task</button>
+        </section>
+      ) : null}
       <div className="toolbar">
-        <select onChange={(event) => setRepositoryFilter(event.target.value)} value={repositoryFilter}>
+        <select aria-label="Filter tasks by repository" onChange={(event) => setRepositoryFilter(event.target.value)} value={repositoryFilter}>
           <option value="all">All repositories</option>
           {repositories.map((repo) => (
             <option key={repo.id} value={repo.id}>{repo.owner}/{repo.name}</option>
           ))}
         </select>
-        <select onChange={(event) => setRiskFilter(event.target.value as IssueRiskFilter)} value={riskFilter}>
+        <select aria-label="Filter tasks by risk" onChange={(event) => setRiskFilter(event.target.value as IssueRiskFilter)} value={riskFilter}>
           <option value="all">All risks</option>
           <option value="low">Low risk</option>
           <option value="medium">Medium risk</option>
           <option value="high">High risk</option>
         </select>
-        <select onChange={(event) => setTypeFilter(event.target.value)} value={typeFilter}>
+        <select aria-label="Filter tasks by type" onChange={(event) => setTypeFilter(event.target.value)} value={typeFilter}>
           <option value="all">All types</option>
           {issueTypes.map((type) => <option key={type} value={type}>{labelize(type)}</option>)}
         </select>
-        <button className={mode === "board" ? "segment active" : "segment"} onClick={() => setMode("board")} type="button">
+        <button aria-pressed={mode === "board"} className={mode === "board" ? "segment active" : "segment"} onClick={() => setMode("board")} type="button">
           <LayoutGrid size={16} /> Board
         </button>
-        <button className={mode === "queue" ? "segment active" : "segment"} onClick={() => setMode("queue")} type="button">
+        <button aria-pressed={mode === "queue"} className={mode === "queue" ? "segment active" : "segment"} onClick={() => setMode("queue")} type="button">
           <ListChecks size={16} /> Queue
         </button>
-        <button className="primaryAction pushRight" disabled={filtered.length === 0} onClick={() => filtered[0] && onGeneratePlan(filtered[0])} type="button">
-          <Play size={18} />
-          Generate plan
-        </button>
-        <button className="ghostAction" disabled={filtered.length === 0} onClick={() => filtered[0] && onTriage(filtered[0])} type="button">
-          <RefreshCcw size={18} />
-          Run triage
-        </button>
+        <button className="primaryAction pushRight" onClick={onNewTask} type="button"><Sparkles size={18} /> New task</button>
       </div>
       {mode === "board" ? (
         <div className="kanban">
-          {issueColumns.map((column) => {
-            const columnIssues = filtered.filter((issue) => issueColumn(issue) === column);
+          {issueBoardColumns.map((column) => {
+            const columnIssues = filtered.filter((issue) => column.states.includes(issueColumn(issue)));
             return (
-              <section className="kanbanColumn" key={column}>
-                <h2>{columnLabel(column)} <span>{columnIssues.length}</span></h2>
+              <section className="kanbanColumn" key={column.key}>
+                <h2>{column.label} <span>{columnIssues.length}</span></h2>
                 {columnIssues.map((issue) => (
                   <button className="issueCard" key={issue.id} onClick={() => onIssue(issue)} type="button" aria-label={`Issue #${issue.number} ${issue.title}`}>
                     <small>#{issue.number}</small>
@@ -1570,7 +2300,7 @@ function IssuesScreen({
                     <td><Badge tone={riskTone(issue.risk_score)}>{riskLabel(issue.risk_score)}</Badge></td>
                     <td><Badge tone={statusTone(issue.status)}>{labelize(issue.status)}</Badge></td>
                     <td>{issue.repository?.name ?? "Unavailable"}</td>
-                    <td><button className="rowAction" onClick={(event) => { event.stopPropagation(); void onGeneratePlan(issue); }} type="button">{nextIssueAction(issue)} <ChevronRight size={16} /></button></td>
+                    <td><button className="rowAction" onClick={(event) => { event.stopPropagation(); onIssueAction(issue); }} type="button">{issueQueueAction(issue).label} <ChevronRight size={16} /></button></td>
                   </tr>
                 ))}
               </tbody>
@@ -1579,9 +2309,9 @@ function IssuesScreen({
           <aside className="panel summaryPanel">
             <h2>Issue Summary</h2>
             <SummaryItem icon={Bot} label="Agent-ready" value={filtered.filter((issue) => normalizedStatus(issue.status) === "agent_ready").length} tone="success" />
-            <SummaryItem icon={Clock3} label="Awaiting approval" value={filtered.filter((issue) => issue.plan?.approval_status === "draft").length} tone="warning" />
+            <SummaryItem icon={Clock3} label="Awaiting approval" value={filtered.filter((issue) => isPlanAwaitingApproval(issue.plan?.approval_status)).length} tone="warning" />
             <SummaryItem icon={X} label="Blocked" value={filtered.filter((issue) => issueColumn(issue) === "blocked").length} tone="danger" />
-            <SummaryItem icon={ShieldAlert} label="High risk" value={filtered.filter((issue) => issue.risk_score >= 70).length} tone="danger" />
+          <SummaryItem icon={ShieldAlert} label="High risk" onClick={() => setRiskFilter("high")} value={filtered.filter((issue) => issue.risk_score >= 70).length} tone="danger" />
           </aside>
         </div>
       )}
@@ -1609,18 +2339,34 @@ function IssueDetailScreen({
   const filesToInspect = stringList(plan.files_to_inspect);
   const filesToModify = stringList(plan.files_to_modify);
   const testsToAdd = stringList(plan.tests_to_add);
+  const intendedChanges = stringList(plan.intended_changes);
+  const commandsToRun = stringList(plan.commands_to_run);
+  const validationStrategy = stringList(plan.validation_strategy);
+  const assumptions = stringList(plan.assumptions);
+  const contextCitations = stringList(plan.context_citations);
   const riskNotes = stringList(plan.risk_notes);
+  const planSummary = stringValue(plan.summary);
+  const rollbackPlan = stringValue(plan.rollback_plan);
+  const planHash = stringValue(plan.approved_plan_hash) || stringValue(plan.plan_hash);
+  const policyDecision = recordValue(plan.approval_policy_decision) ?? recordValue(plan.policy_decision);
+  const policyLabel = stringValue(policyDecision?.decision) || stringValue(policyDecision?.status) || "Not evaluated";
+  const policyNotes = [
+    ...stringList(policyDecision?.reasons),
+    ...stringList(policyDecision?.matched_patterns),
+    ...stringList(policyDecision?.violations)
+  ];
+  const awaitingApproval = isPlanAwaitingApproval(issue.plan?.approval_status);
   return (
     <div className="screen">
-      <Breadcrumb trail={["Issues", `#${issue.number}`]} />
+      <Breadcrumb trail={[{ label: "Tasks", view: "issues" }, { label: `#${issue.number}` }]} />
       <div className="titleRow">
         <ScreenHeader title={`#${issue.number} ${issue.title}`} subtitle={issue.repository ? `${issue.repository.owner}/${issue.repository.name}` : "Tracked GitHub issue"} />
         <Badge tone={statusTone(issue.plan?.approval_status ?? issue.status)}>{labelize(issue.plan?.approval_status ?? issue.status)}</Badge>
       </div>
       <div className="detailGrid">
         <section className="detailStack">
-          <InfoPanel number="1" title="Original GitHub Issue">
-            <p>{issue.title}</p>
+          <InfoPanel number="1" title="Original Task">
+            <p className="issueBody">{issue.body_text?.trim() || issue.title}</p>
           </InfoPanel>
           <InfoPanel number="2" title="Triage Result">
             <div className="fieldGrid">
@@ -1631,31 +2377,47 @@ function IssueDetailScreen({
               <Field label="Recommended action" value={nextIssueAction(issue)} />
             </div>
           </InfoPanel>
-          <InfoPanel number="3" title="Acceptance Criteria">
-            <CheckList items={stringList(plan.acceptance_criteria)} empty="No acceptance criteria were captured in the current plan data." />
+          <InfoPanel number="3" title="Plan Summary">
+            {planSummary ? <p>{planSummary}</p> : <EmptyState text="Generate a plan to populate the review summary." />}
           </InfoPanel>
           <InfoPanel number="4" title="Retrieved Code Context">
-            <PillList items={filesToInspect} empty="No retrieved files are attached to this issue yet." />
+            <PillList items={contextCitations.length ? contextCitations : filesToInspect} empty="No cited repository context is attached to this plan yet." />
           </InfoPanel>
           <div className="threePanels">
-            <InfoPanel number="5" title="Implementation Plan">
-              <NumberedList items={filesToModify.length ? filesToModify : stringList(plan.steps)} empty="Generate a plan to populate implementation steps." />
+            <InfoPanel number="5" title="Intended Changes">
+              <NumberedList items={intendedChanges.length ? intendedChanges : filesToModify} empty="Generate a plan to populate intended changes." />
             </InfoPanel>
-            <InfoPanel number="6" title="Test Plan">
-              <Bullets items={testsToAdd} empty="No test plan is attached yet." />
+            <InfoPanel number="6" title="Validation Plan">
+              <PillList items={commandsToRun} empty="No validation commands are attached yet." />
+              <Bullets items={[...validationStrategy, ...testsToAdd.map((item) => `Test scope: ${item}`)]} empty="No validation strategy is attached yet." />
             </InfoPanel>
             <InfoPanel number="7" title="Security Notes">
               <Bullets items={riskNotes} empty="No security notes are attached yet." />
             </InfoPanel>
           </div>
+          <div className="threePanels">
+            <InfoPanel number="8" title="Assumptions">
+              <Bullets items={assumptions} empty="No plan assumptions are recorded." />
+            </InfoPanel>
+            <InfoPanel number="9" title="Rollback Plan">
+              {rollbackPlan ? <p>{rollbackPlan}</p> : <EmptyState text="No rollback plan is attached yet." />}
+            </InfoPanel>
+            <InfoPanel number="10" title="Approval Policy">
+              <Field label="Decision" value={labelize(policyLabel)} tone={statusTone(policyLabel)} />
+              <Bullets items={policyNotes} empty="No additional policy notes are recorded." />
+            </InfoPanel>
+          </div>
         </section>
         <aside className="panel contextPanel">
           <Field label="Status" value={labelize(issue.plan?.approval_status ?? issue.status)} tone={statusTone(issue.plan?.approval_status ?? issue.status)} />
+          <Field label="Plan version" value={issue.plan ? `v${issue.plan.version}` : "Unavailable"} />
+          <Field label="Approval recorded" value={issue.plan?.approved_at ? relativeTime(issue.plan.approved_at) : "Not approved"} />
+          <Field label="Plan hash" value={planHash ? shortId(planHash) : "Unavailable"} mono />
           <Field label="Risk" value={riskLabel(issue.risk_score)} tone={riskTone(issue.risk_score)} />
           <Field label="Run" value={issue.run ? shortId(issue.run.id) : "Unavailable"} />
-          <Field label="Cost estimate" value={issue.run ? formatMoney(issue.run.total_cost) : "Unavailable"} />
+          <Field label="Provider-reported cost (USD)" value={issue.run ? formatUsd(issue.run.total_cost) : "Unavailable"} />
           <Field label="Confidence" value={issue.run ? "From trace data" : "Unavailable"} />
-          <button className="primaryAction wide" onClick={() => onApprove(issue)} disabled={!issue.plan} title={!issue.plan ? "Generate a plan before approval is available." : "Approve the current plan and continue."} type="button">
+          <button className="primaryAction wide" onClick={() => onApprove(issue)} disabled={!awaitingApproval} title={awaitingApproval ? "Approve the current plan and continue." : "Only a plan awaiting approval can be approved."} type="button">
             <Check size={20} />
             Approve Plan
           </button>
@@ -1667,7 +2429,7 @@ function IssueDetailScreen({
             <RotateCcw size={18} />
             Generate New Plan
           </button>
-          <button className="dangerAction wide" onClick={() => onReject(issue)} disabled={!issue.plan} title={!issue.plan ? "Generate a plan before rejection is available." : "Reject the current plan."} type="button">
+          <button className="dangerAction wide" onClick={() => onReject(issue)} disabled={!awaitingApproval} title={awaitingApproval ? "Reject the current plan." : "Only a plan awaiting approval can be rejected."} type="button">
             <X size={18} />
             Reject Plan
           </button>
@@ -1682,33 +2444,39 @@ function AgentRunsScreen({
   selectedRun,
   trace,
   issues,
+  isActionPending,
+  onPrimaryAction,
   query,
   onRun,
-  onStart,
   onStop
 }: {
   runs: RunSummary[];
   selectedRun: RunSummary | null;
   trace: TraceData | null;
   issues: IssueResponse[];
+  isActionPending: boolean;
   query: string;
+  onPrimaryAction: (run: RunSummary) => void;
   onRun: (run: RunSummary, target?: View) => void;
-  onStart: (run: RunSummary) => void;
   onStop: (run: RunSummary) => void;
 }) {
   const filtered = filterRuns(runs, issues, query);
   const run = selectedRun ?? filtered[0] ?? null;
   const issue = run ? issues.find((item) => item.id === run.issue_id) : null;
+  const primaryAction = run ? primaryRunAction(run) : null;
+  const terminal = run ? isTerminalRunState(run.state) : false;
+  const planApprovalRequired = run?.state.toUpperCase() === "WAIT_FOR_APPROVAL" && issue?.plan?.approval_status !== "approved";
+  const actionUnavailableLabel = planApprovalRequired ? "Approve plan to continue" : run ? runActionStatus(run.state) : "Unavailable";
   return (
     <div className="screen">
-      <Breadcrumb trail={["Agent Runs", run ? shortId(run.id) : "No run"]} />
+      <Breadcrumb trail={[{ label: "Agent Runs", view: "agent-runs" }, { label: run ? shortId(run.id) : "No run" }]} />
       <ScreenHeader title={run ? `Agent Run #${shortId(run.id)}` : "Agent Runs"} subtitle={issue ? `Issue #${issue.number} - ${issue.title}` : "Workflow execution state and evidence."} />
       <section className="statGrid five">
         <StatCard label="Status" value={run ? labelize(run.state) : "Unavailable"} icon={Clock3} />
         <StatCard label="Risk" value={issue ? riskLabel(issue.risk_score) : "Unavailable"} icon={ShieldAlert} />
         <StatCard label="Steps recorded" value={trace?.steps?.length ?? 0} icon={Bot} />
-        <StatCard label="Runtime" value={run ? elapsed(run.started_at, run.completed_at) : "Unavailable"} icon={Clock3} />
-        <StatCard label="Cost" value={run ? formatMoney(run.total_cost) : "Unavailable"} icon={KeyRound} />
+        <StatCard label="Recorded runtime" value={run ? recordedRunDuration(run, trace) : "Unavailable"} icon={Clock3} />
+        <StatCard label="Provider cost (USD)" value={run ? formatUsd(run.total_cost) : "Unavailable"} icon={KeyRound} />
       </section>
       <div className="sideGrid">
         <section className="panel">
@@ -1729,9 +2497,18 @@ function AgentRunsScreen({
           </div>
           {run ? (
             <div className="panelActions">
-              <button className="ghostAction" onClick={() => onStart(run)} type="button">Start</button>
-              <button className="dangerAction" onClick={() => onStop(run)} type="button">Stop</button>
-              <button className="primaryAction" onClick={() => onRun(run, "run-trace")} type="button">Open trace</button>
+              <button
+                className="primaryAction"
+                disabled={!primaryAction || planApprovalRequired || isActionPending}
+                onClick={() => onPrimaryAction(run)}
+                title={planApprovalRequired ? "Approve the linked plan before starting implementation." : primaryAction?.detail ?? runActionStatus(run.state)}
+                type="button"
+              >
+                <Play size={18} />
+                {isActionPending ? "Working..." : planApprovalRequired ? actionUnavailableLabel : primaryAction?.label ?? actionUnavailableLabel}
+              </button>
+              <button className="ghostAction" onClick={() => onRun(run, "run-trace")} type="button">Open trace</button>
+              <button className="dangerAction" disabled={terminal || isActionPending} onClick={() => onStop(run)} type="button">Stop run</button>
             </div>
           ) : null}
         </section>
@@ -1740,7 +2517,8 @@ function AgentRunsScreen({
           <Field label="Current state" value={run ? run.state : "Unavailable"} mono />
           <Field label="Plan" value={run?.plan_id ? shortId(run.plan_id) : "Unavailable"} mono />
           <Field label="Pull request" value={trace?.pull_requests?.[0] ? `#${trace.pull_requests[0].number}` : "Unavailable"} />
-          <Field label="Next action" value={nextRunAction(run?.state)} />
+          <Field label="Next action" value={planApprovalRequired ? actionUnavailableLabel : primaryAction?.label ?? actionUnavailableLabel} />
+          {primaryAction ? <p className="mutedText">{planApprovalRequired ? "Review and approve the linked plan before implementation starts." : primaryAction.detail}</p> : null}
           <div className="miniRunList">
             {filtered.slice(0, 8).map((item) => (
               <button className={run?.id === item.id ? "miniRun active" : "miniRun"} key={item.id} onClick={() => onRun(item)} type="button">
@@ -1768,26 +2546,32 @@ function RunTraceScreen({
 }) {
   const steps = trace?.steps ?? [];
   const llm = trace?.llm_traces ?? [];
-  const errors = steps.filter((step) => step.status === "failed").length;
+  const toolSteps = steps.filter((step) => step.step_name.toUpperCase().startsWith("TOOL_CALL:"));
+  const visibleSteps = tab === "tools" ? toolSteps : steps;
+  const errors = steps.filter((step) => ["failed", "blocked"].includes(step.status.toLowerCase())).length;
   return (
     <div className="screen">
-      <Breadcrumb trail={["Agent Runs", selectedRun ? shortId(selectedRun.id) : "Run", "Trace"]} />
+      <Breadcrumb trail={[
+        { label: "Agent Runs", view: "agent-runs" },
+        { label: selectedRun ? shortId(selectedRun.id) : "Run", view: "agent-runs", entityId: selectedRun?.id },
+        { label: "Trace" }
+      ]} />
       <ScreenHeader title={`Trace: ${selectedRun ? shortId(selectedRun.id) : "Unavailable"}`} subtitle="Detailed agent decisions, tool calls, latency, and outputs." />
       <section className="statGrid five">
-        <StatCard label="Total tool calls" value={steps.length} icon={Wrench} />
+        <StatCard label="Total tool calls" value={toolSteps.length} icon={Wrench} />
         <StatCard label="LLM calls" value={llm.length} icon={Sparkles} />
         <StatCard label="Tokens" value={trace?.run?.total_tokens ?? selectedRun?.total_tokens ?? 0} icon={Database} />
-        <StatCard label="Cost" value={formatMoney(trace?.run?.total_cost ?? selectedRun?.total_cost ?? 0)} icon={KeyRound} />
+        <StatCard label="Provider cost (USD)" value={formatUsd(trace?.run?.total_cost ?? selectedRun?.total_cost ?? 0)} icon={KeyRound} />
         <StatCard label="Errors" value={errors} icon={AlertTriangle} />
       </section>
-      <div className="tabs">
+      <div aria-label="Run trace sections" className="tabs" role="tablist">
         {["timeline", "tools", "prompts", "artifacts", "audit"].map((item) => (
-          <button className={tab === item ? "tab active" : "tab"} key={item} onClick={() => setTab(item as typeof tab)} type="button">
+          <button aria-controls={`run-trace-panel-${item}`} aria-selected={tab === item} className={tab === item ? "tab active" : "tab"} id={`run-trace-tab-${item}`} key={item} onClick={() => setTab(item as typeof tab)} role="tab" type="button">
             {labelize(item)}
           </button>
         ))}
       </div>
-      <div className="sideGrid">
+      <div aria-labelledby={`run-trace-tab-${tab}`} className="sideGrid" id={`run-trace-panel-${tab}`} role="tabpanel">
         <section className="panel tablePanel">
           <PanelHeader title={tab === "tools" ? "Tool Call Trace" : `${labelize(tab)} Trace`} />
           {tab === "tools" || tab === "timeline" ? (
@@ -1803,7 +2587,7 @@ function RunTraceScreen({
                 </tr>
               </thead>
               <tbody>
-                {steps.map((step, index) => (
+                {visibleSteps.map((step, index) => (
                   <tr key={`${step.step_name}-${index}`}>
                     <td>{formatClock(step.created_at)}</td>
                     <td>{agentName(step.step_name)}</td>
@@ -1817,21 +2601,21 @@ function RunTraceScreen({
             </table>
           ) : null}
           {tab === "prompts" ? <TraceJson items={llm.map((item) => ({ ...item, prompt_hash: item.prompt_hash }))} /> : null}
-          {tab === "artifacts" ? <TraceJson items={[...(trace?.validation_results ?? []), ...(trace?.security_findings ?? [])]} /> : null}
+          {tab === "artifacts" ? <TraceJson items={trace?.artifacts ?? []} /> : null}
           {tab === "audit" ? <TraceJson items={trace?.audit_events ?? []} /> : null}
         </section>
         <aside className="panel contextPanel">
-          <h2>Tool Call Details</h2>
-          {steps[0] ? (
+          <h2>{tab === "tools" ? "First Tool Call" : "First Trace Step"}</h2>
+          {visibleSteps[0] ? (
             <>
-              <Field label="Lane" value={agentName(steps[0].step_name)} />
-              <Field label="Tool" value={steps[0].step_name.toLowerCase()} mono />
-              <Field label="Output" value={summaryFromOutput(steps[0].output_json)} />
-              <Field label="Latency" value={steps[0].latency_ms ? `${(steps[0].latency_ms / 1000).toFixed(1)}s` : "Unavailable"} />
-              <Field label="Status" value={labelize(steps[0].status)} tone={statusTone(steps[0].status)} />
+              <Field label="Lane" value={agentName(visibleSteps[0].step_name)} />
+              <Field label="Tool" value={visibleSteps[0].step_name.toLowerCase()} mono />
+              <Field label="Output" value={summaryFromOutput(visibleSteps[0].output_json)} />
+              <Field label="Latency" value={visibleSteps[0].latency_ms ? `${(visibleSteps[0].latency_ms / 1000).toFixed(1)}s` : "Unavailable"} />
+              <Field label="Status" value={labelize(visibleSteps[0].status)} tone={statusTone(visibleSteps[0].status)} />
             </>
           ) : (
-            <EmptyState text="Select a trace row after tool calls are recorded." />
+            <EmptyState text={tab === "tools" ? "No tool calls were recorded for this run." : "No trace steps were recorded for this run."} />
           )}
         </aside>
       </div>
@@ -1870,90 +2654,86 @@ function PullRequestsScreen({
   statusFilter: PrStatusFilter;
   onPr: (pr: PullRequestSummary) => void;
 }) {
+  const selectedRepository = repositories.find((repo) => repo.id === repositoryFilter) ?? null;
   const filtered = prs.filter((pr) => {
     if (!searchable(`${pr.pr_number} ${pr.issue?.title ?? ""} ${pr.repository?.name ?? ""} ${pr.status} ${prModeLabel(pr)}`, query)) return false;
-    if (repositoryFilter !== "all" && pr.repository?.id !== repositoryFilter) return false;
+    if (repositoryFilter !== "all" && (!selectedRepository || !repositoryMatchesId(selectedRepository, pr.repository?.id))) return false;
     if (statusFilter !== "all" && pr.status !== statusFilter) return false;
     if (riskFilter !== "all" && riskBucket(pr.risk_score) !== riskFilter) return false;
     if (ciFilter === "passed" && !passedCi(pr.ci_status)) return false;
     if (ciFilter === "failed" && !failedCi(pr.ci_status)) return false;
     if (ciFilter === "unknown" && pr.ci_status) return false;
-    if (securityFilter === "passed" && pr.security_findings.some((finding) => finding.status === "open")) return false;
-    if (securityFilter === "open" && !pr.security_findings.some((finding) => finding.status === "open")) return false;
+    const security = securityEvidencePresentation(pr);
+    if (securityFilter === "passed" && !security.passed) return false;
+    if (securityFilter === "open" && security.state !== "failed") return false;
     return true;
   });
   return (
     <div className="screen">
-      <ScreenHeader title="Pull Requests" subtitle="Draft PR records created, monitored, or reviewed by RepoPilot AI." />
+      <ScreenHeader title="Reviews" subtitle="Inspect generated changes, validation, security, and CI evidence in one place." />
       <div className="toolbar fiveFilters">
-        <select onChange={(event) => setRepositoryFilter(event.target.value)} value={repositoryFilter}>
+        <select aria-label="Filter reviews by repository" onChange={(event) => setRepositoryFilter(event.target.value)} value={repositoryFilter}>
           <option value="all">All repositories</option>
           {repositories.map((repo) => <option key={repo.id} value={repo.id}>{repo.owner}/{repo.name}</option>)}
         </select>
-        <select onChange={(event) => setStatusFilter(event.target.value as PrStatusFilter)} value={statusFilter}>
+        <select aria-label="Filter reviews by status" onChange={(event) => setStatusFilter(event.target.value as PrStatusFilter)} value={statusFilter}>
           <option value="all">All statuses</option>
           <option value="draft">Draft</option>
           <option value="ready_for_review">Ready for review</option>
           <option value="blocked">Blocked</option>
         </select>
-        <select onChange={(event) => setRiskFilter(event.target.value as IssueRiskFilter)} value={riskFilter}>
+        <select aria-label="Filter reviews by risk" onChange={(event) => setRiskFilter(event.target.value as IssueRiskFilter)} value={riskFilter}>
           <option value="all">All risks</option>
           <option value="low">Low risk</option>
           <option value="medium">Medium risk</option>
           <option value="high">High risk</option>
         </select>
-        <select onChange={(event) => setCiFilter(event.target.value as PrCiFilter)} value={ciFilter}>
+        <select aria-label="Filter reviews by CI status" onChange={(event) => setCiFilter(event.target.value as PrCiFilter)} value={ciFilter}>
           <option value="all">All CI states</option>
           <option value="passed">CI passed</option>
           <option value="failed">CI failed</option>
           <option value="unknown">CI N/A</option>
         </select>
-        <select onChange={(event) => setSecurityFilter(event.target.value as PrSecurityFilter)} value={securityFilter}>
+        <select aria-label="Filter reviews by security status" onChange={(event) => setSecurityFilter(event.target.value as PrSecurityFilter)} value={securityFilter}>
           <option value="all">All security states</option>
           <option value="passed">No open findings</option>
           <option value="open">Open findings</option>
         </select>
       </div>
       <div className="sideGrid">
-        <section className="panel tablePanel">
-          <table className="prsTable">
-            <thead>
-              <tr>
-                <th scope="col">PR</th>
-                <th scope="col">Title</th>
-                <th scope="col">Linked issue</th>
-                <th scope="col">Mode</th>
-                <th scope="col">Status</th>
-                <th scope="col">Risk</th>
-                <th scope="col">CI</th>
-                <th scope="col">Security</th>
-                <th scope="col">Last updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((pr) => (
-                <tr key={pr.pr_id} onClick={() => onPr(pr)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPr(pr); } }} role="row">
-                  <td><span className="prNumberBadge mono">#{pr.pr_number}</span></td>
-                  <td>{pr.issue?.title ?? `PR #${pr.pr_number}`}</td>
-                  <td>{pr.issue ? `#${pr.issue.number}` : "Unavailable"}</td>
-                  <td><Badge tone={pr.is_local_record ? "warning" : "success"}>{prModeLabel(pr)}</Badge></td>
-                  <td><Badge tone={statusTone(pr.status)}>{labelize(pr.status)}</Badge></td>
-                  <td><Badge tone={riskTone(pr.risk_score)}>{riskLabel(pr.risk_score)}</Badge></td>
-                  <td><Badge tone={statusTone(pr.ci_status ?? "unknown")}>{labelize(pr.ci_status ?? "unknown")}</Badge></td>
-                  <td><Badge tone={securityTone(pr.security_findings)}>{securityLabel(pr.security_findings)}</Badge></td>
-                  <td>{relativeTime(pr.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filtered.length === 0 ? <EmptyState text="No pull requests are available yet." /> : null}
+        <section className="panel reviewLedger" aria-label="Review queue">
+          <header className="reviewLedgerHeader">
+            <span>Work item</span>
+            <span>Trust gates</span>
+            <span>Updated</span>
+          </header>
+          <div>
+            {filtered.map((pr) => (
+              <button className="reviewRow" key={pr.pr_id} onClick={() => onPr(pr)} type="button">
+                <span className="prNumberBadge mono">#{pr.pr_number}</span>
+                <span className="reviewIdentity">
+                  <strong>{pr.issue?.title ?? `Review #${pr.pr_number}`}</strong>
+                  <small>{pr.issue ? `Issue #${pr.issue.number}` : "No linked issue"} · {prModeLabel(pr)}</small>
+                </span>
+                <span className="reviewGates">
+                  <Badge tone={statusTone(pr.status)}>{labelize(pr.status)}</Badge>
+                  <Badge tone={statusTone(pr.ci_status ?? "unknown")}>CI {labelize(pr.ci_status ?? "pending")}</Badge>
+                  <Badge tone={securityEvidencePresentation(pr).tone}>Security {securityEvidencePresentation(pr).label}</Badge>
+                  <Badge tone={riskTone(pr.risk_score)}>{riskLabel(pr.risk_score)}</Badge>
+                </span>
+                <time>{relativeTime(pr.created_at)}</time>
+                <ChevronRight size={17} aria-hidden="true" />
+              </button>
+            ))}
+            {filtered.length === 0 ? <EmptyState text="No reviews match the current filters." /> : null}
+          </div>
         </section>
         <aside className="panel summaryPanel">
-          <h2>PR Summary</h2>
-          <SummaryItem icon={FileText} label="Tracked draft PR records" value={filtered.filter((pr) => pr.status === "draft").length} tone="violet" />
-          <SummaryItem icon={Eye} label="Ready for review" value={filtered.filter((pr) => pr.status === "ready_for_review").length} tone="info" />
-          <SummaryItem icon={X} label="Blocked PR records" value={filtered.filter((pr) => pr.status === "blocked").length} tone="danger" />
-          <SummaryItem icon={AlertCircle} label="CI failing" value={filtered.filter((pr) => pr.ci_status === "failed").length} tone="danger" />
+          <h2>Review summary</h2>
+          <SummaryItem icon={FileText} label="Draft records" onClick={() => setStatusFilter("draft")} value={filtered.filter((pr) => pr.status === "draft").length} tone="violet" />
+          <SummaryItem icon={Eye} label="Ready for review" onClick={() => setStatusFilter("ready_for_review")} value={filtered.filter((pr) => pr.status === "ready_for_review").length} tone="info" />
+          <SummaryItem icon={X} label="Blocked PR records" onClick={() => setStatusFilter("blocked")} value={filtered.filter((pr) => pr.status === "blocked").length} tone="danger" />
+          <SummaryItem icon={AlertCircle} label="CI failing" onClick={() => setCiFilter("failed")} value={filtered.filter((pr) => failedCi(pr.ci_status)).length} tone="danger" />
         </aside>
       </div>
     </div>
@@ -1978,16 +2758,18 @@ function PullRequestDetailScreen({
   if (!pr) {
     return <EmptyState text="Select a pull request to view details." />;
   }
+  const validationEvidence = validationEvidencePresentation(pr);
+  const securityEvidence = securityEvidencePresentation(pr);
   return (
     <div className="screen">
-      <Breadcrumb trail={["Pull Requests", `#${pr.pr_number}`]} />
+      <Breadcrumb trail={[{ label: "Reviews", view: "pull-requests" }, { label: `#${pr.pr_number}` }]} />
       <div className="titleRow">
         <ScreenHeader title={`PR #${pr.pr_number} ${pr.issue?.title ?? ""}`} subtitle="This tracked PR record includes RepoPilot evidence for human review." />
         <Badge tone={pr.is_local_record ? "warning" : "success"}>{prModeLabel(pr)}</Badge>
         <Badge tone={statusTone(pr.status)}>{labelize(pr.status)}</Badge>
         <Badge tone={riskTone(pr.risk_score)}>{riskLabel(pr.risk_score)}</Badge>
         <Badge tone={statusTone(pr.ci_status ?? "unknown")}>CI {labelize(pr.ci_status ?? "unknown")}</Badge>
-        <Badge tone={securityTone(pr.security_findings)}>Security {securityLabel(pr.security_findings)}</Badge>
+        <Badge tone={securityEvidence.tone}>Security {securityEvidence.label}</Badge>
       </div>
       <div className="detailGrid">
         <section className="detailStack">
@@ -2002,9 +2784,14 @@ function PullRequestDetailScreen({
             </button>
           </InfoPanel>
           <InfoPanel number="3" title="Changed Files">
-            <PillList items={pr.changed_files} empty="No changed files are attached to this PR record." />
+            <Field label="Current patch" value={pr.current_patch_hash ? shortId(pr.current_patch_hash) : "Unavailable"} mono />
+            <PillList items={pr.changed_files} empty="No generated patch files are attached to this PR record." />
           </InfoPanel>
-          <InfoPanel number="4" title="Test Results">
+          <InfoPanel number="4" title="Planned Files">
+            <PillList items={pr.planned_files} empty="No planned files are attached to this PR record." />
+          </InfoPanel>
+          <InfoPanel number="5" title="Test Results">
+            <Field label="Validation summary" value={validationEvidence.label} tone={validationEvidence.tone} />
             <div className="resultStrip">
               {pr.validation_results.map((result) => (
                 <Field key={result.command} label={result.command} value={labelize(result.status)} tone={statusTone(result.status)} />
@@ -2012,30 +2799,26 @@ function PullRequestDetailScreen({
               {pr.validation_results.length === 0 ? <EmptyState text="No validation results are recorded for this PR." /> : null}
             </div>
           </InfoPanel>
-          <InfoPanel number="5" title="Security Results">
+          <InfoPanel number="6" title="Security Results">
+            <Field label="Scan status" value={securityEvidence.label} tone={securityEvidence.tone} />
             <div className="resultStrip">
               {pr.security_findings.map((finding) => (
                 <Field key={`${finding.tool}-${finding.description}`} label={finding.tool} value={labelize(finding.status)} tone={riskTone(severityScore(finding.severity))} />
               ))}
-              {pr.security_findings.length === 0 ? <Field label="Security findings" value="None recorded" tone="success" /> : null}
+              {pr.security_findings.length === 0 ? <Field label="Security findings" value={securityEvidence.passed ? "No findings in completed scan" : "No finding records; scan is not proven clear"} tone={securityEvidence.passed ? "success" : "warning"} /> : null}
             </div>
           </InfoPanel>
-          <InfoPanel number="6" title="Rollback Notes">
+          <InfoPanel number="7" title="Rollback Notes">
             <p>{stringValue(pr.plan?.rollback_plan) || "No rollback plan is attached to this PR record."}</p>
           </InfoPanel>
           <button className="traceLink" onClick={() => onOpenRun(pr.run_id)} type="button">
-            7. Agent Trace <span>View {shortId(pr.run_id)} <ExternalLink size={16} /></span>
+            8. Agent Trace <span>View {shortId(pr.run_id)} <ExternalLink size={16} /></span>
           </button>
         </section>
         <aside className="panel contextPanel">
           <h2>Reviewer Checklist</h2>
-          <Field label="Record mode" value={prModeDetail(pr)} tone={pr.is_local_record ? "warning" : "success"} />
-          {reviewChecklist(pr).map((item) => (
-            <label className="checkRow" key={item}>
-              <input type="checkbox" />
-              <span>{item}</span>
-            </label>
-          ))}
+          <Field label="Record mode" value={prModeDetail(pr)} />
+          <ReviewerChecklist pr={pr} />
           <button className="dangerAction wide" onClick={() => onAnalyzeCi(pr)} type="button">
             <FileCode2 size={18} />
             Analyze CI logs
@@ -2043,10 +2826,6 @@ function PullRequestDetailScreen({
           <button className="cyanAction wide" onClick={() => onRevisionPlan(pr)} type="button">
             <RotateCcw size={18} />
             Create CI revision plan
-          </button>
-          <button className="ghostAction wide" disabled title="Explanation generation is not wired to a backend endpoint. Open the agent trace instead." type="button">
-            <Sparkles size={18} />
-            Explanation unavailable
           </button>
           <button className="cyanAction wide" onClick={() => onSecurityReview(pr)} type="button">
             <Shield size={18} />
@@ -2062,49 +2841,39 @@ function PullRequestDetailScreen({
   );
 }
 
-function CiDebuggerScreen({ pr, onAnalyzeCi }: { pr: PullRequestSummary | null; onAnalyzeCi: (pr: PullRequestSummary) => void }) {
-  if (!pr) {
-    return <EmptyState text="Select a pull request to inspect CI evidence." />;
-  }
-  const failed = pr.validation_results.find((result) => result.status !== "passed") ?? pr.validation_results[0] ?? null;
-  return (
-    <div className="screen">
-      <Breadcrumb trail={["Pull Requests", `#${pr.pr_number}`, "CI Evidence"]} />
-      <ScreenHeader title="CI Evidence Analyzer" />
-      <div className="failureBanner">
-        <AlertTriangle size={26} />
-        {failed ? `${failed.command} reported ${failed.status} on PR #${pr.pr_number}` : `No failing validation is recorded for PR #${pr.pr_number}`}
-      </div>
-      <section className="statGrid four">
-        <StatCard label="Validation source" value="Recorded CI/log evidence" icon={GitBranch} />
-        <StatCard label="Failed job" value={failed?.command ?? "Unavailable"} icon={ShieldAlert} />
-        <StatCard label="Failed command" value={failed?.command ?? "Unavailable"} icon={Terminal} />
-        <StatCard label="Status" value={failed ? labelize(failed.status) : "Unavailable"} icon={X} />
-      </section>
-      <div className="dashboardGrid">
-        <section className="panel">
-          <PanelHeader title="Failure Summary" />
-          <InfoLine icon={AlertCircle} label="Root cause" value={failed?.parsed_summary ?? "No parsed failure summary is available."} />
-          <InfoLine icon={AlertTriangle} label="Likely reason" value={failed?.command ?? "Unavailable"} />
-          <InfoLine icon={Wrench} label="Revision plan" value="Analyze recorded CI evidence to create a suggested revision plan." />
-        </section>
-        <section className="panel">
-          <PanelHeader title="Affected files" />
-          <PillList items={pr.changed_files} empty="No affected files are attached to this PR record." />
-        </section>
-      </div>
-      <section className="panel logPanel">
-        <PanelHeader title="Log Preview" />
-        <pre>{failed?.parsed_summary ?? "No CI log preview is available. Analyze supplied CI evidence after adding GitHub Actions logs."}</pre>
-      </section>
-      <div className="bottomActions">
-        <button className="primaryAction" onClick={() => onAnalyzeCi(pr)} type="button"><Sparkles size={18} /> Analyze supplied CI evidence</button>
-        <span className="mutedText"><CheckCircle2 size={18} style={{ marginRight: 8 }} />Approve fix not available</span>
-        <span className="mutedText"><X size={18} style={{ marginRight: 8 }} />Dismiss not available</span>
-        <button className="ghostAction" disabled={!prGithubUrl(pr)} onClick={() => { const url = prGithubUrl(pr); if (url) window.open(url, "_blank", "noopener,noreferrer"); }} title={pr.is_local_record ? "This is a local RepoPilot PR record. No real GitHub PR has been opened yet." : "Open the real GitHub pull request."} type="button"><Github size={18} /> {pr.is_local_record ? "Local PR record" : "Open PR in GitHub"}</button>
-      </div>
-    </div>
-  );
+function ReviewerChecklist({ pr }: { pr: PullRequestSummary }) {
+  const items = reviewChecklist(pr);
+  const storageKey = reviewChecklistStorageKey(pr);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [hydratedKey, setHydratedKey] = useState("");
+
+  useBrowserLayoutEffect(() => {
+    setChecked(parseStoredChecklist(window.localStorage.getItem(storageKey), items));
+    setHydratedKey(storageKey);
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (hydratedKey !== storageKey) return;
+    window.localStorage.setItem(storageKey, JSON.stringify(items.filter((item) => checked.has(item))));
+  }, [checked, hydratedKey, items, storageKey]);
+
+  return items.map((item) => (
+    <label className="checkRow" key={item}>
+      <input
+        checked={checked.has(item)}
+        onChange={(event) => {
+          setChecked((current) => {
+            const next = new Set(current);
+            if (event.target.checked) next.add(item);
+            else next.delete(item);
+            return next;
+          });
+        }}
+        type="checkbox"
+      />
+      <span>{item}</span>
+    </label>
+  ));
 }
 
 function SecurityScreen({
@@ -2182,7 +2951,7 @@ function SecurityDetailScreen({
   }
   return (
     <div className="screen">
-      <Breadcrumb trail={["Security", `Finding ${shortId(finding.id)}`]} />
+      <Breadcrumb trail={[{ label: "Security", view: "security" }, { label: `Finding ${shortId(finding.id)}` }]} />
       <div className="titleRow">
         <ScreenHeader title={finding.description} />
         <Badge tone={riskTone(severityScore(finding.severity))}>{labelize(finding.severity)}</Badge>
@@ -2247,6 +3016,7 @@ function EvaluationsScreen({
 }) {
   const latest = evalReports[0];
   const metrics = latest?.metrics ?? {};
+  const evidence = evaluationEvidenceModel(latest, repositories.length, runs);
   const bars = [
     ["Task pass rate", metricPercent(metrics.task_pass_rate)],
     ["Patch validation success", metricPercent(metrics.patch_success_rate)],
@@ -2262,15 +3032,16 @@ function EvaluationsScreen({
         <button className="cyanAction" onClick={onRunEvaluation} type="button"><Play size={18} /> Run benchmark</button>
       </div>
       <div className="reportMetaBar">
-        <ReadOnlyMeta label="Benchmark version" value={latest?.benchmark_version ?? "N/A"} />
-        <ReadOnlyMeta label="Repository scope" value={repositories.length ? `${repositories.length} connected repos` : "N/A"} />
-        <ReadOnlyMeta label="Agent version" value={latest ? "Current data snapshot" : "N/A"} />
+        <ReadOnlyMeta label="Benchmark version" value={evidence.historical.benchmarkVersion ?? "No report"} />
+        <ReadOnlyMeta label="Report generated" value={evidence.historical.generatedAt ? formatDateTime(evidence.historical.generatedAt) : "No report"} />
+        <ReadOnlyMeta label="Benchmark tasks" value={evidence.historical.benchmarkTaskCount === null ? "Unknown" : String(evidence.historical.benchmarkTaskCount)} />
+        <ReadOnlyMeta label="Fixture repositories" value={evidence.historical.fixtureRepositoryCount === null ? "Unknown" : String(evidence.historical.fixtureRepositoryCount)} />
       </div>
-      <section className="statGrid seven">
-        {bars.map(([label, value]) => <StatCard key={label} label={label} value={value.label} />)}
-        <StatCard label="Avg runtime" value={averageRuntime(runs)} />
-        <StatCard label="Avg cost/task" value={formatMoney(runs.length ? runs.reduce((sum, run) => sum + run.total_cost, 0) / runs.length : 0)} />
-      </section>
+      {latest ? (
+        <section aria-label="Historical benchmark results" className="statGrid five">
+          {bars.map(([label, value]) => <StatCard key={label} label={label} value={value.label} />)}
+        </section>
+      ) : <EmptyState text="No benchmark report is available. Run a benchmark to create historical evaluation evidence." />}
       <div className="dashboardGrid">
         <section className="panel chartPanel">
           <PanelHeader title="Success rate by issue type" />
@@ -2281,6 +3052,17 @@ function EvaluationsScreen({
           <FailureReasons metrics={metrics} />
         </section>
       </div>
+      <section aria-label="Current live operations snapshot" className="panel">
+        <PanelHeader title="Current live operations snapshot" />
+        <p className="muted">Current connected repositories and completed runs are operational data. They are not part of the historical benchmark report above.</p>
+        <div className="statGrid four">
+          <StatCard label="Connected repositories" value={String(evidence.live.connectedRepositoryCount)} />
+          <StatCard label="Completed runs" value={String(evidence.live.completedCount)} />
+          <StatCard label="Avg completed runtime" value={evidence.live.averageRuntimeLabel} />
+          <StatCard label="Avg completed-run cost (USD)" value={evidence.live.averageCost === null ? "Unavailable" : formatUsd(evidence.live.averageCost)} />
+        </div>
+        {evidence.live.excludedCount > 0 ? <p className="muted">Excluded {evidence.live.excludedCount} unfinished or invalid run{evidence.live.excludedCount === 1 ? "" : "s"} from live averages.</p> : null}
+      </section>
       <section className="panel tablePanel">
         <PanelHeader title="Benchmark Tasks" />
         {taskOutcomes.length ? (
@@ -2315,7 +3097,8 @@ function EvaluationsScreen({
 }
 
 function AuditLogsScreen({
-  activities,
+  page,
+  onLoadMore,
   riskFilter,
   selectedKey,
   setRiskFilter,
@@ -2325,7 +3108,8 @@ function AuditLogsScreen({
   sourceFilter,
   statusFilter
 }: {
-  activities: ActivityItem[];
+  page: AuditLogPage | null;
+  onLoadMore: () => void;
   riskFilter: AuditRiskFilter;
   selectedKey: string;
   setRiskFilter: (filter: AuditRiskFilter) => void;
@@ -2335,30 +3119,35 @@ function AuditLogsScreen({
   sourceFilter: string;
   statusFilter: AuditStatusFilter;
 }) {
-  const sources = Array.from(new Set(activities.map((item) => item.source))).sort();
+  const activities = page?.items ?? [];
+  const sources = Array.from(new Set(activities.map((item) => item.actor_type))).sort();
   const filtered = activities.filter((item) => {
-    if (sourceFilter !== "all" && item.source !== sourceFilter) return false;
-    if (statusFilter !== "all" && statusBucket(item.status) !== statusFilter) return false;
-    if (riskFilter !== "all" && riskBucket(metadataRisk(item.metadata)) !== riskFilter) return false;
+    if (sourceFilter !== "all" && item.actor_type !== sourceFilter) return false;
+    if (statusFilter !== "all" && statusBucket(item.result) !== statusFilter) return false;
+    if (riskFilter === "unknown" && item.risk_score !== null) return false;
+    if (riskFilter !== "all" && riskFilter !== "unknown" && (item.risk_score === null || riskBucket(item.risk_score) !== riskFilter)) return false;
     return true;
   });
-  const selected = filtered.find((item, index) => `${item.source}-${item.action}-${index}` === selectedKey) ?? filtered[0] ?? null;
+  const selected = filtered.find((item) => item.id === selectedKey) ?? filtered[0] ?? null;
+  const completeness = page ? `Showing ${page.items.length} of ${page.total} authoritative audit records.` : "Loading authoritative audit records.";
   return (
     <div className="screen">
-      <ScreenHeader title="Audit Logs" subtitle="Every human and agent action recorded for review." />
+      <ScreenHeader title="Audit Logs" subtitle={completeness} />
       <div className="toolbar fiveFilters">
-        <select onChange={(event) => setSourceFilter(event.target.value)} value={sourceFilter}>
-          <option value="all">All actors/sources</option>
+        <select aria-label="Filter audit records by actor type" onChange={(event) => setSourceFilter(event.target.value)} value={sourceFilter}>
+          <option value="all">All actor types</option>
           {sources.map((source) => <option key={source} value={source}>{labelize(source)}</option>)}
         </select>
-        <select onChange={(event) => setStatusFilter(event.target.value as AuditStatusFilter)} value={statusFilter}>
+        <select aria-label="Filter audit records by result" onChange={(event) => setStatusFilter(event.target.value as AuditStatusFilter)} value={statusFilter}>
           <option value="all">All results</option>
+          <option value="recorded">Recorded (no outcome metadata)</option>
           <option value="success">Successful</option>
           <option value="warning">Pending/review</option>
           <option value="failed">Failed/blocked</option>
         </select>
-        <select onChange={(event) => setRiskFilter(event.target.value as AuditRiskFilter)} value={riskFilter}>
+        <select aria-label="Filter audit records by risk" onChange={(event) => setRiskFilter(event.target.value as AuditRiskFilter)} value={riskFilter}>
           <option value="all">All risk levels</option>
+          <option value="unknown">Risk not recorded</option>
           <option value="low">Low risk</option>
           <option value="medium">Medium risk</option>
           <option value="high">High risk</option>
@@ -2379,33 +3168,37 @@ function AuditLogsScreen({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((item, index) => {
-                const key = `${item.source}-${item.action}-${index}`;
+              {filtered.map((item) => {
+                const actor = item.actor_id ? `${labelize(item.actor_type)} · ${item.actor_id}` : labelize(item.actor_type);
                 return (
-                  <tr className={key === selectedKey ? "selected" : ""} key={key} onClick={() => setSelectedKey(key)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedKey(key); } }} role="row">
-                    <td>{formatClock(item.created_at)}</td>
-                    <td>{labelize(item.source)}</td>
+                  <tr className={item.id === selectedKey ? "selected" : ""} key={item.id} onClick={() => setSelectedKey(item.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedKey(item.id); } }} role="row">
+                    <td>{formatDateTime(item.created_at)}</td>
+                    <td>{actor}</td>
                     <td>{item.action}</td>
                     <td>{item.entity_id ? shortId(item.entity_id) : item.entity_type}</td>
-                    <td><Badge tone={statusTone(item.status)}>{labelize(item.status)}</Badge></td>
-                    <td><Badge tone={riskTone(metadataRisk(item.metadata))}>{riskLabel(metadataRisk(item.metadata))}</Badge></td>
+                    <td><Badge tone={statusTone(item.result)}>{labelize(item.result)}</Badge></td>
+                    <td>{item.risk_score === null ? <Badge tone="neutral">Unknown</Badge> : <Badge tone={riskTone(item.risk_score)}>{riskLabel(item.risk_score)}</Badge>}</td>
                     <td><code>{item.entity_type === "agent_run" && item.entity_id ? shortId(item.entity_id) : "none"}</code></td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-          {filtered.length === 0 ? <EmptyState text="No audit activity matches the current filters." /> : null}
+          {!page ? <EmptyState text="Audit records are loading." /> : filtered.length === 0 ? <EmptyState text="No audit activity matches the current filters." /> : null}
+          {page?.has_more ? <button className="panelLink" onClick={onLoadMore} type="button">Load remaining audit records <ChevronRight size={16} /></button> : null}
         </section>
         <aside className="panel contextPanel">
           <h2>Selected log detail</h2>
           {selected ? (
             <>
-              <Field label="Actor" value={labelize(selected.source)} />
+              <Field label="Actor type" value={labelize(selected.actor_type)} />
+              <Field label="Actor ID" value={selected.actor_id ?? "Not recorded"} mono />
               <Field label="Input" value={selected.entity_type} mono />
               <Field label="Output" value={selected.action} />
               <Field label="Policy" value={stringValue(selected.metadata.policy) || "Unavailable"} />
-              <Field label="Status" value={labelize(selected.status)} tone={statusTone(selected.status)} />
+              <Field label="Result" value={labelize(selected.result)} tone={statusTone(selected.result)} />
+              <Field label="Risk" value={selected.risk_score === null ? "Not recorded" : riskLabel(selected.risk_score)} tone={selected.risk_score === null ? "neutral" : riskTone(selected.risk_score)} />
+              <Field label="Recorded" value={formatDateTime(selected.created_at)} />
               <Field label="Trace" value={selected.entity_id ? shortId(selected.entity_id) : "Unavailable"} mono />
             </>
           ) : (
@@ -2420,6 +3213,7 @@ function AuditLogsScreen({
 function SettingsScreen({
   data,
   githubAppVerification,
+  modelCatalogLoadStatus,
   motionPreference,
   onGithub,
   onSaveGithubApp,
@@ -2441,6 +3235,7 @@ function SettingsScreen({
 }: {
   data: ConsoleState;
   githubAppVerification: GitHubAppVerificationResponse | null;
+  modelCatalogLoadStatus: ModelCatalogLoadStatus;
   onGithub: () => void;
   onSaveGithubApp: (payload: GitHubAppConfigPayload) => Promise<void>;
   onSaveGithubOAuth: (payload: GitHubOAuthConfigPayload) => Promise<void>;
@@ -2477,6 +3272,8 @@ function SettingsScreen({
         || modelProviderDraft.apiKey
       )
   );
+  const modelVerificationPassed = verification?.ok ?? Boolean(data.modelConfig?.verified);
+  const modelVerificationFailed = verification ? !verification.ok : false;
   const [activeTab, setActiveTab] = useState<SettingsTab>(tab);
   useEffect(() => {
     setActiveTab(tab);
@@ -2489,15 +3286,15 @@ function SettingsScreen({
 
   return (
     <div className="screen">
-      <ScreenHeader title="Settings" subtitle="Configure GitHub access, models, approval policies, tools, and cost limits." />
-      <div className="tabs">
-        {settingsTabs.map((item) => (
-          <button className={activeTab === item ? "tab active" : "tab"} key={item} onClick={() => chooseTab(item)} type="button">
+      <ScreenHeader title="Settings" subtitle="Manage GitHub and model connections, and inspect effective policy, tool, budget, and display controls." />
+      <div aria-label="Settings sections" className="tabs" role="tablist">
+        {SETTINGS_TABS.map((item) => (
+          <button aria-controls={`settings-panel-${item.toLowerCase().replace(/\s+/g, "-")}`} aria-selected={activeTab === item} className={activeTab === item ? "tab active" : "tab"} id={`settings-tab-${item.toLowerCase().replace(/\s+/g, "-")}`} key={item} onClick={() => chooseTab(item)} role="tab" type="button">
             {item}
           </button>
         ))}
       </div>
-      <div className="settingsGrid">
+      <div aria-labelledby={`settings-tab-${activeTab.toLowerCase().replace(/\s+/g, "-")}`} className="settingsGrid" id={`settings-panel-${activeTab.toLowerCase().replace(/\s+/g, "-")}`} role="tabpanel">
         {activeTab === "GitHub" && (
           <>
             <section className="detailStack">
@@ -2584,6 +3381,7 @@ function SettingsScreen({
             <section className="detailStack">
               <section className="panel settingsPanel">
                 <h2>Human Approval Policies</h2>
+                <p className="mutedText">Read-only snapshot of the effective runtime policy. Change the deployment policy configuration to modify these controls.</p>
                 <PolicyToggle label="Require approval before code changes" enabled />
                 <PolicyToggle label="Require approval for auth changes" enabled={policy?.high_risk_patterns.some((item) => item.includes("auth")) ?? false} />
                 <PolicyToggle label="Require approval for CI/CD workflow changes" enabled={policy?.high_risk_patterns.some((item) => item.includes(".github/workflows")) ?? false} />
@@ -2607,7 +3405,7 @@ function SettingsScreen({
               <p className="mutedText">Environment: {readiness?.environment ?? "Unavailable"}</p>
               <button className="primaryAction wide" onClick={onReset} type="button">
                 <RefreshCcw size={18} />
-                Refresh config
+                Refresh effective policy
               </button>
             </aside>
           </>
@@ -2618,6 +3416,7 @@ function SettingsScreen({
             <section className="detailStack">
               <section className="panel settingsPanel">
                 <h2>Tool Permissions</h2>
+                <p className="mutedText">Read-only snapshot of the effective command allowlist and blocklist enforced by the backend.</p>
                 <div className="permissionGrid">
                   <CommandList title="Allowed commands" items={policy?.allowed_commands ?? []} tone="success" />
                   <CommandList title="Blocked commands" items={policy?.blocked_command_fragments ?? []} tone="danger" />
@@ -2633,7 +3432,7 @@ function SettingsScreen({
               <p className="mutedText">Environment: {readiness?.environment ?? "Unavailable"}</p>
               <button className="primaryAction wide" onClick={onReset} type="button">
                 <RefreshCcw size={18} />
-                Refresh config
+                Refresh effective permissions
               </button>
             </aside>
           </>
@@ -2644,7 +3443,8 @@ function SettingsScreen({
             <section className="detailStack">
               <section className="panel settingsPanel">
                 <h2>Cost Limits</h2>
-                <KeyValue label="Max cost per issue" value="Not configured" />
+                <p className="mutedText">Read-only snapshot of effective backend safety limits. Provider-reported costs are denominated in USD.</p>
+                <KeyValue label="Max provider cost per run (USD)" value={policy ? formatUsd(policy.max_cost_per_run) : "Unavailable"} />
                 <KeyValue label="Max commands without approval" value={String(policy?.max_commands_without_approval ?? "Unavailable")} />
                 <KeyValue label="Max files changed without approval" value={String(policy?.max_files_changed_without_approval ?? "Unavailable")} />
               </section>
@@ -2658,7 +3458,7 @@ function SettingsScreen({
               <p className="mutedText">Environment: {readiness?.environment ?? "Unavailable"}</p>
               <button className="primaryAction wide" onClick={onReset} type="button">
                 <RefreshCcw size={18} />
-                Refresh config
+                Refresh effective limits
               </button>
             </aside>
           </>
@@ -2669,6 +3469,7 @@ function SettingsScreen({
             <section className="detailStack">
               <ModelProviderForm
                 catalog={data.modelCatalog}
+                catalogLoadStatus={modelCatalogLoadStatus}
                 config={data.modelConfig}
                 draft={modelProviderDraft}
                 onSave={onSaveModelProvider}
@@ -2691,8 +3492,15 @@ function SettingsScreen({
               <Field label="Reasoning level" value={data.modelConfig?.reasoning_supported ? data.modelConfig.reasoning_level ?? "Default" : "N/A"} tone={data.modelConfig?.reasoning_supported ? "info" : "warning"} />
               <Field label="API key" value={data.modelConfig?.api_key_configured ? "Configured" : "Missing"} tone={data.modelConfig?.api_key_configured ? "success" : "danger"} />
               <Field label="Base URL" value={data.modelConfig?.base_url ?? "N/A"} />
-              <Field label="Live verification" value={verification ? (verification.ok ? "Passed" : "Failed") : "Not run"} tone={verification?.ok ? "success" : verification ? "danger" : "warning"} />
+              <Field
+                label="Live verification"
+                value={modelVerificationPassed ? "Passed" : modelVerificationFailed ? "Failed" : "Not run"}
+                tone={modelVerificationPassed ? "success" : modelVerificationFailed ? "danger" : "warning"}
+              />
               {verification ? <p className="mutedText">{verification.detail}</p> : null}
+              {!verification && data.modelConfig?.verified_at ? (
+                <p className="mutedText">Last passed {formatDateTime(data.modelConfig.verified_at)}. Reverify after changing provider credentials or model settings.</p>
+              ) : null}
               <p className="mutedText">Environment: {readiness?.environment ?? "Unavailable"}</p>
               <button className="cyanAction wide" disabled={!data.modelConfig?.api_key_configured} onClick={() => void onVerifyModelProvider()} title={data.modelConfig?.api_key_configured ? "Runs a live provider verification request using the saved key. No repository source is sent during verification." : "Save a provider API key before verification."} type="button">
                 <Sparkles size={18} />
@@ -2707,37 +3515,6 @@ function SettingsScreen({
               <button className="primaryAction wide" onClick={onReset} type="button">
                 <RefreshCcw size={18} />
                 Refresh config
-              </button>
-            </aside>
-          </>
-        )}
-
-        {activeTab === "Notifications" && (
-          <>
-            <section className="detailStack">
-              <section className="panel settingsPanel">
-                <h2>Alert Channels</h2>
-                <p className="mutedText" style={{ marginBottom: "16px" }}>No notification delivery endpoint or saved notification settings are present in this backend.</p>
-                <KeyValue label="Slack" value="Not configured" />
-                <KeyValue label="Discord" value="Not configured" />
-                <KeyValue label="Email alerts" value="Not configured" />
-              </section>
-              <section className="panel settingsPanel">
-                <h2>Webhook Delivery</h2>
-                <KeyValue label="Target URL" value="Not configured" />
-                <KeyValue label="Secret token" value="Not configured" />
-              </section>
-            </section>
-            <aside className="panel contextPanel">
-              <h2>Alerts status</h2>
-              <div className="statusHero warning">
-                <AlertTriangle size={32} />
-                <strong>Delivery not configured</strong>
-              </div>
-              <p className="mutedText">No notification configuration endpoint is available.</p>
-              <button className="primaryAction wide" onClick={onReset} type="button">
-                <RefreshCcw size={18} />
-                Refresh status
               </button>
             </aside>
           </>
@@ -2859,12 +3636,14 @@ function GitHubSyncPanel({
 
 function ModelProviderForm({
   catalog,
+  catalogLoadStatus,
   config,
   draft,
   onSave,
   setDraft
 }: {
   catalog: ModelCatalogResponse | null;
+  catalogLoadStatus: ModelCatalogLoadStatus;
   config: ModelProviderConfigStatus | null;
   draft: ModelProviderDraft | null;
   onSave: (payload: ModelProviderConfigPayload) => Promise<void>;
@@ -2885,8 +3664,24 @@ function ModelProviderForm({
   const [reasoningLevel, setReasoningLevel] = useState(activeDraft?.reasoningLevel ?? config?.reasoning_level ?? reasoningLevels[0] ?? "");
   const [apiKey, setApiKey] = useState(activeDraft?.apiKey ?? "");
   const [baseUrl, setBaseUrl] = useState(activeDraft?.baseUrl ?? config?.base_url ?? provider?.default_base_url ?? "");
+  const [modelQuery, setModelQuery] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const selectedProviderHasConfiguredKey = providerHasConfiguredApiKey(
+    config?.configured_api_key_providers,
+    provider?.id
+  );
+  const selectedProviderKeyReady = selectedProviderHasConfiguredKey || Boolean(apiKey.trim());
+  const normalizedModelQuery = modelQuery.trim().toLowerCase();
+  const matchingModels = (provider?.models ?? []).filter((model) => (
+    !normalizedModelQuery
+    || `${model.name} ${model.id} ${model.capabilities.join(" ")}`.toLowerCase().includes(normalizedModelQuery)
+  ));
+  const visibleModels = matchingModels.slice(0, 80);
+  if (!normalizedModelQuery && selectedModel && !visibleModels.some((model) => model.id === selectedModel.id)) {
+    visibleModels.unshift(selectedModel);
+    if (visibleModels.length > 80) visibleModels.pop();
+  }
   const pricingLabel = (model: ModelCatalogModel): string | null => {
     if (!model.pricing) {
       return null;
@@ -2896,7 +3691,10 @@ function ModelProviderForm({
     if (!prompt && !completion) {
       return null;
     }
-    return `Prompt ${prompt ?? "?"} | Completion ${completion ?? "?"}`;
+    const promptLabel = formatUsdPerToken(prompt);
+    const completionLabel = formatUsdPerToken(completion);
+    const currency = model.pricing_currency ?? "USD";
+    return `Prompt ${currency} ${promptLabel ?? "unknown"} | Completion ${currency} ${completionLabel ?? "unknown"}`;
   };
 
   useEffect(() => {
@@ -2949,6 +3747,7 @@ function ModelProviderForm({
     setReasoningLevel(nextDraft.reasoningLevel);
     setBaseUrl(nextDraft.baseUrl);
     setApiKey("");
+    setModelQuery("");
     updateDraft(nextDraft);
     setError(null);
   }
@@ -3002,17 +3801,20 @@ function ModelProviderForm({
   }
 
   if (providers.length === 0) {
+    const loading = catalogLoadStatus === "idle" || catalogLoadStatus === "loading";
     return (
       <section className="panel settingsPanel">
         <h2>Inference providers</h2>
         <p className="mutedText" style={{ marginBottom: "16px" }}>
-          The catalog is unavailable, so live provider setup is disabled. When configured, live model calls may send prompts, issue/PR context, selected repository snippets, and embedding inputs to the selected provider.
+          {loading
+            ? "Loading the provider catalog on demand. It is intentionally excluded from the initial console payload."
+            : "The catalog is unavailable, so live provider setup is disabled. When configured, live model calls may send prompts, issue/PR context, selected repository snippets, and embedding inputs to the selected provider."}
         </p>
         <div className="securityNotes">
           <InfoLine icon={KeyRound} label="Write-only key" value="Saved API keys are never returned to the browser." />
           <InfoLine icon={Eye} label="External data transfer" value="Repository chunks stay local unless live embeddings are enabled with source-transfer consent." />
         </div>
-        <EmptyState text="The model provider catalog is unavailable." />
+        <EmptyState text={loading ? "Loading model provider catalog…" : "The model provider catalog is unavailable."} />
       </section>
     );
   }
@@ -3026,25 +3828,33 @@ function ModelProviderForm({
           <p>Select the provider used for live model calls. API keys are write-only and saved in encrypted local storage.</p>
           <p>Live model calls may send issue text, prompts, selected repository context, and model outputs to the configured provider; provider-backed embeddings require explicit source-transfer opt-in.</p>
         </span>
-        <Badge tone={config?.status === "configured" ? "success" : "warning"}>{config?.status === "configured" ? "Configured" : "API key required"}</Badge>
+        <Badge tone={selectedProviderKeyReady ? "success" : "warning"}>
+          {selectedProviderHasConfiguredKey ? "API key configured" : apiKey.trim() ? "New API key entered" : "API key required"}
+        </Badge>
       </div>
 
-      <div className="modelProviderGrid">
-        {providers.map((candidate) => (
-          <button
-            className={candidate.id === provider?.id ? "modelProviderCard active" : "modelProviderCard"}
-            key={candidate.id}
-            onClick={() => chooseProvider(candidate.id)}
-            type="button"
-          >
-            <span>
-              <strong>{candidate.name}</strong>
-              <small>{candidate.models.length} models</small>
-            </span>
-            {candidate.id === provider?.id ? <CheckCircle2 size={18} /> : <Circle size={18} />}
-          </button>
-        ))}
-      </div>
+      <details className="settingsDisclosure">
+        <summary>
+          <span><strong>Change provider</strong><small>{provider?.name ?? "No provider selected"} · {providers.length} available</small></span>
+          <ChevronDown size={17} aria-hidden="true" />
+        </summary>
+        <div className="modelProviderGrid">
+          {providers.map((candidate) => (
+            <button
+              className={candidate.id === provider?.id ? "modelProviderCard active" : "modelProviderCard"}
+              key={candidate.id}
+              onClick={() => chooseProvider(candidate.id)}
+              type="button"
+            >
+              <span>
+                <strong>{candidate.name}</strong>
+                <small>{candidate.models.length} models</small>
+              </span>
+              {candidate.id === provider?.id ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+            </button>
+          ))}
+        </div>
+      </details>
 
       <div className="modelConfigGrid">
         <label className="secretInput">
@@ -3081,7 +3891,7 @@ function ModelProviderForm({
           label="Provider API Key"
           name="model-api-key"
           onChange={updateApiKey}
-          placeholder={config?.api_key_configured ? "Already configured; enter a new key to rotate" : "Paste provider API key"}
+          placeholder={selectedProviderHasConfiguredKey ? "Already configured for this provider; enter a new key to rotate" : "Paste provider API key"}
           secret
           value={apiKey}
         />
@@ -3104,25 +3914,57 @@ function ModelProviderForm({
         </div>
       ) : null}
 
-      <div className="modelOptionsTable">
-        {(provider?.models ?? []).map((model) => (
-          <button className={model.id === modelId ? "modelOptionRow active" : "modelOptionRow"} key={model.id} onClick={() => chooseModel(model.id)} type="button">
-            <span>
-              <strong>
-                {model.name}
-                {model.is_free ? <em className="modelFreeBadge">Free</em> : null}
-              </strong>
-              <small>{model.id}</small>
-            </span>
-            <span>{model.context_window}</span>
-            <span>
-              {model.reasoning_levels.length
-                ? `Reasoning: ${model.reasoning_levels.map(labelize).join(", ")}`
-                : pricingLabel(model) ?? model.capabilities.join(", ")}
-            </span>
-          </button>
-        ))}
+      {error ? <div className="connectNotice">{error}</div> : null}
+      <div className="panelActions modelSaveActions">
+        <button className="primaryAction" disabled={isSaving} type="submit">
+          <Save size={18} />
+          {isSaving ? "Saving..." : "Save model provider"}
+        </button>
       </div>
+
+      <details className="settingsDisclosure catalogDisclosure">
+        <summary>
+          <span><strong>Browse model catalog</strong><small>{provider?.models.length ?? 0} models · search by name, ID, or capability</small></span>
+          <ChevronDown size={17} aria-hidden="true" />
+        </summary>
+        {(provider?.models.length ?? 0) > 20 ? (
+          <div className="modelOptionsHeader">
+            <label className="secretInput modelSearchInput">
+              <span>Filter model catalog</span>
+              <input
+                onChange={(event) => setModelQuery(event.target.value)}
+                placeholder="Search model name, ID, or capability"
+                type="search"
+                value={modelQuery}
+              />
+            </label>
+            <span className="mutedText">
+              Showing {visibleModels.length} of {matchingModels.length} matching models ({provider?.models.length ?? 0} total)
+            </span>
+          </div>
+        ) : null}
+
+        <div className="modelOptionsTable">
+          {visibleModels.map((model) => (
+            <button className={model.id === modelId ? "modelOptionRow active" : "modelOptionRow"} key={model.id} onClick={() => chooseModel(model.id)} type="button">
+              <span>
+                <strong>
+                  {model.name}
+                  {model.is_free ? <em className="modelFreeBadge">Free</em> : null}
+                </strong>
+                <small>{model.id}</small>
+              </span>
+              <span>{model.context_window}</span>
+              <span>
+                {model.reasoning_levels.length
+                  ? `Reasoning: ${model.reasoning_levels.map(labelize).join(", ")}`
+                  : pricingLabel(model) ?? model.capabilities.join(", ")}
+              </span>
+            </button>
+          ))}
+          {visibleModels.length === 0 ? <EmptyState text="No models match this filter." /> : null}
+        </div>
+      </details>
 
       <div className="securityNotes">
         <InfoLine icon={Database} label="Backend catalog" value="Provider and model IDs come from the backend catalog. This does not verify provider privacy terms or data handling." />
@@ -3132,13 +3974,6 @@ function ModelProviderForm({
         <InfoLine icon={Database} label="Explicit source transfer" value="Repository chunks stay local unless live embeddings are enabled with source-transfer consent." />
       </div>
 
-      {error ? <div className="connectNotice">{error}</div> : null}
-      <div className="panelActions">
-        <button className="primaryAction" disabled={isSaving} type="submit">
-          <Save size={18} />
-          {isSaving ? "Saving..." : "Save model provider"}
-        </button>
-      </div>
     </form>
   );
 }
@@ -3152,9 +3987,10 @@ function GitHubOAuthSecretForm({
   onCancel: () => void;
   onSave: (payload: GitHubOAuthConfigPayload) => Promise<void>;
 }) {
-  const [form, setForm] = useState<GitHubOAuthConfigPayload>({
+  const [form, setForm] = useState<GitHubOAuthConfigForm>({
     github_client_id: "",
     github_client_secret: "",
+    github_owner_login: "",
     session_secret_key: "",
     github_oauth_callback_url: "http://localhost:8000/auth/github/callback",
     web_app_url: "http://127.0.0.1:3001",
@@ -3164,7 +4000,7 @@ function GitHubOAuthSecretForm({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function updateField(field: keyof GitHubOAuthConfigPayload, value: string) {
+  function updateField(field: keyof GitHubOAuthConfigForm, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
@@ -3173,7 +4009,10 @@ function GitHubOAuthSecretForm({
     setError(null);
     setIsSaving(true);
     try {
-      await onSave(form);
+      const payload = Object.fromEntries(
+        Object.entries(form).filter(([, value]) => value.trim() !== "")
+      ) as GitHubOAuthConfigPayload;
+      await onSave(payload);
       setForm((current) => ({
         ...current,
         github_client_secret: "",
@@ -3219,6 +4058,13 @@ function GitHubOAuthSecretForm({
           placeholder="OAuth app client secret"
           secret
           value={form.github_client_secret}
+        />
+        <SecretInput
+          label="Authorized Owner Login"
+          name="github-owner-login"
+          onChange={(value) => updateField("github_owner_login", value)}
+          placeholder="Exact GitHub login allowed into this workspace"
+          value={form.github_owner_login}
         />
         <SecretInput
           action={<button className="rowAction" onClick={() => updateField("session_secret_key", generatedSecret())} type="button">Generate</button>}
@@ -3449,12 +4295,12 @@ function SecretInput({
   );
 }
 
-function ProfileScreen({ data, onGithub }: { data: ConsoleState; onGithub: () => void }) {
+function ProfileScreen({ data, onLogout, onSettings }: { data: ConsoleState; onLogout: () => void; onSettings: () => void }) {
   const username = data.session?.username ?? "Platform Admin";
   const githubConnected = isGithubAccountConnected(data);
   return (
     <div className="screen">
-      <ScreenHeader title="Profile" subtitle="Manage your RepoPilot workspace preferences." />
+      <ScreenHeader title="Profile" subtitle="Review your RepoPilot account and workspace access." />
       <div className="profileGrid">
         <section className="panel profilePanel">
           <div className="profileHero">
@@ -3471,30 +4317,18 @@ function ProfileScreen({ data, onGithub }: { data: ConsoleState; onGithub: () =>
         <section className="panel profilePanel">
           <h2>Activity summary</h2>
           <div className="activitySummary">
-            <SummaryItem icon={FileText} label="Plans approved" value={data.activities.filter((item) => item.action.includes("plan.approved")).length} tone="info" />
-            <SummaryItem icon={GitBranch} label="PRs reviewed" value={data.pullRequests.length} tone="violet" />
-            <SummaryItem icon={Play} label="Agent runs started" value={data.runs.length} tone="info" />
-            <SummaryItem icon={Shield} label="Security overrides" value={data.securityFindings.filter((item) => item.status !== "open").length} tone="warning" />
+            <SummaryItem icon={FileText} label="Plans approved" value={data.activitySummary?.plans_approved ?? "Unavailable"} tone="info" />
+            <SummaryItem icon={GitBranch} label="PR records" value={data.activitySummary?.pull_request_records ?? "Unavailable"} tone="violet" />
+            <SummaryItem icon={Play} label="Agent runs" value={data.activitySummary?.agent_runs ?? "Unavailable"} tone="info" />
+            <SummaryItem icon={Shield} label="Reviewed findings" value={data.activitySummary?.reviewed_security_findings ?? "Unavailable"} tone="warning" />
           </div>
         </section>
         <section className="panel profilePanel">
-          <h2>Preferences</h2>
-          <KeyValue label="Compact mode" value="N/A" />
-          <KeyValue label="Email notifications" value="Not configured" />
-          <KeyValue label="GitHub comment notifications" value="Not configured" />
-          <KeyValue label="Weekly evaluation report" value="Not configured" />
-        </section>
-        <section className="panel profilePanel">
           <h2>API and access</h2>
-          <KeyValue icon={KeyRound} label="Personal API tokens" value="None created" />
           <KeyValue icon={Github} label="GitHub OAuth session" value={githubConnected ? "Active" : "Not connected"} />
           <KeyValue icon={Database} label="Imported GitHub accounts" value={String(data.installations.length)} />
-          <button className="ghostAction wide" onClick={onGithub} type="button"><Github size={18} /> Manage GitHub access</button>
-        </section>
-        <section className="panel profilePanel dangerZone">
-          <h2>Danger zone</h2>
-          <button className="dangerAction" disabled title="Revoke access is not available in the current environment." type="button">Revoke access unavailable</button>
-          <button className="dangerAction" disabled title="Data deletion is not available in the current environment." type="button">Delete data unavailable</button>
+          <button className="ghostAction wide" onClick={onSettings} type="button"><Github size={18} /> Manage GitHub access</button>
+          {githubConnected ? <button className="ghostAction wide" onClick={onLogout} type="button"><Lock size={18} /> Sign out</button> : null}
         </section>
       </div>
     </div>
@@ -3561,17 +4395,20 @@ function Segment({
   label: string;
   onClick?: () => void;
 }) {
-  return <button className={active ? "segment active" : "segment"} disabled={disabled} onClick={onClick} type="button">{label}</button>;
+  return <button aria-pressed={Boolean(active)} className={active ? "segment active" : "segment"} disabled={disabled} onClick={onClick} type="button">{label}</button>;
 }
 
-function SummaryItem({ icon: Icon, label, value, tone }: { icon: LucideIcon; label: string; value: string | number; tone: string }) {
-  return (
-    <div className="summaryItem">
+function SummaryItem({ icon: Icon, label, onClick, value, tone }: { icon: LucideIcon; label: string; onClick?: () => void; value: string | number; tone: string }) {
+  const content = (
+    <>
       <span className={`summaryIcon ${tone}`}><Icon size={24} /></span>
       <span><small>{label}</small><strong>{value}</strong></span>
-      <ChevronRight size={18} />
-    </div>
+      {onClick ? <ChevronRight size={18} aria-hidden="true" /> : null}
+    </>
   );
+  return onClick
+    ? <button aria-label={`${label}: ${value}`} className="summaryItem" onClick={onClick} type="button">{content}</button>
+    : <div className="summaryItem">{content}</div>;
 }
 
 function Field({ label, value, tone, mono }: { label: string; value: string; tone?: string; mono?: boolean }) {
@@ -3592,15 +4429,23 @@ function InfoPanel({ number, title, children }: { number: string; title: string;
   );
 }
 
-function Breadcrumb({ trail }: { trail: string[] }) {
-  return <div className="breadcrumb">{trail.map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}</div>;
-}
-
-function CheckList({ items, empty }: { items: string[]; empty: string }) {
-  if (items.length === 0) {
-    return <EmptyState text={empty} />;
-  }
-  return <div className="checkList">{items.map((item) => <span key={item}><CheckCircle2 size={19} /> {item}</span>)}</div>;
+function Breadcrumb({ trail }: { trail: Array<{ label: string; view?: View; entityId?: string }> }) {
+  return (
+    <nav aria-label="Breadcrumb" className="breadcrumb">
+      <ol>
+        {trail.map((item, index) => {
+          const current = index === trail.length - 1;
+          return (
+            <li key={`${item.label}-${index}`}>
+              {!current && item.view
+                ? <a href={`#${consoleHash(item.view, { entityId: item.entityId })}`}>{item.label}</a>
+                : <span aria-current={current ? "page" : undefined}>{item.label}</span>}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
 }
 
 function PillList({ items, empty }: { items: string[]; empty: string }) {
@@ -3626,6 +4471,27 @@ function Bullets({ items, empty = "No entries recorded." }: { items: string[]; e
 
 function EmptyState({ text }: { text: string }) {
   return <p className="emptyState">{text}</p>;
+}
+
+function DetailRouteState({
+  entityLabel,
+  requestedId,
+  status
+}: {
+  entityLabel: string;
+  requestedId: string | null;
+  status: DetailRouteStatus;
+}) {
+  if (status === "loading") {
+    return <div className="screen"><EmptyState text={`Loading ${entityLabel}…`} /></div>;
+  }
+  if (status === "error") {
+    return <div className="screen"><EmptyState text={`The ${entityLabel} could not be loaded. Refresh to retry.`} /></div>;
+  }
+  if (!requestedId || status === "missing") {
+    return <div className="screen"><EmptyState text={`This ${entityLabel} URL is missing its identifier.`} /></div>;
+  }
+  return <div className="screen"><EmptyState text={`The ${entityLabel} “${requestedId}” was not found. It may be stale or no longer accessible.`} /></div>;
 }
 
 function SetupMini({ setup, onClick }: { setup: ReturnType<typeof setupState>; onClick: () => void }) {
@@ -3710,21 +4576,18 @@ function TraceJson({ items }: { items: Array<Record<string, unknown>> }) {
 }
 
 function BarChart({ metrics }: { metrics: Record<string, unknown> }) {
-  const data = [
-    ["Docs", metricPercent(metrics.docs_success_rate).value],
-    ["Tests", metricPercent(metrics.tests_success_rate).value],
-    ["Bug", metricPercent(metrics.bug_success_rate).value],
-    ["Refactor", metricPercent(metrics.refactor_success_rate).value],
-    ["API", metricPercent(metrics.api_success_rate).value],
-    ["Security", metricPercent(metrics.security_success_rate).value]
-  ];
-  if (data.every(([, value]) => value === 0)) {
+  const categoryRates = recordValue(metrics.category_pass_rates);
+  const data = Object.entries(categoryRates ?? {})
+    .filter(([, value]) => typeof value === "number" && Number.isFinite(value))
+    .map(([label, value]) => [labelize(label), metricPercent(value).value] as const)
+    .sort(([left], [right]) => left.localeCompare(right));
+  if (data.length === 0) {
     return <EmptyState text="No issue-type success metrics are present in the latest eval report." />;
   }
   return (
     <div className="barChart">
       {data.map(([label, value]) => (
-        <div className="barColumn" key={label as string}>
+        <div className="barColumn" key={label}>
           <span style={{ height: `${value}%` }} />
           <strong>{value}%</strong>
           <small>{label}</small>
@@ -3778,27 +4641,35 @@ function nextSetupView(setup: ReturnType<typeof setupState>): View {
   return "dashboard";
 }
 
-function parseHash(hash: string): View {
-  const value = hash.replace("#", "").split("?")[0].split("/")[0] as View;
-  const views: View[] = ["landing", "connect", "setup", "dashboard", "repositories", "repository-detail", "issues", "issue-detail", "agent-runs", "run-trace", "pull-requests", "pull-request-detail", "ci-debugger", "security", "security-detail", "evaluations", "audit-logs", "settings", "profile"];
-  return views.includes(value) ? value : "dashboard";
+function isEntityView(view: View) {
+  return ["repository-detail", "issue-detail", "run-trace", "pull-request-detail", "security-detail"].includes(view);
 }
 
-function parseSettingsTab(hash: string): SettingsTab | null {
-  const cleanHash = hash.replace("#", "").split("?")[0];
-  const [, rawTab] = cleanHash.split("/");
-  if (!rawTab) {
-    return cleanHash === "settings" ? "GitHub" : null;
-  }
-  const normalized = rawTab.replace(/-/g, " ").toLowerCase();
-  if (normalized === "policy") {
-    return "Policies";
-  }
-  return settingsTabs.find((tab) => tab.toLowerCase() === normalized) ?? null;
+function isEntityRoute(route: ConsoleRoute) {
+  return isEntityView(route.view) || (route.view === "agent-runs" && Boolean(route.entityId));
 }
 
-function settingsHash(tab: SettingsTab) {
-  return `settings/${tab.toLowerCase().replace(/\s+/g, "-")}`;
+function routeEntityExists(data: ConsoleState, route: ConsoleRoute) {
+  const entityId = route.entityId;
+  if (!entityId) return false;
+  if (route.view === "repository-detail") return data.repositories.some((item) => repositoryMatchesId(item, entityId));
+  if (route.view === "issue-detail") return data.issues.some((item) => item.id === entityId);
+  if (route.view === "agent-runs" || route.view === "run-trace") return data.runs.some((item) => item.id === entityId);
+  if (route.view === "pull-request-detail") return data.pullRequests.some((item) => item.pr_id === entityId);
+  if (route.view === "security-detail") return data.securityFindings.some((item) => item.id === entityId);
+  return false;
+}
+
+function upsertBy<T>(items: T[], next: T, key: (item: T) => string): T[] {
+  const nextKey = key(next);
+  const index = items.findIndex((item) => key(item) === nextKey);
+  if (index < 0) return [next, ...items];
+  return items.map((item, itemIndex) => itemIndex === index ? next : item);
+}
+
+function upsertRepository(items: RepositoryResponse[], next: RepositoryResponse): RepositoryResponse[] {
+  const nextIds = new Set([next.id, ...(next.alias_ids ?? [])]);
+  return [next, ...items.filter((item) => ![item.id, ...(item.alias_ids ?? [])].some((id) => nextIds.has(id)))];
 }
 
 function modelProviderConfigSignature(config: ModelProviderConfigStatus | null, catalog: ModelCatalogResponse | null) {
@@ -3810,7 +4681,8 @@ function modelProviderConfigSignature(config: ModelProviderConfigStatus | null, 
     config?.model ?? "",
     config?.base_url ?? "",
     config?.reasoning_level ?? "",
-    config?.api_key_configured ? "api-key" : "no-api-key"
+    config?.api_key_configured ? "api-key" : "no-api-key",
+    config?.configured_api_key_providers.join(",") ?? ""
   ].join(":");
   return `${catalogSignature}::${configSignature}`;
 }
@@ -3828,7 +4700,7 @@ function readinessIntegration(readiness: ReadinessResponse | null, needle: strin
 }
 
 function githubOAuthConfigured(status: GitHubOAuthConfigStatus | null) {
-  const required = ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "GITHUB_OAUTH_CALLBACK_URL", "WEB_APP_URL", "SESSION_SECRET_KEY"];
+  const required = ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "REPOPILOT_GITHUB_OWNER_LOGIN", "GITHUB_OAUTH_CALLBACK_URL", "WEB_APP_URL", "SESSION_SECRET_KEY"];
   return required.every((name) => status?.fields.some((field) => field.name === name && field.configured));
 }
 
@@ -3851,6 +4723,7 @@ function fieldLabel(name: string) {
     GITHUB_APP_VERIFIED_INSTALLATION_ID: "Verified Installation",
     GITHUB_WRITE_SMOKE_VERIFIED_AT: "Write Smoke Verified",
     GITHUB_CLIENT_ID: "Client ID",
+    REPOPILOT_GITHUB_OWNER_LOGIN: "Authorized owner",
     GITHUB_CLIENT_SECRET: "Client Secret",
     GITHUB_OAUTH_CALLBACK_URL: "Callback URL",
     WEB_APP_URL: "Web App URL",
@@ -3871,7 +4744,7 @@ function isNavActive(view: View, item: View) {
   if (item === "repositories") return view === item || view === "repository-detail";
   if (item === "issues") return view === item || view === "issue-detail";
   if (item === "agent-runs") return view === item || view === "run-trace";
-  if (item === "pull-requests") return view === item || view === "pull-request-detail" || view === "ci-debugger";
+  if (item === "pull-requests") return view === item || view === "pull-request-detail";
   if (item === "security") return view === item || view === "security-detail";
   return view === item;
 }
@@ -3900,7 +4773,7 @@ function normalizedStatus(status: string) {
 
 function issueColumn(issue: IssueResponse) {
   const status = normalizedStatus(issue.status);
-  if (issue.plan?.approval_status === "draft") return "wait_for_approval";
+  if (isPlanAwaitingApproval(issue.plan?.approval_status)) return "wait_for_approval";
   if (status.includes("blocked") || status.includes("rejected")) return "blocked";
   if (status.includes("planning") || issue.run?.state === "GENERATE_PLAN") return "planning";
   if (status.includes("progress") || issue.run?.state === "IMPLEMENT_PATCH") return "in_progress";
@@ -3908,19 +4781,6 @@ function issueColumn(issue: IssueResponse) {
   if (status === "agent_ready") return "agent_ready";
   if (status === "wait_for_approval") return "wait_for_approval";
   return "needs_info";
-}
-
-function columnLabel(column: string) {
-  const labels: Record<string, string> = {
-    needs_info: "Needs Info",
-    agent_ready: "Agent Ready",
-    planning: "Planning",
-    wait_for_approval: "Awaiting Approval",
-    in_progress: "In Progress",
-    pr_opened: "PR Opened",
-    blocked: "Blocked"
-  };
-  return labels[column] ?? labelize(column);
 }
 
 export function riskCounts(issues: IssueResponse[]) {
@@ -3963,36 +4823,20 @@ function complexityTone(value: string | null) {
 
 function statusTone(status: string) {
   const lowered = status.toLowerCase();
-  if (["passed", "success", "succeeded", "ready_for_review", "open", "approved", "agent_ready", "fixed", "configured", "verified"].some((item) => lowered.includes(item)) && !lowered.includes("unverified")) return "success";
+  if (lowered === "open") return "warning";
+  if (["passed", "success", "succeeded", "ready_for_review", "opened", "approved", "agent_ready", "fixed", "configured", "verified"].some((item) => lowered.includes(item)) && !lowered.includes("unverified")) return "success";
   if (["waiting", "pending", "draft", "progress", "review", "approval", "queued", "unverified", "placeholder", "disabled"].some((item) => lowered.includes(item))) return "warning";
-  if (["failed", "blocked", "rejected", "error", "critical", "missing"].some((item) => lowered.includes(item))) return "danger";
+  if (["failed", "failure", "blocked", "rejected", "error", "critical", "missing"].some((item) => lowered.includes(item))) return "danger";
   if (["running", "ci", "plan"].some((item) => lowered.includes(item))) return "info";
   return "neutral";
 }
 
-function securityTone(findings: PullRequestSummary["security_findings"]) {
-  if (findings.some((finding) => finding.status === "open" && severityScore(finding.severity) >= 70)) return "danger";
-  if (findings.some((finding) => finding.status === "open")) return "warning";
-  return "success";
-}
-
-function securityLabel(findings: PullRequestSummary["security_findings"]) {
-  if (findings.length === 0) return "Passed";
-  const open = findings.filter((finding) => finding.status === "open");
-  if (open.length === 0) return "Passed";
-  return `${open.length} open`;
-}
-
 function labelize(value: string) {
-  return value.replace(/[_-]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return value.replace(/[._-]+/g, " ").replace(/\s+/g, " ").trim().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function shortId(value: string) {
   return value.slice(0, 8);
-}
-
-function formatMoney(value: number) {
-  return `₹${Math.round(value * 100) / 100}`;
 }
 
 function formatClock(value: string) {
@@ -4003,6 +4847,12 @@ function formatClock(value: string) {
   const hh = String(date.getUTCHours()).padStart(2, "0");
   const mm = String(date.getUTCMinutes()).padStart(2, "0");
   return `${hh}:${mm}`;
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "at an unavailable time";
+  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function relativeTime(value: string) {
@@ -4018,7 +4868,7 @@ function relativeTime(value: string) {
 function refreshStateLabel(lastRefreshedAt: string | null, isRefreshing: boolean) {
   if (isRefreshing) return "Refreshing current snapshot.";
   if (!lastRefreshedAt) return "Snapshot has not been refreshed in this session.";
-  return `Last refreshed ${relativeTime(lastRefreshedAt)}. Auto-refresh checks every 20 seconds.`;
+  return `Last refreshed ${relativeTime(lastRefreshedAt)}. Auto-refresh checks relevant data every 30 seconds.`;
 }
 
 function elapsed(start: string, end: string | null) {
@@ -4028,17 +4878,6 @@ function elapsed(start: string, end: string | null) {
   const seconds = Math.max(0, Math.round((endTime - startTime) / 1000));
   const minutes = Math.floor(seconds / 60);
   return `${minutes}m ${seconds % 60}s`;
-}
-
-function averageRuntime(runs: RunSummary[]) {
-  if (runs.length === 0) return "Unavailable";
-  const completed = runs.map((run) => {
-    const start = new Date(run.started_at).getTime();
-    const end = run.completed_at ? new Date(run.completed_at).getTime() : Date.now();
-    return Number.isNaN(start) || Number.isNaN(end) ? 0 : end - start;
-  });
-  const seconds = Math.round(completed.reduce((sum, value) => sum + value, 0) / Math.max(1, completed.length) / 1000);
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 function initials(value: string) {
@@ -4051,8 +4890,8 @@ function workspaceLabel(installations: InstallationResponse[]) {
 }
 
 function lastIndexedLabel(repos: RepositoryResponse[]) {
-  const indexed = repos.find((repo) => repo.last_indexed_sha);
-  return indexed ? indexed.last_indexed_sha?.slice(0, 7) ?? "Indexed" : "Never";
+  const indexedAt = latestRepositoryIndexTimestamp(repos);
+  return indexedAt ? formatDateTime(indexedAt) : "Never";
 }
 
 function repositoryIndexLabel(repo: RepositoryResponse) {
@@ -4076,11 +4915,11 @@ function ciPassRateLabel(prs: PullRequestSummary[]) {
 }
 
 function passedCi(status: string | null) {
-  return status === "passed" || status === "success" || status === "succeeded";
+  return ["passed", "success", "succeeded"].includes((status ?? "").toLowerCase());
 }
 
 function failedCi(status: string | null) {
-  return status === "failed" || status === "failure" || status === "error";
+  return ["failed", "failure", "error"].includes((status ?? "").toLowerCase());
 }
 
 function riskBucket(score: number): IssueRiskFilter {
@@ -4093,18 +4932,131 @@ function statusBucket(status: string): AuditStatusFilter {
   const tone = statusTone(status);
   if (tone === "success") return "success";
   if (tone === "danger") return "failed";
-  return "warning";
+  if (tone === "warning" || tone === "info") return "warning";
+  return "recorded";
 }
 
 function latestValidation(pr: PullRequestSummary) {
   return pr.validation_results[0] ?? null;
 }
 
+function isPlanAwaitingApproval(status?: string | null) {
+  const normalized = normalizedStatus(status ?? "");
+  return ["draft", "waiting", "wait_for_approval", "pending"].includes(normalized);
+}
+
 function nextIssueAction(issue: IssueResponse) {
   if (!issue.plan) return "Generate plan";
-  if (issue.plan.approval_status === "draft") return "Approve plan";
+  if (isPlanAwaitingApproval(issue.plan.approval_status)) return "Approve plan";
   if (issue.run) return nextRunAction(issue.run.state);
   return "Review issue";
+}
+
+type RunPrimaryAction = {
+  key: string;
+  label: string;
+  detail: string;
+  path: string;
+  successMessage: string;
+  body?: Record<string, unknown>;
+};
+
+function primaryRunAction(run: RunSummary): RunPrimaryAction | null {
+  if (
+    run.latest_step === "ORCHESTRATE_RUN"
+    && ["blocked", "failed"].includes((run.latest_step_status ?? "").toLowerCase())
+    && ["CREATE_BRANCH", "IMPLEMENT_PATCH", "GENERATE_TESTS", "RUN_LOCAL_VALIDATION", "RUN_SECURITY_CHECKS", "OPEN_DRAFT_PR", "FAILED"].includes(run.state.toUpperCase())
+  ) {
+    return {
+      key: "retry",
+      label: "Retry failed run",
+      detail: "Creates a fresh run with the same approved plan, preserving the failed attempt and its evidence.",
+      path: "/retry",
+      successMessage: "A fresh retry run was queued."
+    };
+  }
+  switch (run.state.toUpperCase()) {
+    case "WAIT_FOR_APPROVAL":
+      return {
+        key: "execute",
+        label: "Run to draft PR",
+        detail: "Queues implementation, isolated validation, security gating, and draft-PR creation, then waits for trusted CI.",
+        path: "/execute",
+        successMessage: "Approved run queued through the trusted CI boundary."
+      };
+    case "CREATE_BRANCH":
+      return {
+        key: "execute",
+        label: "Continue to draft PR",
+        detail: "Queues the bounded implementation agent, validation, security gates, and draft-PR creation.",
+        path: "/execute",
+        successMessage: "Run queued through the trusted CI boundary."
+      };
+    case "RUN_LOCAL_VALIDATION":
+      return {
+        key: "security-scan",
+        label: "Run security scan",
+        detail: "Scans the generated patch and workspace before a draft PR record can be created.",
+        path: "/security-scan",
+        successMessage: "Security scan completed.",
+        body: {}
+      };
+    case "RUN_SECURITY_CHECKS":
+      return {
+        key: "open-draft-pr",
+        label: "Create draft PR record",
+        detail: "Creates a gated local record or real GitHub draft PR when write readiness is enabled.",
+        path: "/open-draft-pr",
+        successMessage: "Draft PR record created.",
+        body: {}
+      };
+    default:
+      return null;
+  }
+}
+
+function isTerminalRunState(state: string) {
+  return ["READY_FOR_REVIEW", "CANCELLED", "FAILED", "REJECTED"].includes(state.toUpperCase());
+}
+
+function runActionStatus(state: string) {
+  switch (state.toUpperCase()) {
+    case "WAIT_FOR_CI":
+      return "Waiting for CI evidence";
+    case "READY_FOR_REVIEW":
+      return "Ready for review";
+    case "CANCELLED":
+      return "Run cancelled";
+    case "FAILED":
+      return "Run failed";
+    case "REJECTED":
+      return "Run rejected";
+    default:
+      return "Workflow action unavailable";
+  }
+}
+
+function runStageLabel(state: string) {
+  switch (state.toUpperCase()) {
+    case "WAIT_FOR_APPROVAL":
+      return "Waiting for approval";
+    case "WAIT_FOR_CI":
+      return "Waiting for CI";
+    case "READY_FOR_REVIEW":
+      return "Ready for review";
+    default:
+      return labelize(state);
+  }
+}
+
+function recordedRunDuration(run: RunSummary, trace: TraceData | null) {
+  const state = run.state.toUpperCase();
+  const waitingOrTerminal = ["WAIT_FOR_APPROVAL", "WAIT_FOR_CI", "READY_FOR_REVIEW", "CANCELLED", "FAILED", "REJECTED"].includes(state);
+  const steps = trace?.steps ?? [];
+  const lastStepAt = steps.length ? steps[steps.length - 1]?.created_at ?? null : null;
+  const evidenceEnd = run.completed_at ?? (waitingOrTerminal ? lastStepAt : null);
+  if (waitingOrTerminal && !evidenceEnd) return "Awaiting trace";
+  return elapsed(run.started_at, evidenceEnd);
 }
 
 function nextRunAction(state?: string) {
@@ -4142,20 +5094,25 @@ function activityIcon(source: string) {
   return <FileText size={18} />;
 }
 
-function maybeOpenActivity(item: ActivityItem, data: ConsoleState, onIssue: (issue: IssueResponse) => void, onRun: (run: RunSummary) => void) {
-  if (item.entity_type === "issue" && item.entity_id) {
-    const issue = data.issues.find((candidate) => candidate.id === item.entity_id);
+function maybeOpenActivity(
+  item: ActivityItem,
+  data: ConsoleState,
+  onIssue: (issue: IssueResponse) => void,
+  onRun: (run: RunSummary) => void,
+  onPr: (pr: PullRequestSummary) => void
+) {
+  const target = activityNavigationTarget(item);
+  if (!target) return;
+  if (target.kind === "issue") {
+    const issue = data.issues.find((candidate) => candidate.id === target.entityId);
     if (issue) onIssue(issue);
-  }
-  if (item.entity_type === "agent_run" && item.entity_id) {
-    const run = data.runs.find((candidate) => candidate.id === item.entity_id);
+  } else if (target.kind === "run") {
+    const run = data.runs.find((candidate) => candidate.id === target.entityId);
     if (run) onRun(run);
+  } else {
+    const pr = data.pullRequests.find((candidate) => candidate.pr_id === target.entityId);
+    if (pr) onPr(pr);
   }
-}
-
-function metadataRisk(metadata: Record<string, unknown>) {
-  const risk = metadata.risk_score;
-  return typeof risk === "number" ? risk : 0;
 }
 
 function stringList(value: unknown) {
@@ -4164,6 +5121,10 @@ function stringList(value: unknown) {
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value : "";
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
 function metricPercent(value: unknown) {

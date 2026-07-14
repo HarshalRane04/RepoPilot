@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
-from repopilot_contracts import ActivityEvent
-from sqlalchemy import select
+from repopilot_contracts import ActivityEvent, ActivitySummaryResponse, AuditLogPage
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -21,6 +21,78 @@ from app.db.models import (
 from app.db.session import get_db
 
 router = APIRouter()
+
+
+@router.get("/summary", response_model=ActivitySummaryResponse)
+async def activity_summary(db: AsyncSession = Depends(get_db)) -> dict[str, int]:
+    plans_approved = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.action.in_(("plan.approved", "plan.approved_via_github_command")))
+        )
+        or 0
+    )
+    pull_request_records = int(await db.scalar(select(func.count()).select_from(PullRequest)) or 0)
+    agent_runs = int(await db.scalar(select(func.count()).select_from(AgentRun)) or 0)
+    reviewed_security_findings = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(SecurityFinding)
+            .where(SecurityFinding.status != "open")
+        )
+        or 0
+    )
+    return _activity_summary_response(
+        plans_approved=plans_approved,
+        pull_request_records=pull_request_records,
+        agent_runs=agent_runs,
+        reviewed_security_findings=reviewed_security_findings,
+    )
+
+
+def _activity_summary_response(
+    *,
+    plans_approved: int,
+    pull_request_records: int,
+    agent_runs: int,
+    reviewed_security_findings: int,
+) -> dict[str, int]:
+    return {
+        "plans_approved": plans_approved,
+        "pull_request_records": pull_request_records,
+        "agent_runs": agent_runs,
+        "reviewed_security_findings": reviewed_security_findings,
+    }
+
+
+@router.get("/audit", response_model=AuditLogPage)
+async def list_audit_logs(
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    total = int(await db.scalar(select(func.count()).select_from(AuditLog)) or 0)
+    result = await db.execute(
+        select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).offset(offset).limit(limit)
+    )
+    audits = result.scalars().all()
+    return _audit_log_page(audits, total=total, limit=limit, offset=offset)
+
+
+def _audit_log_page(
+    audits: list[AuditLog], *, total: int, limit: int, offset: int
+) -> dict[str, object]:
+    items = [_audit_log_item(audit) for audit in audits]
+    returned_end = offset + len(items)
+    return {
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": returned_end < total,
+        "is_complete": offset == 0 and returned_end >= total,
+    }
 
 
 @router.get("", response_model=list[ActivityEvent])
@@ -129,7 +201,7 @@ async def _validation_activity(db: AsyncSession) -> list[dict[str, object]]:
             source="validation",
             action=validation.command,
             status=validation.status,
-            created_at=datetime.min,
+            created_at=validation.created_at,
             entity_type="agent_run",
             entity_id=str(validation.run_id),
             metadata={"duration_ms": validation.duration_ms, "summary": validation.parsed_summary},
@@ -145,7 +217,7 @@ async def _security_activity(db: AsyncSession) -> list[dict[str, object]]:
             source="security",
             action=finding.tool,
             status=finding.status,
-            created_at=datetime.min,
+            created_at=finding.created_at,
             entity_type="agent_run",
             entity_id=str(finding.run_id),
             metadata={"severity": finding.severity, "file_path": finding.file_path, "description": finding.description},
@@ -203,5 +275,31 @@ def _activity(
         "created_at": created_at,
         "entity_type": entity_type,
         "entity_id": entity_id,
+        "metadata": metadata,
+    }
+
+
+def _audit_log_item(audit: AuditLog) -> dict[str, object]:
+    metadata = audit.metadata_json if isinstance(audit.metadata_json, dict) else {}
+    risk = metadata.get("risk_score")
+    risk_score = int(risk) if isinstance(risk, (int, float)) and not isinstance(risk, bool) and 0 <= risk <= 100 else None
+    result = next(
+        (
+            str(metadata[key])
+            for key in ("result", "status", "conclusion")
+            if isinstance(metadata.get(key), str) and str(metadata[key]).strip()
+        ),
+        "recorded",
+    )
+    return {
+        "id": str(audit.id),
+        "actor_type": audit.actor_type,
+        "actor_id": audit.actor_id,
+        "action": audit.action,
+        "entity_type": audit.entity_type,
+        "entity_id": audit.entity_id,
+        "result": result,
+        "risk_score": risk_score,
+        "created_at": audit.created_at,
         "metadata": metadata,
     }

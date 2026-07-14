@@ -13,7 +13,7 @@ from typing import Any, Protocol
 from repopilot_contracts import EvalTaskFixture
 from repopilot_llm_client import build_completion_request, extract_completion_content, provider_by_id
 
-from .provider_credentials import redact_for_output, resolve_provider_credentials
+from .provider_credentials import redact_for_output, resolve_provider_credentials, validated_provider_url
 from .report import BenchmarkReport, BenchmarkReportBuilder
 
 
@@ -23,10 +23,20 @@ class ChatCompletionClient(Protocol):
 
 
 class ProviderChatClient:
-    def __init__(self, *, base_url: str, api_key: str, provider: str) -> None:
-        self.base_url = base_url.rstrip("/")
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        provider: str,
+        max_retries: int = 2,
+        retry_backoff_seconds: float = 0.5,
+    ) -> None:
+        self.base_url = validated_provider_url(base_url)
         self.api_key = api_key
         self.provider = provider.strip().lower()
+        self.max_retries = max(0, min(max_retries, 3))
+        self.retry_backoff_seconds = max(0.0, min(retry_backoff_seconds, 10.0))
 
     def complete_json(self, *, model: str, messages: list[dict[str, str]], timeout_seconds: int) -> dict[str, Any]:
         system_prompt, user_prompt = split_chat_messages(messages)
@@ -45,19 +55,30 @@ class ProviderChatClient:
         if self.provider not in {"anthropic", "google"}:
             headers["X-Title"] = "RepoPilot Eval Harness"
         request = urllib.request.Request(
-            url=request_config.url,
+            url=validated_provider_url(request_config.url),
             data=json.dumps(request_config.json_payload).encode("utf-8"),
             headers=headers,
             method="POST",
         )
-        try:
-            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"{self.provider} returned HTTP {exc.code}: {redact_for_output(body, limit=500)}") from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"{self.provider} request failed: {exc.reason}") from exc
+        for attempt in range(self.max_retries + 1):
+            try:
+                # validated_provider_url rejects non-HTTPS schemes, credentials, fragments, and missing hosts.
+                with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+                    payload = json.loads(response.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="replace")
+                if exc.code in {408, 409, 425, 429, 500, 502, 503, 504} and attempt < self.max_retries:
+                    time.sleep(_retry_delay_seconds(exc.headers.get("Retry-After"), attempt, self.retry_backoff_seconds))
+                    continue
+                raise RuntimeError(
+                    f"{self.provider} returned HTTP {exc.code}: {redact_for_output(body, limit=500)}"
+                ) from exc
+            except urllib.error.URLError as exc:
+                if attempt < self.max_retries:
+                    time.sleep(_retry_delay_seconds(None, attempt, self.retry_backoff_seconds))
+                    continue
+                raise RuntimeError(f"{self.provider} request failed: {exc.reason}") from exc
         content = extract_completion_content(provider_id=self.provider, payload=payload)
         if not content:
             raise RuntimeError(f"{self.provider} response did not include a message content string.")
@@ -65,6 +86,15 @@ class ProviderChatClient:
 
 
 OpenAICompatibleChatClient = ProviderChatClient
+
+
+def _retry_delay_seconds(retry_after: str | None, attempt: int, backoff_seconds: float) -> float:
+    if retry_after:
+        try:
+            return max(0.0, min(float(retry_after), 10.0))
+        except ValueError:
+            pass
+    return min(backoff_seconds * (2**attempt), 10.0)
 
 
 @dataclass(frozen=True)

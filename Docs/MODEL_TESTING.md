@@ -40,6 +40,8 @@ make configure-runtime-secrets
 make provider-planning-eval PROVIDER=openrouter MODEL=gemma-4-31b-it:free TASK_COUNT=5
 ```
 
+Set `PROVIDER_REPORT_SUFFIX=-<comparison-name>` to retain side-by-side reports instead of replacing the default artifact, for example `PROVIDER_REPORT_SUFFIX=-openrouter-free`.
+
 The provider eval commands read `MODEL_API_KEY`, `MODEL_PROVIDER`, and `MODEL_BASE_URL` from `.local/repopilot-secrets/runtime-secrets.json` by default. Environment variables such as `OPENROUTER_API_KEY` still override the local store, which is useful for one-off tests and mirrors GitHub Actions behavior.
 
 Patch-attempt eval:

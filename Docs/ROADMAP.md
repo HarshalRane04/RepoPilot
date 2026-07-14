@@ -9,6 +9,7 @@ RepoPilot is public as an open-source release candidate. It should not be descri
 - CodeQL runs successfully after public code scanning became available.
 - Local source-build validation, API tests, web typecheck, release hygiene, deployment validation, and release-image dry-run builds have passed.
 - The operator console, local control plane, safety gates, audit surfaces, and mocked/local workflow are implemented enough for public review.
+- Canonical GitHub source acquisition, bounded hybrid retrieval, iterative implementation tool use, one-click execution to `WAIT_FOR_CI`, patch-bound evidence, durable webhook retries, artifact downloads, and the isolated Unix-socket sandbox are implemented and locally verified.
 
 ## Remaining Before `v1.0.0`
 

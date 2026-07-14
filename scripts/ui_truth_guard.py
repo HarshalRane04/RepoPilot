@@ -37,7 +37,7 @@ REQUIRED_PHRASES: tuple[tuple[str, str], ...] = (
     ("External data transfer", "Model settings must warn about provider data transfer."),
     ("source-transfer consent", "Embedding/source transfer opt-in must be visible."),
     ("Verify with live call", "Provider verification button must disclose live outbound call."),
-    ("CI Evidence Analyzer", "CI screen must avoid autonomous-fix wording."),
+    ("Analyze CI logs", "PR review must expose evidence analysis without autonomous-fix wording."),
     ("Draft PR records", "Dashboard/PR surfaces must distinguish local records from live PR writes."),
 )
 

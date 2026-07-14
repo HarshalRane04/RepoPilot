@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -64,9 +65,28 @@ class ScannerStatus:
 
 
 @dataclass
+class ScanExecution:
+    name: str
+    command: list[str]
+    status: str
+    exit_code: int | None
+    detail: str
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "command": self.command,
+            "status": self.status,
+            "exit_code": self.exit_code,
+            "detail": self.detail,
+        }
+
+
+@dataclass
 class SecurityScannerSnapshot:
     generated_at: str
     root: str
+    source_fingerprint: str
     release_scanner_proof_ready: bool
     environment: dict[str, bool]
     dependency_manifests: list[str]
@@ -74,6 +94,7 @@ class SecurityScannerSnapshot:
     codeql_run_evidence_present: bool
     tool_versions: list[ToolVersion]
     scanners: list[ScannerStatus]
+    scan_executions: list[ScanExecution]
     warnings: list[str]
     blockers: list[str]
 
@@ -81,6 +102,7 @@ class SecurityScannerSnapshot:
         return {
             "generated_at": self.generated_at,
             "root": self.root,
+            "source_fingerprint": self.source_fingerprint,
             "release_scanner_proof_ready": self.release_scanner_proof_ready,
             "environment": self.environment,
             "dependency_manifests": self.dependency_manifests,
@@ -88,6 +110,7 @@ class SecurityScannerSnapshot:
             "codeql_run_evidence_present": self.codeql_run_evidence_present,
             "tool_versions": [tool.as_dict() for tool in self.tool_versions],
             "scanners": [scanner.as_dict() for scanner in self.scanners],
+            "scan_executions": [execution.as_dict() for execution in self.scan_executions],
             "warnings": self.warnings,
             "blockers": self.blockers,
         }
@@ -98,7 +121,45 @@ def parse_bool(value: str | None) -> bool:
 
 
 def default_runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, capture_output=True, check=False, text=True, timeout=15)
+    return subprocess.run(command, capture_output=True, check=False, text=True, timeout=180)
+
+
+def source_fingerprint(root: Path) -> str:
+    digest = hashlib.sha256()
+    ignored_parts = {".git", ".next", "node_modules", "__pycache__", ".pytest_cache", "release-artifacts"}
+    included_roots = [root / path for path in ("apps", "packages", "services", "scripts", ".github/workflows")]
+    extra_files = [root / path for path in ("Makefile", "requirements.txt", "docker-compose.yml", "docker-compose.ghcr.yml")]
+    files: list[Path] = []
+    for included_root in included_roots:
+        if included_root.is_file():
+            files.append(included_root)
+        elif included_root.exists():
+            files.extend(path for path in included_root.rglob("*") if path.is_file())
+    files.extend(path for path in extra_files if path.is_file())
+    for path in sorted(set(files)):
+        relative = path.relative_to(root)
+        if ignored_parts.intersection(relative.parts):
+            continue
+        digest.update(relative.as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def run_scan(name: str, command: list[str], *, runner: Runner) -> ScanExecution:
+    try:
+        result = runner(command)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return ScanExecution(name=name, command=command, status="blocked", exit_code=None, detail=exc.__class__.__name__)
+    line_count = len((result.stdout or "").splitlines()) + len((result.stderr or "").splitlines())
+    return ScanExecution(
+        name=name,
+        command=command,
+        status="passed" if result.returncode == 0 else "failed",
+        exit_code=result.returncode,
+        detail=f"Command exited {result.returncode} and produced {line_count} output lines.",
+    )
 
 
 def collect_tool_version(name: str, command: list[str], *, runner: Runner = default_runner) -> ToolVersion:
@@ -163,7 +224,7 @@ def collect_snapshot(
     runner: Runner = default_runner,
 ) -> SecurityScannerSnapshot:
     root = root.resolve()
-    env = env or os.environ
+    env = os.environ if env is None else env
     env_flags = {key: parse_bool(env.get(key)) for key in SECURITY_ENV_KEYS}
     dependency_manifests = find_dependency_manifests(root)
     codeql_workflow_present = any((root / ".github/workflows").glob("*codeql*.yml")) or any(
@@ -178,6 +239,7 @@ def collect_snapshot(
         collect_tool_version("codeql", ["codeql", "--version"], runner=runner),
     ]
     tools = {tool.name: tool for tool in versions}
+    scan_executions: list[ScanExecution] = []
     scanners: list[ScannerStatus] = [
         ScannerStatus(
             name="built_in_prompt_and_secret_guards",
@@ -203,15 +265,47 @@ def collect_snapshot(
 
     if env_flags["SEMGREP_ENABLED"]:
         if has_tool(tools, "semgrep"):
+            semgrep_execution = run_scan(
+                "semgrep",
+                [
+                    "semgrep",
+                    "scan",
+                    "--config",
+                    "p/default",
+                    "--error",
+                    "--metrics=off",
+                    "--exclude",
+                    "packages/evals/fixtures",
+                    "--exclude",
+                    ".next",
+                    "--exclude",
+                    "node_modules",
+                    str(root / "apps/api/app"),
+                    str(root / "packages"),
+                    str(root / "services"),
+                    str(root / "scripts"),
+                ],
+                runner=runner,
+            )
+            scan_executions.append(semgrep_execution)
+            semgrep_passed = semgrep_execution.status == "passed"
+            detail = (
+                "Semgrep completed with no blocking findings."
+                if semgrep_passed
+                else f"Semgrep scan did not pass: {semgrep_execution.detail}"
+            )
+            if not semgrep_passed:
+                blockers.append(detail)
             scanners.append(
                 ScannerStatus(
                     name="semgrep",
                     env_key="SEMGREP_ENABLED",
                     enabled=True,
-                    status="ready",
-                    detail="Semgrep is enabled and the executable is available for sandbox security gates.",
+                    status="ready" if semgrep_passed else "blocked",
+                    detail=detail,
                     required_for_release=True,
                     tools=["semgrep"],
+                    next_step=None if semgrep_passed else "Resolve or explicitly justify every blocking Semgrep finding, then rerun the scan.",
                 )
             )
         else:
@@ -257,9 +351,38 @@ def collect_snapshot(
             status = "blocked"
             next_step = "Install the missing dependency audit tools in the API/worker runtime."
         elif dependency_manifests:
-            detail = f"Dependency audit is enabled and manifests were found: {len(dependency_manifests)}."
-            status = "ready"
-            next_step = None
+            audit_executions: list[ScanExecution] = []
+            if any(path.endswith(("requirements.txt", "pyproject.toml")) for path in dependency_manifests):
+                audit_executions.append(run_scan("pip-audit", ["pip-audit", "--local"], runner=runner))
+            if any(path.endswith("package-lock.json") for path in dependency_manifests):
+                audit_executions.append(
+                    run_scan(
+                        "npm-audit",
+                        [
+                            "npm",
+                            "--prefix",
+                            str(root / "apps/web"),
+                            "audit",
+                            "--package-lock-only",
+                            "--omit=dev",
+                            "--audit-level=high",
+                        ],
+                        runner=runner,
+                    )
+                )
+            scan_executions.extend(audit_executions)
+            failed_audits = [execution for execution in audit_executions if execution.status != "passed"]
+            if failed_audits:
+                detail = "Dependency audit command(s) did not pass: " + ", ".join(
+                    f"{execution.name} ({execution.detail})" for execution in failed_audits
+                )
+                blockers.append(detail)
+                status = "blocked"
+                next_step = "Resolve reported dependency vulnerabilities or audit runtime failures, then rerun both dependency audits."
+            else:
+                detail = f"Python and npm dependency audits passed for {len(dependency_manifests)} discovered manifests."
+                status = "ready"
+                next_step = None
         else:
             detail = "Dependency audit is enabled, but no dependency manifests were found in the source boundary."
             warnings.append(detail)
@@ -353,6 +476,7 @@ def collect_snapshot(
     return SecurityScannerSnapshot(
         generated_at=datetime.now(timezone.utc).isoformat(),
         root=str(root),
+        source_fingerprint=source_fingerprint(root),
         release_scanner_proof_ready=release_scanner_proof_ready,
         environment=env_flags,
         dependency_manifests=dependency_manifests,
@@ -360,6 +484,7 @@ def collect_snapshot(
         codeql_run_evidence_present=codeql_run_evidence_present,
         tool_versions=versions,
         scanners=scanners,
+        scan_executions=scan_executions,
         warnings=warnings,
         blockers=blockers,
     )
@@ -371,6 +496,7 @@ def render_markdown(snapshot: SecurityScannerSnapshot) -> str:
         "",
         f"- Generated at: `{snapshot.generated_at}`",
         f"- Root: `{snapshot.root}`",
+        f"- Source fingerprint: `{snapshot.source_fingerprint}`",
         f"- Release scanner proof ready: `{snapshot.release_scanner_proof_ready}`",
         f"- CodeQL workflow present: `{snapshot.codeql_workflow_present}`",
         f"- CodeQL run evidence present: `{snapshot.codeql_run_evidence_present}`",
@@ -415,6 +541,29 @@ def render_markdown(snapshot: SecurityScannerSnapshot) -> str:
                     str(tool.available),
                     (tool.version or "").replace("|", "/"),
                     (tool.detail or "").replace("|", "/"),
+                ]
+            )
+            + " |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Executed Scans",
+            "",
+            "| Scan | Status | Exit Code | Command | Detail |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for execution in snapshot.scan_executions:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    execution.name,
+                    execution.status,
+                    str(execution.exit_code if execution.exit_code is not None else ""),
+                    " ".join(execution.command).replace("|", "/"),
+                    execution.detail.replace("|", "/"),
                 ]
             )
             + " |"

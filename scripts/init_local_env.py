@@ -17,6 +17,7 @@ LOCAL_DEFAULT_KEYS = {
     "ALLOW_MODEL_FALLBACK",
     "REPOPILOT_RELEASE_PROFILE",
     "SANDBOX_BACKEND",
+    "SANDBOX_RUNNER_TOKEN",
 }
 
 PLACEHOLDER_VALUES = {"", "placeholder", "change-me", "change-me-local-dev", "change-me-session-secret", "todo"}
@@ -35,7 +36,8 @@ def local_default_value(key: str) -> str:
         "MODEL_NAME": "mock-planner",
         "ALLOW_MODEL_FALLBACK": "false",
         "REPOPILOT_RELEASE_PROFILE": "oss-demo",
-        "SANDBOX_BACKEND": "local",
+        "SANDBOX_BACKEND": "remote",
+        "SANDBOX_RUNNER_TOKEN": f"repopilot-local-sandbox-{secrets.token_urlsafe(48)}",
     }
     return defaults[key]
 
@@ -113,6 +115,7 @@ def initialize_env(*, template_path: Path, env_path: Path) -> dict[str, object]:
     existing_values = parse_env_values(existing_text)
     rendered, written, preserved = render_env(template_text, existing_values)
     env_path.write_text(rendered, encoding="utf-8")
+    env_path.chmod(0o600)
     return {
         "env_path": str(env_path),
         "template_path": str(template_path),

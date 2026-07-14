@@ -199,3 +199,24 @@ def test_scanner_snapshot_accepts_codeql_evidence_path_override(tmp_path: Path, 
 
     assert snapshot.release_scanner_proof_ready is True
     assert snapshot.codeql_run_evidence_present is True
+
+
+def test_scanner_snapshot_blocks_when_an_enabled_scan_fails(tmp_path: Path, monkeypatch) -> None:
+    tmp_path.joinpath("apps/api/app").mkdir(parents=True)
+    tmp_path.joinpath("apps/api/app/main.py").write_text("print('demo')\n", encoding="utf-8")
+
+    monkeypatch.setattr("scripts.security_scanner_snapshot.shutil.which", lambda name: f"/usr/bin/{name}")
+
+    def fake_runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=1 if command[:2] == ["semgrep", "scan"] else 0,
+            stdout="finding\n" if command[:2] == ["semgrep", "scan"] else "tool 1.0\n",
+            stderr="",
+        )
+
+    snapshot = collect_snapshot(root=tmp_path, env={"SEMGREP_ENABLED": "true"}, runner=fake_runner)
+
+    assert snapshot.release_scanner_proof_ready is False
+    assert any(scanner.name == "semgrep" and scanner.status == "blocked" for scanner in snapshot.scanners)
+    assert any(execution.name == "semgrep" and execution.status == "failed" for execution in snapshot.scan_executions)

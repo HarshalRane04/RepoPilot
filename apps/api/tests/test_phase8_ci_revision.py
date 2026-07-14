@@ -114,7 +114,13 @@ def test_revision_planner_creates_fresh_waiting_plan_from_ci_failure() -> None:
     assert revision.plan_json["revision_parent_plan_id"] == str(plan.id)
     assert revision.plan_json["revision_instructions"] == "Fix the regression and rerun validation."
     assert revision.plan_json["files_to_modify"] == ["tests/test_demo.py"]
-    assert run.plan_id == revision.id
+    revision_run = next(item for item in db.added if isinstance(item, AgentRun) and item is not run)
+    assert run.plan_id == plan.id
+    assert run.state == AgentRunState.WAIT_FOR_CI.value
+    assert revision_run.plan_id == revision.id
+    assert revision_run.state == AgentRunState.WAIT_FOR_APPROVAL.value
+    assert revision.plan_json["revision_parent_run_id"] == str(run.id)
+    assert revision.plan_json["revision_run_id"] == str(revision_run.id)
     assert db.commits == 1
 
 
@@ -129,6 +135,107 @@ def test_ci_analyzer_returns_revision_fields_without_db() -> None:
     assert analyzer.summary(conclusion=request.conclusion, failure_reasons=analyzer.failure_reasons(request.log_text)).startswith(
         "CI concluded failure"
     )
+
+
+def test_untrusted_pending_ci_evidence_is_recorded_without_failure_coercion() -> None:
+    plan_id = uuid4()
+    issue_id = uuid4()
+    run = AgentRun(id=uuid4(), issue_id=issue_id, plan_id=plan_id, state=AgentRunState.WAIT_FOR_CI.value)
+    pr = PullRequest(id=uuid4(), run_id=run.id, pr_number=12, url="local://pr/12", status="draft", ci_status="pending")
+    plan = Plan(id=plan_id, issue_id=issue_id, plan_json=_plan_payload(str(plan_id), str(issue_id)))
+    db = FakeDb(run=run, pr=pr, plan=plan)
+    analyzer = CIAnalyzer()
+
+    async def deterministic_summary(_db, **kwargs):
+        return kwargs["deterministic_summary"]
+
+    analyzer.summary_with_model = deterministic_summary  # type: ignore[method-assign]
+    result = asyncio.run(
+        analyzer.analyze_pr(
+            db,
+            pr_id=pr.id,
+            request=CIAnalysisRequest(workflow_name="ci", conclusion="pending", log_text="Job still running"),
+            trusted_evidence=False,
+            actor_id="owner",
+        )
+    )
+
+    assert result.ci_status == "pending"
+    assert pr.ci_status == "pending"
+    assert pr.status == "draft"
+    simulation = next(step for step in db.added if isinstance(step, AgentStep) and step.step_name == "CI_SIMULATION")
+    assert simulation.status == "pending"
+    assert simulation.output_json["conclusion"] == "pending"
+
+
+def test_trusted_ci_failure_revokes_ready_state_through_state_machine() -> None:
+    plan_id = uuid4()
+    issue_id = uuid4()
+    run = AgentRun(id=uuid4(), issue_id=issue_id, plan_id=plan_id, state=AgentRunState.READY_FOR_REVIEW.value)
+    pr = PullRequest(
+        id=uuid4(),
+        run_id=run.id,
+        pr_number=12,
+        url="local://pr/12",
+        status="ready_for_review",
+        ci_status="success",
+    )
+    plan = Plan(id=plan_id, issue_id=issue_id, plan_json=_plan_payload(str(plan_id), str(issue_id)))
+    db = FakeDb(run=run, pr=pr, plan=plan)
+    analyzer = CIAnalyzer()
+
+    async def deterministic_summary(_db, **kwargs):
+        return kwargs["deterministic_summary"]
+
+    analyzer.summary_with_model = deterministic_summary  # type: ignore[method-assign]
+    result = asyncio.run(
+        analyzer.analyze_pr(
+            db,
+            pr_id=pr.id,
+            request=CIAnalysisRequest(
+                workflow_name="ci",
+                conclusion="failure",
+                log_text="ERROR tests/test_demo.py failed",
+            ),
+        )
+    )
+
+    assert result.ready_for_review is False
+    assert run.state == AgentRunState.WAIT_FOR_CI.value
+    assert pr.status == "blocked"
+    assert pr.ci_status == "failure"
+    assert any(
+        step.step_name == AgentRunState.WAIT_FOR_CI.value
+        and step.output_json.get("from_state") == AgentRunState.READY_FOR_REVIEW.value
+        for step in db.added
+        if isinstance(step, AgentStep)
+    )
+
+
+def test_trusted_ci_cannot_resurrect_terminal_run() -> None:
+    plan_id = uuid4()
+    issue_id = uuid4()
+    run = AgentRun(id=uuid4(), issue_id=issue_id, plan_id=plan_id, state=AgentRunState.CANCELLED.value)
+    pr = PullRequest(id=uuid4(), run_id=run.id, pr_number=12, url="local://pr/12", status="draft")
+    plan = Plan(id=plan_id, issue_id=issue_id, plan_json=_plan_payload(str(plan_id), str(issue_id)))
+    db = FakeDb(run=run, pr=pr, plan=plan)
+    analyzer = CIAnalyzer()
+
+    async def deterministic_summary(_db, **kwargs):
+        return kwargs["deterministic_summary"]
+
+    analyzer.summary_with_model = deterministic_summary  # type: ignore[method-assign]
+    asyncio.run(
+        analyzer.analyze_pr(
+            db,
+            pr_id=pr.id,
+            request=CIAnalysisRequest(workflow_name="ci", conclusion="failure", log_text="ERROR failed"),
+        )
+    )
+
+    assert run.state == AgentRunState.CANCELLED.value
+    assert pr.status == "draft"
+    assert pr.ci_status == "failure"
 
 
 def test_ci_metrics_track_first_run_and_revision_passes() -> None:

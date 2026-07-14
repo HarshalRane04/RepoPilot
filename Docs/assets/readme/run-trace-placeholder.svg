@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title description">
+  <title id="title">RepoPilot run trace screenshot placeholder</title>
+  <desc id="description">Placeholder for a trace screenshot showing tool calls, validation evidence, artifacts, and model metadata.</desc>
+  <rect width="1200" height="675" fill="#071019"/>
+  <rect x="32" y="32" width="1136" height="611" rx="18" fill="#0d1924" stroke="#2e5268" stroke-width="2"/>
+  <rect x="58" y="58" width="1084" height="82" rx="12" fill="#101f2b"/>
+  <line x1="128" y1="192" x2="128" y2="555" stroke="#65d7e8" stroke-width="4"/>
+  <circle cx="128" cy="220" r="13" fill="#65d7e8"/>
+  <circle cx="128" cy="330" r="13" fill="#65d7e8"/>
+  <circle cx="128" cy="440" r="13" fill="#65d7e8"/>
+  <circle cx="128" cy="550" r="13" fill="#65d7e8"/>
+  <rect x="174" y="184" width="926" height="74" rx="10" fill="#101f2b"/>
+  <rect x="174" y="294" width="926" height="74" rx="10" fill="#101f2b"/>
+  <rect x="174" y="404" width="926" height="74" rx="10" fill="#101f2b"/>
+  <rect x="174" y="514" width="926" height="74" rx="10" fill="#101f2b"/>
+  <text x="600" y="88" fill="#65d7e8" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="700" text-anchor="middle">SCREENSHOT PLACEHOLDER · RUN TRACE</text>
+  <text x="600" y="120" fill="#829aaa" font-family="Inter, Arial, sans-serif" font-size="16" text-anchor="middle">Tool calls · validation · artifacts · model metadata</text>
+</svg>

@@ -8,12 +8,13 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from fastapi import Cookie, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.models import User
+from app.db.session import get_db
 from app.services.runtime_secrets import effective_settings
 
 
@@ -29,6 +30,7 @@ async def get_current_user(
     x_repopilot_user: str | None = Header(default=None),
     x_repopilot_role: str | None = Header(default=None),
     repopilot_session: str | None = Cookie(default=None),
+    db: AsyncSession = Depends(get_db),
 ) -> CurrentUser:
     config = effective_settings(settings)
     session = verify_session_cookie(repopilot_session)
@@ -36,11 +38,17 @@ async def get_current_user(
         username = session.get("username")
         if not username:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session.")
+        github_user_id = str(session["github_user_id"]) if session.get("github_user_id") else None
+        if not github_user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid OAuth session.")
+        user = await db.scalar(select(User).where(User.github_user_id == github_user_id))
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session has been revoked.")
         return CurrentUser(
-            username=str(username),
-            role=str(session.get("role") or "viewer"),
-            github_user_id=str(session["github_user_id"]) if session.get("github_user_id") else None,
-            email=str(session["email"]) if session.get("email") else None,
+            username=user.username,
+            role=user.role,
+            github_user_id=user.github_user_id,
+            email=user.email,
         )
     if config.dev_header_auth_enabled and config.environment == "local":
         return CurrentUser(

@@ -17,22 +17,39 @@ from repopilot_contracts import (
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AgentRun, AgentStep, Plan, ValidationResult as DbValidationResult
+from app.core.config import settings
+from app.db.models import AgentRun, AgentStep, Issue, Plan, RepositoryIndex, ValidationResult as DbValidationResult
 from app.db.session import get_db
 from app.services.artifacts import ArtifactStore
+from app.services.audit import record_audit
 from app.services.draft_pr import DraftPullRequestService
 from app.services.auth import CurrentUser, get_current_user
 from app.services.authorization import require_role, require_run_access
 from app.services.implementation_agent import ImplementationAgent
 from app.services.observability import ObservabilityService
 from app.services.planning import approved_plan_hash_matches
+from app.services.run_orchestrator import RunOrchestrationError, RunOrchestrator
 from app.services.sandbox import SandboxRunner
 from app.services.security_envelope import rate_limit, redact_text, stable_json_hash
 from app.services.security_scanner import SecurityScanner
 from app.services.state_machine import InvalidStateTransition, next_states, transition_run
 from app.services.tools import ToolExecutor
+from app.worker.tasks import execute_agent_run_task
 
 router = APIRouter()
+
+MANUAL_RUN_TOOL_ALLOWLIST = {
+    "repo.grep",
+    "repo.list_files",
+    "repo.read_file",
+    "repo.read_files",
+    "repo.search_context",
+    "repo.summarize_tree",
+    "run.get_trace",
+    "run.next_states",
+    "security.explain_findings",
+    "workspace.diff",
+}
 
 
 class RunToolCallBody(BaseModel):
@@ -57,14 +74,25 @@ async def list_runs(
     require_role(current_user, "viewer")
     result = await db.execute(select(AgentRun).order_by(AgentRun.started_at.desc()).limit(min(max(limit, 1), 200)))
     runs = result.scalars().all()
+    if not runs:
+        return []
+    run_ids = [run.id for run in runs]
+    step_rows = await db.execute(
+        select(AgentStep)
+        .where(AgentStep.run_id.in_(run_ids))
+        .order_by(AgentStep.run_id, AgentStep.created_at.desc())
+    )
+    latest_steps: dict[UUID, AgentStep] = {}
+    for step in step_rows.scalars().all():
+        latest_steps.setdefault(step.run_id, step)
+    validation_rows = await db.execute(select(DbValidationResult).where(DbValidationResult.run_id.in_(run_ids)))
+    validations_by_run: dict[UUID, list[DbValidationResult]] = {}
+    for validation in validation_rows.scalars().all():
+        validations_by_run.setdefault(validation.run_id, []).append(validation)
     response: list[dict[str, object]] = []
     for run in runs:
-        latest_step = await db.execute(
-            select(AgentStep).where(AgentStep.run_id == run.id).order_by(AgentStep.created_at.desc()).limit(1)
-        )
-        step = latest_step.scalars().first()
-        validations = await db.execute(select(DbValidationResult).where(DbValidationResult.run_id == run.id))
-        validation_list = validations.scalars().all()
+        step = latest_steps.get(run.id)
+        validation_list = validations_by_run.get(run.id, [])
         response.append(
             {
                 "id": str(run.id),
@@ -107,6 +135,111 @@ async def start_run(
         "status": "accepted",
         "run_id": str(run_id),
         "message": "Run moved to CREATE_BRANCH and is ready for implementation, generated tests, and sandbox validation.",
+    }
+
+
+@router.post("/{run_id}/execute", status_code=202)
+async def execute_run_to_external_boundary(
+    run_id: UUID,
+    _rate_limit: None = Depends(rate_limit("run-orchestration", limit_attr="rate_limit_expensive_per_minute")),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    run = await require_run_access(db, run_id=run_id, current_user=current_user, action="write")
+    await _require_approved_plan(db, run)
+    if run.state not in {AgentRunState.WAIT_FOR_APPROVAL.value, AgentRunState.CREATE_BRANCH.value}:
+        raise HTTPException(status_code=409, detail=f"Run cannot be orchestrated from state {run.state}.")
+    await db.execute(select(AgentRun.id).where(AgentRun.id == run.id).with_for_update())
+    active = await db.scalar(
+        select(AgentStep)
+        .where(
+            AgentStep.run_id == run.id,
+            AgentStep.step_name == "ORCHESTRATE_RUN",
+        )
+        .order_by(AgentStep.created_at.desc())
+        .limit(1)
+    )
+    if active is not None and active.status in {"queued", "running"}:
+        raise HTTPException(status_code=409, detail="Run execution is already queued or running.")
+    db.add(
+        AgentStep(
+            run_id=run.id,
+            step_name="ORCHESTRATE_RUN",
+            output_json={"phase": "queued", "target_boundary": "WAIT_FOR_CI"},
+            status="queued",
+        )
+    )
+    await record_audit(
+        db,
+        actor_type="user",
+        actor_id=current_user.username,
+        action="run.orchestration_queued",
+        entity_type="agent_run",
+        entity_id=str(run.id),
+        metadata={"target_boundary": "WAIT_FOR_CI"},
+    )
+    await db.commit()
+    try:
+        execute_agent_run_task.delay(str(run.id), current_user.username)
+    except Exception as exc:
+        db.add(
+            AgentStep(
+                run_id=run.id,
+                step_name="ORCHESTRATE_RUN",
+                output_json={"phase": "queue_failed"},
+                status="failed",
+                error="Run queue was unavailable.",
+            )
+        )
+        await db.commit()
+        raise HTTPException(status_code=503, detail="Run queue is unavailable; no execution was started.") from exc
+    return {
+        "status": "queued",
+        "run_id": str(run.id),
+        "message": "Implementation, validation, security, and draft-PR stages were queued through the CI boundary.",
+    }
+
+
+@router.post("/{run_id}/retry", status_code=202)
+async def retry_blocked_run(
+    run_id: UUID,
+    _rate_limit: None = Depends(rate_limit("run-orchestration", limit_attr="rate_limit_expensive_per_minute")),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    await require_run_access(db, run_id=run_id, current_user=current_user, action="write")
+    try:
+        retry_run = await RunOrchestrator().create_retry_run(db, run_id=run_id, actor_id=current_user.username)
+    except RunOrchestrationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.add(
+        AgentStep(
+            run_id=retry_run.id,
+            step_name="ORCHESTRATE_RUN",
+            output_json={"phase": "queued", "target_boundary": "WAIT_FOR_CI", "retry_of_run_id": str(run_id)},
+            status="queued",
+        )
+    )
+    await db.commit()
+    try:
+        execute_agent_run_task.delay(str(retry_run.id), current_user.username)
+    except Exception as exc:
+        db.add(
+            AgentStep(
+                run_id=retry_run.id,
+                step_name="ORCHESTRATE_RUN",
+                output_json={"phase": "queue_failed", "retry_of_run_id": str(run_id)},
+                status="failed",
+                error="Run queue was unavailable.",
+            )
+        )
+        await db.commit()
+        raise HTTPException(status_code=503, detail="Retry run was created, but the execution queue is unavailable.") from exc
+    return {
+        "status": "queued",
+        "run_id": str(retry_run.id),
+        "retry_of_run_id": str(run_id),
+        "message": "A fresh retry run was queued with the same approved plan.",
     }
 
 
@@ -170,6 +303,8 @@ async def get_run(
                 "parsed_summary": result.parsed_summary,
                 "log_uri": result.log_uri,
                 "evidence_hash": result.evidence_hash,
+                "patch_hash": result.patch_hash,
+                "sandbox_backend": result.sandbox_backend,
             }
             for result in validations.scalars().all()
         ],
@@ -183,10 +318,11 @@ async def run_sandbox_command(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
+    require_role(current_user, "admin")
     run = await require_run_access(db, run_id=run_id, current_user=current_user, action="write")
     await _require_approved_plan(db, run)
 
-    result = SandboxRunner().run_command(request, run_id=run.id)
+    result = await SandboxRunner().run_command_async(request, run_id=run.id)
     parsed_summary = redact_text(result.blocked_reason or f"exit_code={result.exit_code}")
     redacted_stdout = redact_text(result.stdout)
     redacted_stderr = redact_text(result.stderr)
@@ -197,6 +333,8 @@ async def run_sandbox_command(
             "summary": parsed_summary,
             "stdout": redacted_stdout,
             "stderr": redacted_stderr,
+            "working_directory": request.working_directory,
+            "sandbox_backend": settings.sandbox_backend,
         }
     )
     artifact = ArtifactStore().write_json(
@@ -211,7 +349,9 @@ async def run_sandbox_command(
             "stderr": redacted_stderr,
             "exit_code": result.exit_code,
             "duration_ms": result.duration_ms,
+            "working_directory": request.working_directory,
             "evidence_hash": evidence_hash,
+            "sandbox_backend": settings.sandbox_backend,
         },
         metadata={"route": "runs.sandbox"},
     )
@@ -224,6 +364,7 @@ async def run_sandbox_command(
             parsed_summary=parsed_summary,
             log_uri=artifact.uri,
             evidence_hash=evidence_hash,
+            sandbox_backend=settings.sandbox_backend,
         )
     )
     step_output = result.model_dump(mode="json")
@@ -234,6 +375,7 @@ async def run_sandbox_command(
             "log_uri": artifact.uri,
             "log_artifact": artifact.reference(),
             "evidence_hash": evidence_hash,
+            "working_directory": request.working_directory,
         }
     )
     db.add(
@@ -256,11 +398,12 @@ async def run_implementation_agent(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
-    await require_run_access(db, run_id=run_id, current_user=current_user, action="write")
+    run = await require_run_access(db, run_id=run_id, current_user=current_user, action="write")
+    request = await _resolve_implementation_workspace(db, run=run, request=request)
     try:
         result = await ImplementationAgent().execute(db, run_id=run_id, request=request)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return result.model_dump(mode="json")
 
 
@@ -315,6 +458,8 @@ async def call_run_tool(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, object]:
+    require_role(current_user, "admin")
+    _require_manual_tool_allowed(request.tool_name)
     run = await require_run_access(db, run_id=run_id, current_user=current_user, action="write")
     executor = ToolExecutor()
     tool_request = _server_tool_request(executor=executor, run=run, body=request, current_user=current_user)
@@ -330,6 +475,9 @@ async def call_run_tools_batch(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, object]:
+    require_role(current_user, "admin")
+    for tool_call in request.tool_calls:
+        _require_manual_tool_allowed(tool_call.tool_name)
     run = await require_run_access(db, run_id=run_id, current_user=current_user, action="write")
     executor = ToolExecutor()
     tool_requests = [
@@ -338,6 +486,41 @@ async def call_run_tools_batch(
     ]
     results = await executor.execute_batch(db, requests=tool_requests)
     return {"results": [result.model_dump(mode="json") for result in results]}
+
+
+def _require_manual_tool_allowed(tool_name: str) -> None:
+    if tool_name not in MANUAL_RUN_TOOL_ALLOWLIST:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Tool '{tool_name}' is internal-only and cannot be invoked through the manual run-tool API.",
+        )
+
+
+async def _resolve_implementation_workspace(
+    db: AsyncSession,
+    *,
+    run: AgentRun,
+    request: ImplementationRunRequest,
+) -> ImplementationRunRequest:
+    if request.workspace_path:
+        return request
+    if run.issue_id is None:
+        raise HTTPException(status_code=409, detail="Run has no issue and cannot resolve a repository workspace.")
+    issue = await db.get(Issue, run.issue_id)
+    if issue is None:
+        raise HTTPException(status_code=409, detail="Run issue was not found.")
+    index = await db.scalar(
+        select(RepositoryIndex)
+        .where(RepositoryIndex.repository_id == issue.repository_id, RepositoryIndex.status == "ready")
+        .order_by(RepositoryIndex.created_at.desc())
+        .limit(1)
+    )
+    if index is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Repository has no ready index. Acquire or index the repository before implementation.",
+        )
+    return request.model_copy(update={"workspace_path": index.source_path})
 
 
 async def _require_approved_plan(db: AsyncSession, run: AgentRun) -> None:

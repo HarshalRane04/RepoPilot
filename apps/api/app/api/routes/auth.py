@@ -4,13 +4,13 @@ from secrets import token_urlsafe
 from typing import Literal
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import get_db
 from app.services.auth import CurrentUser, create_session_cookie, create_signed_value, get_current_user, verify_signed_value
-from app.services.github_oauth import GitHubOAuthError, GitHubOAuthService
+from app.services.github_oauth import GitHubOAuthAuthorizationError, GitHubOAuthError, GitHubOAuthService
 from app.services.runtime_secrets import effective_settings
 from app.services.url_safety import web_app_base_url
 
@@ -74,8 +74,11 @@ async def github_callback(
     try:
         token = await oauth.exchange_code(code=code)
         profile = await oauth.fetch_profile(token=token)
+        user = await oauth.authorize_profile(db, profile=profile)
         repositories = await oauth.fetch_repositories(token=token)
-        await oauth.sync_user_repositories(db, profile=profile, repositories=repositories)
+        await oauth.sync_user_repositories(db, profile=profile, repositories=repositories, user=user)
+    except GitHubOAuthAuthorizationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except GitHubOAuthError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -84,11 +87,19 @@ async def github_callback(
             "github_user_id": profile.github_user_id,
             "username": profile.username,
             "email": profile.email,
-            "role": "owner",
+            "role": user.role,
         }
     )
     response = _redirect_to_app_connected()
     _set_cookie(response, SESSION_COOKIE, session_cookie, max_age=60 * 60 * 24 * 14)
+    response.delete_cookie(OAUTH_STATE_COOKIE, path="/")
+    return response
+
+
+@router.post("/logout", status_code=204)
+async def logout() -> Response:
+    response = Response(status_code=204)
+    response.delete_cookie(SESSION_COOKIE, path="/")
     response.delete_cookie(OAUTH_STATE_COOKIE, path="/")
     return response
 

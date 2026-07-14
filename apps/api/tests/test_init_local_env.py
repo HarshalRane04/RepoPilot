@@ -23,6 +23,7 @@ def write_template(path: Path) -> None:
                 "REPOPILOT_RELEASE_PROFILE=oss-demo",
                 "ALLOW_MODEL_FALLBACK=false",
                 "SANDBOX_BACKEND=docker",
+                "SANDBOX_RUNNER_TOKEN=",
             ]
         )
         + "\n",
@@ -49,7 +50,9 @@ def test_init_local_env_creates_local_safe_env_without_live_credentials(tmp_path
     assert values["MODEL_NAME"] == "mock-planner"
     assert values["ALLOW_MODEL_FALLBACK"] == "false"
     assert values["REPOPILOT_RELEASE_PROFILE"] == "oss-demo"
-    assert values["SANDBOX_BACKEND"] == "local"
+    assert values["SANDBOX_BACKEND"] == "remote"
+    assert values["SANDBOX_RUNNER_TOKEN"].startswith("repopilot-local-sandbox-")
+    assert env_file.stat().st_mode & 0o077 == 0
     assert values["MODEL_API_KEY"] == ""
     assert values["GITHUB_APP_ID"] == ""
     assert values["GITHUB_CLIENT_SECRET"] == ""

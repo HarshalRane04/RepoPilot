@@ -5,6 +5,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from repopilot_llm_client import provider_by_id
 
@@ -27,6 +28,16 @@ class ProviderCredentialResolution:
     source: str
 
 
+def validated_provider_url(value: str) -> str:
+    normalized = value.strip().rstrip("/")
+    parsed = urlsplit(normalized)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise ValueError("Provider URLs must use HTTPS and include a hostname.")
+    if parsed.username or parsed.password or parsed.fragment:
+        raise ValueError("Provider URLs must not include credentials or URL fragments.")
+    return normalized
+
+
 def resolve_provider_credentials(
     *,
     provider: str,
@@ -40,18 +51,19 @@ def resolve_provider_credentials(
     if env_api_key:
         return ProviderCredentialResolution(
             api_key=env_api_key,
-            base_url=base_url or default_provider_base_url(normalized_provider),
+            base_url=validated_provider_url(base_url or default_provider_base_url(normalized_provider)),
             source=f"environment:{selected_api_key_env}",
         )
 
     runtime_values = load_runtime_secret_values() if allow_runtime_store else {}
     stored_provider = str(runtime_values.get("MODEL_PROVIDER") or "").strip().lower()
-    store_matches_provider = not stored_provider or stored_provider == normalized_provider
+    stored_key_provider = str(runtime_values.get("MODEL_API_KEY_PROVIDER") or stored_provider).strip().lower()
+    store_matches_provider = bool(stored_key_provider) and stored_key_provider == normalized_provider
     runtime_api_key = str(runtime_values.get("MODEL_API_KEY") or "").strip() if store_matches_provider else ""
     runtime_base_url = str(runtime_values.get("MODEL_BASE_URL") or "").strip() if store_matches_provider else ""
     return ProviderCredentialResolution(
         api_key=runtime_api_key or None,
-        base_url=base_url or runtime_base_url or default_provider_base_url(normalized_provider),
+        base_url=validated_provider_url(base_url or runtime_base_url or default_provider_base_url(normalized_provider)),
         source="runtime_secret_store" if runtime_api_key else "missing",
     )
 

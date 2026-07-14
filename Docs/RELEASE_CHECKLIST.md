@@ -21,12 +21,13 @@ RepoPilot v1.0 is release-ready only when local controls, credentialed GitHub pr
 - Credential readiness snapshot is generated with `make readiness-snapshot`; the local report is generated at `Docs/release-artifacts/credential-readiness-snapshot.md`.
 - Release readiness is checked with `REPOPILOT_RELEASE_PROFILE=production`; this profile must not report ready while GitHub write mode is disabled, while the runtime secret store uses the local managed key file, or while model fallback is enabled outside local mode.
 - Aggregate credential smoke summary is generated with `make credential-smoke`; the local report is generated at `Docs/release-artifacts/credential-smoke-summary.md`.
-- Security scanner posture snapshot is generated with `make security-scanner-snapshot`; the local report is generated at `Docs/release-artifacts/security-scanner-snapshot.md`.
+- Executed scanner evidence is generated with `make security-scanner-snapshot-strict`; the local report at `Docs/release-artifacts/security-scanner-snapshot.md` must show passing Semgrep, `pip-audit`, `npm audit`, and CodeQL evidence plus the scanned source fingerprint.
+- Non-local releases set `REPOPILOT_RELEASE_SOURCE_FINGERPRINT` to that strict scanner fingerprint so readiness cannot accept evidence from different source bytes.
 - Source-boundary hygiene report is generated with `make release-hygiene`; the local report is generated at `Docs/release-artifacts/source-boundary-hygiene.md`.
 - Release GIF evidence is generated with `make release-gifs`; the local manifest is generated at `Docs/release-artifacts/release-gifs.md`.
 - Deployment validation report is generated with `make deployment-validate`; the local report is generated at `Docs/release-artifacts/deployment-validation.md`.
 - Local runtime deployment smoke report is generated with `make deployment-smoke`; the local report is generated at `Docs/release-artifacts/deployment-runtime-smoke.md`.
-- Release workflow evidence uploads include deterministic eval, source-boundary, credential-smoke, scanner posture, and deployment-validation artifacts before image builds.
+- Release workflow evidence uploads include deterministic eval, source-boundary, credential-smoke, executed scanner, and deployment-validation artifacts before image builds.
 - Release workflow image artifacts include GHCR image names, tags, source SHA, workflow URL, and API/web/sandbox digests.
 - GHCR packages are visible to intended installers, and a fresh host can run `make ghcr-start-local` with the selected release tag.
 - Strict release verification is run with `make release-verify` after credentials and runtime services are available; this gate must fail if credential smoke is blocked, runtime smoke fails, scanner blockers remain, or hygiene/deployment validation reports warnings or failures.

@@ -33,6 +33,16 @@ def stable_json_hash(value: Any) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def free_form_text_metadata(value: str) -> dict[str, object]:
+    """Keep free-form text out of broad audit metadata while retaining correlation evidence."""
+    stripped = value.strip()
+    return {
+        "present": bool(stripped),
+        "sha256": hashlib.sha256(stripped.encode("utf-8")).hexdigest() if stripped else None,
+        "length": len(stripped),
+    }
+
+
 def redact_text(value: str) -> str:
     redacted = value
     for pattern in SECRET_VALUE_PATTERNS:

@@ -19,7 +19,7 @@ def truthful_console() -> str:
     return "\n".join(
         [
             "Draft PR records",
-            "CI Evidence Analyzer",
+            "Analyze CI logs",
             "Verify with live call",
             "External data transfer",
             "source-transfer consent",

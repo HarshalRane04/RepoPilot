@@ -12,7 +12,7 @@ from typing import Any, Protocol
 
 from repopilot_contracts import EvalTaskFixture
 
-from .provider_credentials import redact_for_output, resolve_provider_credentials
+from .provider_credentials import redact_for_output, resolve_provider_credentials, validated_provider_url
 from .provider_harness import default_provider_api_key_env
 from .report import BenchmarkReport, BenchmarkReportBuilder
 
@@ -38,7 +38,7 @@ class RetrievalCandidate:
 
 class ProviderEmbeddingClient:
     def __init__(self, *, base_url: str, api_key: str) -> None:
-        self.base_url = base_url.rstrip("/")
+        self.base_url = validated_provider_url(base_url)
         self.api_key = api_key
 
     def embed(self, *, model: str, texts: list[str], timeout_seconds: int) -> list[list[float]]:
@@ -53,7 +53,8 @@ class ProviderEmbeddingClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            # ProviderEmbeddingClient accepts only validated HTTPS base URLs.
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")

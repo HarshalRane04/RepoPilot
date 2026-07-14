@@ -74,27 +74,36 @@ class SecurityScanner:
 
         request = request or SecurityScanRequest()
         patch_payload = await self._latest_patch_payload(db, run_id=run.id)
+        patch_hash = str(patch_payload.get("patch_hash") or "") if patch_payload else ""
+        if not patch_hash:
+            return await self._not_evaluated(db, run=run, reason="Security scan requires current generated patch evidence.")
         source_texts = self._scan_sources(patch_payload=patch_payload, workspace_path=request.workspace_path)
-        findings = self.scan_texts(run_id=run.id, sources=source_texts)
-        await self._persist_findings(db, run=run, findings=findings)
+        if not source_texts:
+            return await self._not_evaluated(db, run=run, reason="Current patch contained no scannable evidence.")
+        findings = [
+            finding.model_copy(update={"patch_hash": patch_hash})
+            for finding in self.scan_texts(run_id=run.id, sources=source_texts)
+        ]
+        await self._persist_findings(db, run=run, patch_hash=patch_hash, findings=findings)
 
         blocked = any(finding.severity in {SecuritySeverity.HIGH, SecuritySeverity.CRITICAL} for finding in findings)
         status = ValidationStatus.FAILED if blocked and request.fail_on_findings else ValidationStatus.PASSED
-        await transition_run(
-            db,
-            run=run,
-            next_state=AgentRunState.RUN_SECURITY_CHECKS,
-            actor_type="agent",
-            reason="Security scan completed for generated patch evidence.",
-            metadata={"status": status.value, "findings": len(findings)},
-            allowed_from={AgentRunState.WAIT_FOR_CI.value, AgentRunState.READY_FOR_REVIEW.value},
-        )
+        if run.state not in {AgentRunState.WAIT_FOR_CI.value, AgentRunState.READY_FOR_REVIEW.value}:
+            await transition_run(
+                db,
+                run=run,
+                next_state=AgentRunState.RUN_SECURITY_CHECKS,
+                actor_type="agent",
+                reason="Security scan completed for generated patch evidence.",
+                metadata={"status": status.value, "findings": len(findings), "patch_hash": patch_hash},
+            )
         db.add(
             AgentStep(
                 run_id=run.id,
                 step_name=AgentRunState.RUN_SECURITY_CHECKS.value,
                 output_json={
                     "status": status.value,
+                    "patch_hash": patch_hash,
                     "scanned_files": len(source_texts),
                     "findings": [finding.model_dump(mode="json") for finding in findings],
                 },
@@ -107,7 +116,7 @@ class SecurityScanner:
             action="security.scan_completed",
             entity_type="agent_run",
             entity_id=str(run.id),
-            metadata={"findings": len(findings), "status": status.value},
+            metadata={"findings": len(findings), "status": status.value, "patch_hash": patch_hash},
         )
         await db.commit()
 
@@ -117,6 +126,38 @@ class SecurityScanner:
             scanned_files=len(source_texts),
             findings=findings,
             summary=self._summary(status=status, findings=findings),
+        )
+
+    async def _not_evaluated(
+        self,
+        db: AsyncSession,
+        *,
+        run: AgentRun,
+        reason: str,
+    ) -> SecurityScanResult:
+        db.add(
+            AgentStep(
+                run_id=run.id,
+                step_name=AgentRunState.RUN_SECURITY_CHECKS.value,
+                output_json={"status": ValidationStatus.BLOCKED.value, "not_evaluated": True, "reason": reason},
+                status="blocked",
+            )
+        )
+        await record_audit(
+            db,
+            actor_type="agent",
+            action="security.scan_not_evaluated",
+            entity_type="agent_run",
+            entity_id=str(run.id),
+            metadata={"reason": reason},
+        )
+        await db.commit()
+        return SecurityScanResult(
+            run_id=str(run.id),
+            status=ValidationStatus.BLOCKED,
+            scanned_files=0,
+            findings=[],
+            summary=reason,
         )
 
     def scan_texts(self, *, run_id: UUID, sources: dict[str, str]) -> list[SecurityFinding]:
@@ -157,9 +198,16 @@ class SecurityScanner:
         run = await db.get(AgentRun, run_id)
         if run is None:
             raise ValueError(f"Agent run not found: {run_id}")
+        patch_payload = await self._latest_patch_payload(db, run_id=run.id)
+        patch_hash = str(patch_payload.get("patch_hash") or "") if patch_payload else ""
+        if not patch_hash:
+            return await self._not_evaluated(db, run=run, reason="CodeQL ingestion requires current patch evidence.")
 
-        findings = self.parse_codeql_sarif(run_id=run.id, sarif=sarif)
-        await self._persist_findings(db, run=run, findings=findings)
+        findings = [
+            finding.model_copy(update={"patch_hash": patch_hash})
+            for finding in self.parse_codeql_sarif(run_id=run.id, sarif=sarif)
+        ]
+        await self._persist_findings(db, run=run, patch_hash=patch_hash, findings=findings)
         blocked = fail_on_findings and any(
             finding.severity in {SecuritySeverity.HIGH, SecuritySeverity.CRITICAL} for finding in findings
         )
@@ -175,6 +223,7 @@ class SecurityScanner:
                     "status": status.value,
                     "scanned_files": scanned_files,
                     "finding_count": len(findings),
+                    "patch_hash": patch_hash,
                     "findings": [finding.model_dump(mode="json") for finding in findings[:50]],
                 },
                 status="failed" if status == ValidationStatus.FAILED else "succeeded",
@@ -186,7 +235,7 @@ class SecurityScanner:
             action="security.codeql_sarif_ingested",
             entity_type="agent_run",
             entity_id=str(run.id),
-            metadata={"source": source, "findings": len(findings), "status": status.value},
+            metadata={"source": source, "findings": len(findings), "status": status.value, "patch_hash": patch_hash},
         )
         await db.commit()
 
@@ -210,9 +259,16 @@ class SecurityScanner:
         run = await db.get(AgentRun, run_id)
         if run is None:
             raise ValueError(f"Agent run not found: {run_id}")
+        patch_payload = await self._latest_patch_payload(db, run_id=run.id)
+        patch_hash = str(patch_payload.get("patch_hash") or "") if patch_payload else ""
+        if not patch_hash:
+            return await self._not_evaluated(db, run=run, reason="CodeQL alert ingestion requires current patch evidence.")
 
-        findings = self.parse_codeql_alerts(run_id=run.id, alerts=alerts)
-        await self._persist_findings(db, run=run, findings=findings)
+        findings = [
+            finding.model_copy(update={"patch_hash": patch_hash})
+            for finding in self.parse_codeql_alerts(run_id=run.id, alerts=alerts)
+        ]
+        await self._persist_findings(db, run=run, patch_hash=patch_hash, findings=findings)
         blocked = fail_on_findings and any(
             finding.severity in {SecuritySeverity.HIGH, SecuritySeverity.CRITICAL} for finding in findings
         )
@@ -229,6 +285,7 @@ class SecurityScanner:
                     "alert_count": len(alerts),
                     "scanned_files": scanned_files,
                     "finding_count": len(findings),
+                    "patch_hash": patch_hash,
                     "findings": [finding.model_dump(mode="json") for finding in findings[:50]],
                 },
                 status="failed" if status == ValidationStatus.FAILED else "succeeded",
@@ -240,7 +297,13 @@ class SecurityScanner:
             action="security.codeql_alerts_ingested",
             entity_type="agent_run",
             entity_id=str(run.id),
-            metadata={"source": source, "alerts": len(alerts), "findings": len(findings), "status": status.value},
+            metadata={
+                "source": source,
+                "alerts": len(alerts),
+                "findings": len(findings),
+                "status": status.value,
+                "patch_hash": patch_hash,
+            },
         )
         await db.commit()
 
@@ -421,7 +484,7 @@ class SecurityScanner:
                             encoding="utf-8",
                             errors="ignore",
                         )
-        return sources or {"empty.patch": ""}
+        return sources
 
     async def _latest_patch_payload(self, db: AsyncSession, *, run_id: UUID) -> dict[str, object] | None:
         result = await db.execute(
@@ -439,20 +502,22 @@ class SecurityScanner:
         db: AsyncSession,
         *,
         run: AgentRun,
+        patch_hash: str,
         findings: list[SecurityFinding],
     ) -> None:
         existing_result = await db.execute(select(DbSecurityFinding).where(DbSecurityFinding.run_id == run.id))
         existing_keys = {
-            (finding.tool, finding.severity, finding.file_path, finding.description)
+            (finding.patch_hash, finding.tool, finding.severity, finding.file_path, finding.description)
             for finding in existing_result.scalars().all()
         }
         for finding in findings:
-            key = (finding.tool, finding.severity.value, finding.file_path, finding.description)
+            key = (patch_hash, finding.tool, finding.severity.value, finding.file_path, finding.description)
             if key in existing_keys:
                 continue
             db.add(
                 DbSecurityFinding(
                     run_id=run.id,
+                    patch_hash=patch_hash,
                     tool=finding.tool,
                     severity=finding.severity.value,
                     file_path=finding.file_path,
