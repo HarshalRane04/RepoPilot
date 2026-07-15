@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -34,6 +35,9 @@ class FakeTriageDb:
 
     async def scalar(self, _statement):
         return 0
+
+    async def execute(self, _statement):
+        return SimpleNamespace(one=lambda: (0, 0, 0.0))
 
     def add(self, item: object) -> None:
         self.added.append(item)

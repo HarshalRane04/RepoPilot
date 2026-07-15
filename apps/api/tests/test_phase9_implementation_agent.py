@@ -14,6 +14,8 @@ from app.services.implementation_agent import (
     ImplementationAgent,
     ImplementationExplorationPlan,
     ImplementationToolPlan,
+    MAX_EXPLORATION_HISTORY_CHARS,
+    MAX_PROMPT_SNIPPETS_CHARS,
     ProposedImplementationReadToolCall,
     ProposedImplementationToolCall,
 )
@@ -432,6 +434,61 @@ def test_implementation_agent_reads_context_with_batched_tool() -> None:
             },
         }
     ]
+
+
+def test_implementation_agent_coalesces_single_file_reads_in_one_exploration_round() -> None:
+    agent = ImplementationAgent(model_gateway=FakeGateway())
+    calls = [
+        ProposedImplementationReadToolCall(
+            tool_name="repo.read_file",
+            arguments={"path": "app/api.py", "start_line": 1, "end_line": 80},
+        ),
+        ProposedImplementationReadToolCall(
+            tool_name="repo.grep",
+            arguments={"query": "build_response", "max_results": 5},
+        ),
+        ProposedImplementationReadToolCall(
+            tool_name="repo.read_file",
+            arguments={"path": "tests/test_api.py", "start_line": 1, "end_line": 120},
+        ),
+    ]
+
+    normalized = agent._coalesce_read_file_calls(calls)
+
+    assert [call.tool_name for call in normalized] == ["repo.read_files", "repo.grep"]
+    assert normalized[0].arguments == {
+        "files": [
+            {"path": "app/api.py", "start_line": 1, "end_line": 80},
+            {"path": "tests/test_api.py", "start_line": 1, "end_line": 120},
+        ]
+    }
+
+
+def test_implementation_agent_bounds_model_prompt_evidence_cumulatively() -> None:
+    agent = ImplementationAgent(model_gateway=FakeGateway())
+    snippets = [
+        {"path": f"app/module_{index}.py", "content": str(index) * 20_000}
+        for index in range(12)
+    ]
+    observations = [
+        {
+            "tool_name": "repo.grep",
+            "status": "succeeded",
+            "call_hash": str(index),
+            "output": {"excerpt": str(index) * 12_000},
+        }
+        for index in range(8)
+    ]
+
+    bounded_snippets = agent._bounded_prompt_snippets(snippets)
+    bounded_observations = agent._bounded_observation_history(observations)
+
+    assert len(json.dumps(bounded_snippets, sort_keys=True)) <= MAX_PROMPT_SNIPPETS_CHARS
+    assert bounded_snippets[0]["content_truncated"] is True
+    assert any(item.get("snippets_truncated") is True for item in bounded_snippets)
+    assert len(json.dumps(bounded_observations, sort_keys=True)) <= MAX_EXPLORATION_HISTORY_CHARS
+    assert bounded_observations[0]["history_truncated"] is True
+    assert bounded_observations[-1]["call_hash"] == "7"
 
 
 def test_implementation_agent_includes_retry_workspace_state_in_prompt() -> None:

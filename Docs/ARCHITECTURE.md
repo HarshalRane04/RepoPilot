@@ -44,7 +44,7 @@ Canonical implemented flow:
 2. `POST /repos/{repo_id}/acquire` safely refreshes canonical source and populates `code_chunks`; the lower-level `/index` route remains for already staged server-managed source.
 3. `POST /issues/{issue_id}/plan` retrieves cited context, creates an implementation plan, evaluates policy, and leaves the run in `WAIT_FOR_APPROVAL`.
 4. `POST /plans/{plan_id}/approve` records the approving user and policy decision. Escalated plans require an `owner` or `maintainer` role.
-5. `POST /runs/{run_id}/execute` queues the approved run and persists queued/running/completed orchestration steps. The worker executes the bounded implementation agent, patch-bound validation, security scan, and draft-PR creation before stopping at `WAIT_FOR_CI`.
+5. `POST /runs/{run_id}/execute` queues the approved run and persists queued/running/completed orchestration steps. The worker executes the bounded implementation agent, patch-bound validation, security scan, and draft-PR creation before stopping at `WAIT_FOR_CI`. Celery Beat reconciles only queued/running attempts older than the worker hard limit, records failure evidence, and unlocks a safe requeue or fresh isolated retry.
 6. Manual `/start`, `/implement`, `/security-scan`, and `/open-draft-pr` routes remain recovery/debug controls, with the same state and evidence gates.
 7. Trusted `workflow_run`, `check_run`, and `check_suite` webhooks can qualify a clean run for `READY_FOR_REVIEW`; the admin-only `/prs/{pr_id}/ci` route records non-promoting simulation evidence.
 8. `GET /runs/{run_id}/trace`, `/metrics/overview`, and `/evals/reports` provide the observability and release-evidence surfaces.

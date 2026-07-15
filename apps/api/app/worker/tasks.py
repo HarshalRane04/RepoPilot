@@ -52,6 +52,11 @@ def execute_agent_run_task(run_id: str, actor_id: str | None = None) -> dict[str
         raise
 
 
+@celery_app.task(name="repopilot.run.reconcile_stale")
+def reconcile_stale_agent_runs_task() -> dict[str, int]:
+    return asyncio.run(_reconcile_stale_agent_runs())
+
+
 @celery_app.task(name="repopilot.workspace.cleanup")
 def cleanup_stale_workspaces_task() -> dict[str, object]:
     return asyncio.run(_cleanup_stale_workspaces())
@@ -112,6 +117,15 @@ async def _record_agent_run_execution_failure(run_id: str, *, exc: Exception) ->
                 metadata={"error": error},
             )
             await db.commit()
+    finally:
+        await engine.dispose()
+
+
+async def _reconcile_stale_agent_runs() -> dict[str, int]:
+    stale_before = utc_now() - timedelta(seconds=settings.run_orchestration_stale_seconds)
+    try:
+        async with AsyncSessionLocal() as db:
+            return await RunOrchestrator().reconcile_stale_runs(db, stale_before=stale_before)
     finally:
         await engine.dispose()
 

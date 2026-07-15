@@ -21,7 +21,7 @@ RepoPilot v1.0 is release-ready only when local controls, credentialed GitHub pr
 - Credential readiness snapshot is generated with `make readiness-snapshot`; the local report is generated at `Docs/release-artifacts/credential-readiness-snapshot.md`.
 - Release readiness is checked with `REPOPILOT_RELEASE_PROFILE=production`; this profile must not report ready while GitHub write mode is disabled, while the runtime secret store uses the local managed key file, or while model fallback is enabled outside local mode.
 - Aggregate credential smoke summary is generated with `make credential-smoke`; the local report is generated at `Docs/release-artifacts/credential-smoke-summary.md`.
-- Executed scanner evidence is generated with `make security-scanner-snapshot-strict`; the local report at `Docs/release-artifacts/security-scanner-snapshot.md` must show passing Semgrep, `pip-audit`, `npm audit`, and CodeQL evidence plus the scanned source fingerprint.
+- Executed scanner evidence is generated with `make security-scanner-snapshot-strict`; the local report at `Docs/release-artifacts/security-scanner-snapshot.md` must show passing Semgrep, pinned-transitive `pip-audit`, `npm audit`, and CodeQL evidence matching the clean source revision, plus the scanned source fingerprint.
 - Non-local releases set `REPOPILOT_RELEASE_SOURCE_FINGERPRINT` to that strict scanner fingerprint so readiness cannot accept evidence from different source bytes.
 - Source-boundary hygiene report is generated with `make release-hygiene`; the local report is generated at `Docs/release-artifacts/source-boundary-hygiene.md`.
 - Release GIF evidence is generated with `make release-gifs`; the local manifest is generated at `Docs/release-artifacts/release-gifs.md`.

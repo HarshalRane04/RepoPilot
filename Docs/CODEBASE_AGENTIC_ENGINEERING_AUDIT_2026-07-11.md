@@ -1,6 +1,6 @@
 # RepoPilot Codebase and Agentic Engineering Audit
 
-Date: 2026-07-11; final verification refreshed 2026-07-12
+Date: 2026-07-11; final verification refreshed 2026-07-15
 Branch reviewed: `codex/dependabot-manifest-root`
 Status: implementation and complete local proof finished; separately authorized external proof remains intentionally pending
 
@@ -12,12 +12,12 @@ The result is suitable for continued release-candidate testing. It is not yet ho
 
 Key measured outcomes:
 
-- Full API suite increased from the 283-test audit baseline to **329 passing tests**.
+- Full API suite increased from the 283-test audit baseline to **354 passing tests**.
 - The release-shaped API test target runs in the networkless sandbox image with mock model settings, rather than inheriting developer provider secrets.
 - Ruff, TypeScript, the isolated production web build, `npm audit`, both Compose configurations, the Alembic round trip, readiness, the real Unix-socket sandbox path, static deployment validation, and runtime deployment smoke all pass.
 - The main tool registry was simplified while its useful capabilities improved: unsafe/fabricated tools were removed and 32 permission-tiered, schema-validated tools remain.
 - Empty service placeholders were removed. `services/sandbox_runner` is now the only separately deployed service under `services/` because it owns a real isolation boundary.
-- No GitHub write, merge, commit, push, or other external mutation was performed. A configured free OpenRouter route was used for explicit provider verification/evaluation and for the local agent-run exercise; all repository writes stayed inside disposable local run workspaces and `GITHUB_WRITES_ENABLED` remained false.
+- RepoPilot's own GitHub mutation mode remained disabled throughout runtime verification. Repository-maintenance commits and PR updates were performed separately through the authenticated maintainer CLI; no agent-generated patch was written to GitHub and `GITHUB_WRITES_ENABLED` remained false.
 
 ## Scope and Method
 
@@ -43,7 +43,7 @@ The audit used repository-wide inventory and pattern searches, dependency/route 
 | Alembic revisions | 11 |
 | Independently deployable `services/` runtimes after cleanup | 1 |
 
-The largest remaining maintainability hotspot is `apps/web/app/operator-console.tsx`, which is still over 4,000 lines. It was improved functionally, but component extraction is deliberately listed as remaining work instead of being hidden behind an unrelated large rewrite.
+The largest remaining maintainability hotspot is `apps/web/app/operator-console.tsx`, now 4,960 lines after its duplicated primitive layer was extracted and consolidated. Screen/data/action decomposition is deliberately listed as remaining work instead of being hidden behind an unrelated large rewrite.
 
 ## Resulting Control Flow
 
@@ -322,6 +322,71 @@ Blocked/failed orchestration attempts can now create a fresh retry run with the 
 
 **Primary files:** `Makefile`, `services/sandbox_runner/Dockerfile`, `Docs/QUICKSTART.md`, `Docs/RUNBOOK.md`.
 
+### 18. Model context and budget accounting still did avoidable work
+
+**Gap:** Individual implementation-agent observations were bounded, but the cumulative observation/snippet history could still grow across exploration rounds. Models could also request several equivalent single-file reads in one turn, while every budget check issued three aggregate database queries.
+
+**Remediation:**
+
+- Added strict cumulative limits for exploration history and prompt snippets, with per-snippet truncation and explicit omission markers.
+- Kept the most recent usable observations when a history exceeds its budget.
+- Instructed the implementer to prefer `repo.read_files` and automatically coalesced multiple valid `repo.read_file` calls into one schema-validated batch without widening tool authority.
+- Replaced three budget-accounting queries with one count/token/cost aggregate query.
+
+**Primary files:** `apps/api/app/services/implementation_agent.py`, `apps/api/app/services/security_envelope.py`, `apps/api/tests/test_phase9_implementation_agent.py`, `apps/api/tests/test_model_gateway.py`.
+
+### 19. Worker loss could strand an approved run indefinitely
+
+**Gap:** The orchestrator persisted queued/running evidence, but a worker crash or hard timeout between those records and completion could leave a non-terminal run without a trustworthy next action.
+
+**Remediation:**
+
+- Added a Celery Beat reconciliation lease that is constrained to exceed the 900-second worker hard limit.
+- Selects only the latest queued/running orchestration attempt per run, row-locks the run, and rechecks the candidate before mutation.
+- Persists failed-attempt and audit evidence instead of overwriting history.
+- Leaves safe pre-start states requeueable and transitions in-progress states to `FAILED`, where the existing retry endpoint creates a fresh isolated workspace.
+
+**Primary files:** `apps/api/app/services/run_orchestrator.py`, `apps/api/app/worker/tasks.py`, `apps/api/app/worker/celery_app.py`, `apps/api/app/core/config.py`, both Compose files, and `apps/api/tests/test_run_orchestrator.py`.
+
+### 20. Pull-request CI duplicated work and had no stale-run cutoff
+
+**Gap:** A feature-branch push with an open PR triggered the same six-job CI matrix through both `push` and `pull_request`. Superseded commits continued consuming runners, and jobs had no explicit upper bound.
+
+**Remediation:**
+
+- Limited `push` CI to `main`; feature branches now run once through `pull_request`.
+- Added workflow/PR-scoped concurrency with cancellation of superseded runs.
+- Added explicit 10-20 minute timeouts to all six CI jobs.
+- Added a workflow-shape regression test so duplicate matrices and missing timeouts do not quietly return.
+
+**Primary files:** `.github/workflows/ci.yml`, `apps/api/tests/test_ci_workflow.py`.
+
+### 21. The extracted UI primitive layer was unused and had drifted
+
+**Gap:** `operator-console.tsx` retained active local definitions while a second component tree was never imported. The two copies had already diverged in accessibility, routing, visual tone, and click behavior, and several generic abstraction files had no consumers.
+
+**Remediation:**
+
+- Made 20 directly imported component modules the single source of truth while preserving the active markup and behavior.
+- Removed the 20 local copies from the console and deleted the unused `button`, `clickable-row`, barrel, panel, risk-row, and tabs variants.
+- Removed the entirely dead `RiskRows` implementation and its circular type import.
+- Reduced the console by 205 lines and the combined console/component surface by 375 lines; production build, TypeScript, and all frontend tests remain green.
+
+**Primary files:** `apps/web/app/operator-console.tsx`, `apps/web/app/components/ui/`.
+
+### 22. Dependency and CodeQL evidence could be nondeterministic or stale
+
+**Gap:** `pip-audit` resolved range-based declarations through its own temporary virtual environment, which can crash under macOS `ensurepip`. More importantly, a successful historical CodeQL marker was accepted without proving that its head SHA matched the source being certified.
+
+**Remediation:**
+
+- Resolve every discovered Python declaration into one pinned transitive CPython 3.12/Linux set with `uv`, then run `pip-audit` in no-install mode against that exact set.
+- Fail if resolution reports success without producing the pinned input; record resolution and audit as separate evidence steps.
+- Require CodeQL evidence to carry the same head SHA as the clean current source revision.
+- Include `.env.example` in the release source fingerprint and record both source and CodeQL revisions in the scanner report.
+
+**Primary files:** `scripts/security_scanner_snapshot.py`, `.github/workflows/ci.yml`, `apps/api/tests/test_security_scanner_snapshot.py`, `Docs/SECURITY.md`.
+
 ## Agent-by-Agent Tool Strategy
 
 Adding tools to every model-driven component would increase authority, latency, token use, and prompt-injection surface without adding value. The resulting design gives tools only where the task requires iterative observation or a controlled side effect.
@@ -330,7 +395,7 @@ Adding tools to every model-driven component would increase authority, latency, 
 |---|---|---|---|
 | Triage | No arbitrary model tool loop | Deterministic issue analysis plus bounded structured model enrichment | Triage should classify untrusted text, not browse or mutate the system. Repository work belongs after an issue is accepted for planning. |
 | Planning | Service-mediated retrieval, no free-form writes | Ranked `repo.search_context`, cited chunks, policy evaluation, plan persistence | The planner needs evidence, not shell/GitHub authority. Its output remains inert until approval. |
-| Implementation | Iterative, capability-scoped tool loop | `repo.grep`, `repo.list_files`, `repo.read_file(s)`, `repo.summarize_tree`; approved workspace patch/replace/write; diff capture | This is the one agent that benefits materially from observe-act-observe behavior. Every write is independently schema, path, plan, policy, and workspace checked. |
+| Implementation | Iterative, capability-scoped tool loop | `repo.grep`, `repo.list_files`, batched `repo.read_file(s)`, `repo.summarize_tree`; approved workspace patch/replace/write; diff capture | This is the one agent that benefits materially from observe-act-observe behavior. Read evidence is cumulatively bounded and coalesced; every write is independently schema, path, plan, policy, and workspace checked. |
 | Validation | Deterministic tools only | Allowlisted test/lint/typecheck through the Unix-socket runner | A model may select from approved validation intent, but it cannot execute a shell or record fabricated success. |
 | Security | Deterministic gate plus credentialed external evidence | Patch/workspace scanner, finding explanation, CodeQL SARIF/alert ingestion | Agent-exposed host scanners were removed. Security evidence must come from deterministic content checks or a trusted external system. |
 | CI diagnosis | One external-read capability | Bounded/redacted GitHub check annotations and workflow logs; evidence-constrained summary | CI needs outside evidence but no write authority. Simulation can never promote readiness. |
@@ -350,6 +415,7 @@ The registry's 32 tools use explicit tiers: `READ`, `DB_MUTATION`, `EXTERNAL_REA
 - Removed arbitrary host-workspace acquisition from the primary repository workflow.
 - Prevented manual CI simulation from mutating a run or PR into a trusted-ready state.
 - Removed scanner dependencies and virtual-environment setup from the API image; release scanners run in their owned CI/release boundary.
+- Consolidated 20 active console primitives into the extracted component modules and deleted six unused/drifted abstraction files plus the dead risk-row implementation.
 
 ## Database and Evidence Changes
 
@@ -369,14 +435,14 @@ The entire migration chain was verified on a fresh temporary PostgreSQL database
 | Python compile (`PYTHONPYCACHEPREFIX=/private/tmp/repopilot-pycache python3 -m compileall`) | Passed |
 | `git diff --check` | Passed |
 | `make api-lint` | Passed, Ruff reported no findings |
-| `make api-test` | **329 passed**, 1 upstream Starlette/httpx deprecation warning |
+| `make api-test` | **354 passed**, 1 upstream Starlette/httpx deprecation warning |
 | Focused concurrent webhook regression | 20/20 webhook/triage tests passed |
 | `make web-typecheck` | Passed |
 | `make web-build` | Passed; production `runner` image built as `repopilot-web:verify` |
 | `npm audit --audit-level=high` | 0 vulnerabilities |
 | UI truth guard | Passed for both guarded targets |
 | `make credential-smoke-strict` | Passed for GitHub OAuth authorization URL, GitHub App installation token, and live model verification |
-| `make security-scanner-snapshot-strict` | Passed: Semgrep, `pip-audit`, npm audit, and CodeQL evidence; exact source fingerprint recorded in the generated scanner artifact |
+| `make security-scanner-snapshot-strict` | Passed after commit evidence refresh: Semgrep, pinned-transitive `pip-audit`, npm audit, and revision-matched CodeQL evidence; exact source fingerprint recorded in the generated scanner artifact |
 | Source-boundary manifest | Generated successfully for 338 candidate files after the audit artifact was added |
 | Release hygiene | 0 failures; 11 expected warnings for ignored local state, Docker mount points, explicit fake PEM fixtures, and the intentionally dirty review worktree |
 | API/worker/beat/sandbox image rebuild | Passed |
@@ -427,7 +493,7 @@ These are not hidden behind a “complete” label. They are the next practical 
 ### Medium: architectural scale and maintainability
 
 1. **Isolation strength:** The runner is a hardened, dedicated, networkless container with per-command process groups, not a new microVM/container for every command. This is appropriate for the current single-tenant threat model, not mutually hostile tenants.
-2. **Frontend decomposition:** Extract screen/data/action components from `operator-console.tsx` and add component-level tests. Dead duplicate UI and the largest usability problems were removed, but the current file remains the main maintainability hotspot.
+2. **Frontend decomposition:** Primitive components are now extracted and deduplicated. Next extract screen/data/action domains from `operator-console.tsx` and add component-level tests; the 4,960-line console remains the main maintainability hotspot.
 3. **Artifact backend:** Replace or supplement the local filesystem with object storage, lifecycle rules, encryption policy, and short-lived signed retrieval for multi-host deployments.
 4. **Distributed rate limiting:** Current application-level rate limiting is process-local. Multi-instance operation needs Redis-backed/global enforcement.
 5. **Runner dependency strategy:** The networkless runner cannot install arbitrary repository dependencies at execution time. Add purpose-built language images or a verified dependency cache keyed by lockfile.

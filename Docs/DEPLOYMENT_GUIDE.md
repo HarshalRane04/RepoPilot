@@ -9,7 +9,7 @@ Required services:
 - `api`: FastAPI application and migrations.
 - `web`: Next.js operator console on `localhost:3001`.
 - `worker`: Celery worker for webhook and run tasks.
-- `beat`: Celery Beat scheduler for stale workspace cleanup and local artifact-retention cleanup.
+- `beat`: Celery Beat scheduler for stale orchestration recovery, stale workspace cleanup, webhook dispatch reconciliation, and local artifact-retention cleanup.
 - `storage-init`: one-shot, networkless root task that gives UID/GID `10001` ownership of persistent runtime volumes before non-root services start.
 - `sandbox-runner`: authenticated Unix-socket execution service with no network and a read-only root filesystem.
 - `postgres`: PostgreSQL with pgvector.
@@ -105,6 +105,7 @@ Keep mock/local embedding mode for repositories whose source must not leave the 
 - Run workspaces live under `/tmp/repopilot-agent-workspaces` in local Compose and are shared by API/worker/beat through the `agent_workspaces` volume.
 - `storage-init` owns repository, run-workspace, artifact, and sandbox-control volumes for the non-root UID before dependent services start.
 - Startup cleanup and Celery Beat cleanup remove terminal or abandoned stale workspaces while skipping active run IDs.
+- Celery Beat marks only orchestration attempts older than `REPOPILOT_RUN_ORCHESTRATION_STALE_SECONDS` as abandoned; keep this value above the 900-second worker hard limit. The default 960-second lease avoids competing with a live task while recovering worker-loss redeliveries.
 - Artifact retention defaults to dry-run; deletion of expired bytes tombstones the database record instead of removing its provenance.
 - Web `node_modules` and `.next` are Docker named volumes in local development and should not be treated as source.
 - Semgrep and dependency-audit release evidence runs in CI or explicit release commands. Agent runtime tools do not execute scanners as host subprocesses; deterministic patch checks and credentialed CodeQL evidence remain the runtime gates.

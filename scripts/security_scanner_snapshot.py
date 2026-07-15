@@ -22,6 +22,16 @@ SECURITY_ENV_KEYS = ("SEMGREP_ENABLED", "DEPENDENCY_AUDIT_ENABLED", "CODEQL_ENAB
 DEPENDENCY_MANIFEST_PATTERNS = ("package-lock.json", "requirements.txt", "pyproject.toml")
 PYTHON_DEPENDENCY_MANIFEST_SUFFIXES = ("requirements.txt", "pyproject.toml")
 REQUIREMENT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
+PYTHON_AUDIT_VERSION = "3.12"
+PYTHON_AUDIT_PLATFORM = "x86_64-unknown-linux-gnu"
+SOURCE_BOUNDARY_ROOTS = ("apps", "packages", "services", "scripts", ".github/workflows")
+SOURCE_BOUNDARY_FILES = (
+    ".env.example",
+    "Makefile",
+    "requirements.txt",
+    "docker-compose.yml",
+    "docker-compose.ghcr.yml",
+)
 
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
@@ -98,11 +108,13 @@ class SecurityScannerSnapshot:
     generated_at: str
     root: str
     source_fingerprint: str
+    source_revision: str | None
     release_scanner_proof_ready: bool
     environment: dict[str, bool]
     dependency_manifests: list[str]
     codeql_workflow_present: bool
     codeql_run_evidence_present: bool
+    codeql_evidence_revision: str | None
     tool_versions: list[ToolVersion]
     scanners: list[ScannerStatus]
     scan_executions: list[ScanExecution]
@@ -114,11 +126,13 @@ class SecurityScannerSnapshot:
             "generated_at": self.generated_at,
             "root": self.root,
             "source_fingerprint": self.source_fingerprint,
+            "source_revision": self.source_revision,
             "release_scanner_proof_ready": self.release_scanner_proof_ready,
             "environment": self.environment,
             "dependency_manifests": self.dependency_manifests,
             "codeql_workflow_present": self.codeql_workflow_present,
             "codeql_run_evidence_present": self.codeql_run_evidence_present,
+            "codeql_evidence_revision": self.codeql_evidence_revision,
             "tool_versions": [tool.as_dict() for tool in self.tool_versions],
             "scanners": [scanner.as_dict() for scanner in self.scanners],
             "scan_executions": [execution.as_dict() for execution in self.scan_executions],
@@ -138,8 +152,8 @@ def default_runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
 def source_fingerprint(root: Path) -> str:
     digest = hashlib.sha256()
     ignored_parts = {".git", ".next", "node_modules", "__pycache__", ".pytest_cache", "release-artifacts"}
-    included_roots = [root / path for path in ("apps", "packages", "services", "scripts", ".github/workflows")]
-    extra_files = [root / path for path in ("Makefile", "requirements.txt", "docker-compose.yml", "docker-compose.ghcr.yml")]
+    included_roots = [root / path for path in SOURCE_BOUNDARY_ROOTS]
+    extra_files = [root / path for path in SOURCE_BOUNDARY_FILES]
     files: list[Path] = []
     for included_root in included_roots:
         if included_root.is_file():
@@ -367,22 +381,67 @@ def codeql_run_evidence_path(root: Path, env: Mapping[str, str]) -> Path:
     return path
 
 
-def has_codeql_run_evidence(root: Path, env: Mapping[str, str]) -> bool:
+def current_source_revision(root: Path, env: Mapping[str, str]) -> str | None:
+    configured = str(env.get("GITHUB_SHA") or "").strip()
+    if configured:
+        return configured
+    if shutil.which("git") is None:
+        return None
+    try:
+        revision = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=10,
+        )
+        status = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(root),
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+                "--",
+                *SOURCE_BOUNDARY_ROOTS,
+                *SOURCE_BOUNDARY_FILES,
+            ],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if revision.returncode != 0 or status.returncode != 0 or status.stdout.strip():
+        return None
+    return revision.stdout.strip() or None
+
+
+def codeql_run_evidence_status(
+    root: Path,
+    env: Mapping[str, str],
+    *,
+    source_revision: str | None,
+) -> tuple[bool, str | None]:
     path = codeql_run_evidence_path(root, env)
     if not path.exists():
-        return False
+        return False, None
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return False
+        return False, None
     if not isinstance(payload, dict):
-        return False
+        return False, None
     workflow = str(payload.get("workflowName") or payload.get("workflow") or "").lower()
     status = str(payload.get("status") or "").lower()
     conclusion = str(payload.get("conclusion") or "").lower()
+    evidence_revision = str(payload.get("head_sha") or payload.get("source_sha") or "").strip() or None
     has_successful_workflow = "codeql" in workflow and status == "completed" and conclusion == "success"
     alerts_verified = payload.get("codeql_alert_fetch_verified") is True or payload.get("sarif_ingestion_verified") is True
-    return has_successful_workflow or alerts_verified
+    revision_matches = bool(source_revision and evidence_revision == source_revision)
+    return (has_successful_workflow or alerts_verified) and revision_matches, evidence_revision
 
 
 def collect_snapshot(
@@ -398,11 +457,17 @@ def collect_snapshot(
     codeql_workflow_present = any((root / ".github/workflows").glob("*codeql*.yml")) or any(
         (root / ".github/workflows").glob("*codeql*.yaml")
     )
-    codeql_run_evidence_present = has_codeql_run_evidence(root, env)
+    source_revision = current_source_revision(root, env)
+    codeql_run_evidence_present, codeql_evidence_revision = codeql_run_evidence_status(
+        root,
+        env,
+        source_revision=source_revision,
+    )
 
     versions = [
         collect_tool_version("semgrep", ["semgrep", "--version"], runner=runner),
         collect_tool_version("npm", ["npm", "--version"], runner=runner),
+        collect_tool_version("uv", ["uv", "--version"], runner=runner),
         collect_tool_version("pip-audit", ["pip-audit", "--version"], runner=runner),
         collect_tool_version("codeql", ["codeql", "--version"], runner=runner),
     ]
@@ -515,8 +580,10 @@ def collect_snapshot(
         missing_tools: list[str] = []
         if any(path.endswith("package-lock.json") for path in dependency_manifests) and not has_tool(tools, "npm"):
             missing_tools.append("npm")
-        if python_audit_input.requirements and not has_tool(tools, "pip-audit"):
-            missing_tools.append("pip-audit")
+        if python_audit_input.requirements:
+            for tool_name in ("uv", "pip-audit"):
+                if not has_tool(tools, tool_name):
+                    missing_tools.append(tool_name)
         if python_audit_input.errors:
             detail = "Could not build a complete Python dependency audit input: " + " ".join(
                 python_audit_input.errors
@@ -533,24 +600,51 @@ def collect_snapshot(
             audit_executions: list[ScanExecution] = []
             if python_audit_input.requirements:
                 with tempfile.TemporaryDirectory(prefix="repopilot-pip-audit-") as temporary_directory:
-                    audit_requirements = Path(temporary_directory) / "requirements.txt"
+                    audit_requirements = Path(temporary_directory) / "requirements.in"
+                    resolved_requirements = Path(temporary_directory) / "requirements.txt"
                     audit_requirements.write_text(
                         "\n".join(python_audit_input.requirements) + "\n",
                         encoding="utf-8",
                     )
-                    audit_executions.append(
-                        run_scan(
-                            "pip-audit",
-                            [
-                                "pip-audit",
-                                "--requirement",
-                                str(audit_requirements),
-                                "--progress-spinner",
-                                "off",
-                            ],
-                            runner=runner,
-                        )
+                    resolution_execution = run_scan(
+                        "python-dependency-resolve",
+                        [
+                            "uv",
+                            "pip",
+                            "compile",
+                            str(audit_requirements),
+                            "--output-file",
+                            str(resolved_requirements),
+                            "--python-version",
+                            PYTHON_AUDIT_VERSION,
+                            "--python-platform",
+                            PYTHON_AUDIT_PLATFORM,
+                            "--no-annotate",
+                            "--no-header",
+                            "--quiet",
+                        ],
+                        runner=runner,
                     )
+                    if resolution_execution.status == "passed" and not resolved_requirements.is_file():
+                        resolution_execution.status = "failed"
+                        resolution_execution.detail = "Resolver exited successfully without producing the pinned audit input."
+                    audit_executions.append(resolution_execution)
+                    if resolution_execution.status == "passed":
+                        audit_executions.append(
+                            run_scan(
+                                "pip-audit",
+                                [
+                                    "pip-audit",
+                                    "--requirement",
+                                    str(resolved_requirements),
+                                    "--progress-spinner",
+                                    "off",
+                                    "--no-deps",
+                                    "--disable-pip",
+                                ],
+                                runner=runner,
+                            )
+                        )
             if any(path.endswith("package-lock.json") for path in dependency_manifests):
                 audit_executions.append(
                     run_scan(
@@ -579,7 +673,10 @@ def collect_snapshot(
             else:
                 audited_inputs: list[str] = []
                 if python_audit_input.requirements:
-                    audited_inputs.append(f"{len(python_audit_input.requirements)} Python registry requirements")
+                    audited_inputs.append(
+                        f"{len(python_audit_input.requirements)} Python registry requirements resolved for "
+                        f"CPython {PYTHON_AUDIT_VERSION} on Linux"
+                    )
                 elif python_manifests:
                     audited_inputs.append("no external Python registry requirements")
                 if any(path.endswith("package-lock.json") for path in dependency_manifests):
@@ -603,7 +700,7 @@ def collect_snapshot(
                 status=status,
                 detail=detail,
                 required_for_release=True,
-                tools=["npm", "pip-audit"],
+                tools=["npm", "uv", "pip-audit"],
                 next_step=next_step,
             )
         )
@@ -618,7 +715,7 @@ def collect_snapshot(
                 status="disabled",
                 detail=detail,
                 required_for_release=True,
-                tools=["npm", "pip-audit"],
+                tools=["npm", "uv", "pip-audit"],
                 next_step="Install audit tools and set DEPENDENCY_AUDIT_ENABLED=true for release scanner proof.",
             )
         )
@@ -626,16 +723,16 @@ def collect_snapshot(
     if env_flags["CODEQL_ENABLED"]:
         if codeql_workflow_present:
             if codeql_run_evidence_present:
-                detail = "CODEQL_ENABLED is true, a CodeQL workflow file is present, and successful GitHub CodeQL run or ingestion evidence is recorded."
+                detail = "CODEQL_ENABLED is true, a CodeQL workflow file is present, and successful GitHub CodeQL evidence matches the clean source revision."
                 status = "ready"
                 next_step = None
             else:
-                detail = "CODEQL_ENABLED is true and a CodeQL workflow file is present; successful GitHub CodeQL run, SARIF ingestion, or alert-fetch evidence is still required."
+                detail = "CODEQL_ENABLED is true and a CodeQL workflow file is present; successful GitHub CodeQL evidence for the clean current source revision is still required."
                 warnings.append(detail)
                 status = "workflow_ready"
                 next_step = (
-                    "Run the GitHub CodeQL workflow on a code-scanning-enabled repository and capture "
-                    "Docs/release-artifacts/codeql-run-evidence.json or verified alert/SARIF evidence."
+                    "Commit the source boundary, run CodeQL on that exact revision, and capture "
+                    "Docs/release-artifacts/codeql-run-evidence.json with its head SHA."
                 )
         else:
             detail = "CODEQL_ENABLED is true, but no CodeQL workflow file is present under .github/workflows."
@@ -684,11 +781,13 @@ def collect_snapshot(
         generated_at=datetime.now(timezone.utc).isoformat(),
         root=str(root),
         source_fingerprint=source_fingerprint(root),
+        source_revision=source_revision,
         release_scanner_proof_ready=release_scanner_proof_ready,
         environment=env_flags,
         dependency_manifests=dependency_manifests,
         codeql_workflow_present=codeql_workflow_present,
         codeql_run_evidence_present=codeql_run_evidence_present,
+        codeql_evidence_revision=codeql_evidence_revision,
         tool_versions=versions,
         scanners=scanners,
         scan_executions=scan_executions,
@@ -704,9 +803,11 @@ def render_markdown(snapshot: SecurityScannerSnapshot) -> str:
         f"- Generated at: `{snapshot.generated_at}`",
         f"- Root: `{snapshot.root}`",
         f"- Source fingerprint: `{snapshot.source_fingerprint}`",
+        f"- Clean source revision: `{snapshot.source_revision or 'Unavailable'}`",
         f"- Release scanner proof ready: `{snapshot.release_scanner_proof_ready}`",
         f"- CodeQL workflow present: `{snapshot.codeql_workflow_present}`",
         f"- CodeQL run evidence present: `{snapshot.codeql_run_evidence_present}`",
+        f"- CodeQL evidence revision: `{snapshot.codeql_evidence_revision or 'Unavailable'}`",
         f"- Dependency manifests found: `{len(snapshot.dependency_manifests)}`",
         "",
         "## Scanner Status",

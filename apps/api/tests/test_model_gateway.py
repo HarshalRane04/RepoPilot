@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
@@ -33,6 +34,7 @@ class FakeGatewayDb:
         self.run = run
         self.added: list[object] = []
         self.flushes = 0
+        self.execute_calls = 0
 
     async def get(self, model, item_id):
         if model is AgentRun and item_id == self.run.id:
@@ -41,6 +43,10 @@ class FakeGatewayDb:
 
     async def scalar(self, _statement):
         return 0
+
+    async def execute(self, _statement):
+        self.execute_calls += 1
+        return SimpleNamespace(one=lambda: (0, 0, 0.0))
 
     def add(self, item: object) -> None:
         self.added.append(item)
@@ -125,6 +131,7 @@ def test_model_gateway_mock_completion_records_trace(monkeypatch) -> None:
     assert trace.response_hash == response.response_hash
     assert trace.metadata_json == {"context_citations": []}
     assert db.flushes == 1
+    assert db.execute_calls == 1
 
 
 def test_model_gateway_complete_json_validates_schema(monkeypatch) -> None:

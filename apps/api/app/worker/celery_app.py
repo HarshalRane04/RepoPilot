@@ -30,5 +30,9 @@ celery_app.conf.update(
             "task": "repopilot.github.reconcile_dispatch",
             "schedule": settings.webhook_dispatch_retry_interval_seconds,
         },
+        "repopilot.run.reconcile_stale": {
+            "task": "repopilot.run.reconcile_stale",
+            "schedule": settings.run_orchestration_reconcile_interval_seconds,
+        },
     },
 )

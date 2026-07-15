@@ -87,6 +87,18 @@ class Settings(BaseSettings):
         default=3,
         alias="REPOPILOT_IMPLEMENTATION_EXPLORATION_MAX_ROUNDS",
     )
+    run_orchestration_reconcile_interval_seconds: int = Field(
+        default=60,
+        ge=10,
+        le=3600,
+        alias="REPOPILOT_RUN_ORCHESTRATION_RECONCILE_INTERVAL_SECONDS",
+    )
+    run_orchestration_stale_seconds: int = Field(
+        default=960,
+        gt=900,
+        le=86_400,
+        alias="REPOPILOT_RUN_ORCHESTRATION_STALE_SECONDS",
+    )
     rate_limit_window_seconds: int = Field(default=60, alias="REPOPILOT_RATE_LIMIT_WINDOW_SECONDS")
     rate_limit_state_changes_per_minute: int = Field(default=60, alias="REPOPILOT_RATE_LIMIT_STATE_CHANGES_PER_MINUTE")
     rate_limit_expensive_per_minute: int = Field(default=20, alias="REPOPILOT_RATE_LIMIT_EXPENSIVE_PER_MINUTE")

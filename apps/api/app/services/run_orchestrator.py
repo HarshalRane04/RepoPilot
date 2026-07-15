@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from repopilot_contracts import ImplementationRunRequest, ValidationStatus
-from sqlalchemy import select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -15,7 +16,7 @@ from app.services.implementation_agent import ImplementationAgent
 from app.services.planning import approved_plan_hash_matches
 from app.services.runtime_secrets import effective_settings
 from app.services.security_scanner import SecurityScanner
-from app.services.state_machine import TERMINAL_STATES, transition_run
+from app.services.state_machine import TERMINAL_STATES, next_states, transition_run
 
 
 class RunOrchestrationError(RuntimeError):
@@ -167,6 +168,108 @@ class RunOrchestrator:
         )
         await db.commit()
         return retry_run
+
+    async def reconcile_stale_runs(
+        self,
+        db: AsyncSession,
+        *,
+        stale_before: datetime,
+        limit: int = 100,
+    ) -> dict[str, int]:
+        latest_steps = (
+            select(
+                AgentStep.run_id.label("run_id"),
+                func.max(AgentStep.created_at).label("created_at"),
+            )
+            .where(AgentStep.step_name == "ORCHESTRATE_RUN")
+            .group_by(AgentStep.run_id)
+            .subquery()
+        )
+        result = await db.execute(
+            select(AgentStep)
+            .join(
+                latest_steps,
+                and_(
+                    AgentStep.run_id == latest_steps.c.run_id,
+                    AgentStep.created_at == latest_steps.c.created_at,
+                ),
+            )
+            .where(
+                AgentStep.step_name == "ORCHESTRATE_RUN",
+                AgentStep.status.in_({"queued", "running"}),
+                AgentStep.created_at <= stale_before,
+            )
+            .order_by(AgentStep.created_at.asc())
+            .limit(max(1, min(limit, 500)))
+        )
+        candidates = result.scalars().all()
+        recovered = 0
+        failed_runs = 0
+        for candidate in candidates:
+            if candidate.created_at is None or candidate.created_at > stale_before:
+                continue
+            run = await db.scalar(
+                select(AgentRun)
+                .where(AgentRun.id == candidate.run_id)
+                .with_for_update(skip_locked=True)
+            )
+            if run is None or run.state in TERMINAL_STATES:
+                continue
+            latest = await db.scalar(
+                select(AgentStep)
+                .where(AgentStep.run_id == run.id, AgentStep.step_name == "ORCHESTRATE_RUN")
+                .order_by(AgentStep.created_at.desc(), AgentStep.id.desc())
+                .limit(1)
+            )
+            if latest is None or latest.id != candidate.id or latest.status not in {"queued", "running"}:
+                continue
+
+            reason = "Orchestration attempt exceeded the worker time limit without completion evidence."
+            db.add(
+                AgentStep(
+                    run_id=run.id,
+                    step_name="ORCHESTRATE_RUN",
+                    output_json={
+                        "phase": "reconciled_stale",
+                        "stale_step_id": str(candidate.id),
+                        "stale_status": candidate.status,
+                        "stale_before": stale_before.isoformat(),
+                    },
+                    status="failed",
+                    error=reason,
+                )
+            )
+            if "FAILED" in next_states(run.state):
+                await transition_run(
+                    db,
+                    run=run,
+                    next_state="FAILED",
+                    actor_type="system",
+                    reason=reason,
+                    metadata={"stale_step_id": str(candidate.id), "reconciled": True},
+                )
+                failed_runs += 1
+            await record_audit(
+                db,
+                actor_type="system",
+                action="run.orchestration_reconciled",
+                entity_type="agent_run",
+                entity_id=str(run.id),
+                metadata={
+                    "stale_step_id": str(candidate.id),
+                    "stale_status": candidate.status,
+                    "run_state": run.state,
+                },
+            )
+            recovered += 1
+
+        if recovered:
+            await db.commit()
+        return {
+            "candidates": len(candidates),
+            "recovered": recovered,
+            "runs_failed": failed_runs,
+        }
 
     async def _source_path(self, db: AsyncSession, *, run: AgentRun) -> str:
         if run.issue_id is None:

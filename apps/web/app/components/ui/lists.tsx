@@ -1,28 +1,15 @@
 import { EmptyState } from "./empty-state";
 
-export function CheckList({ items, empty }: { items: string[]; empty: string }) {
-  if (items.length === 0) return <EmptyState text={empty} />;
-  return (
-    <div className="checkList">
-      {items.map((item, index) => <span key={index}>{item}</span>)}
-    </div>
-  );
-}
-
 export function NumberedList({ items, empty }: { items: string[]; empty: string }) {
-  if (items.length === 0) return <EmptyState text={empty} />;
-  return (
-    <ol className="numberedList">
-      {items.map((item, index) => <li key={index}>{item}</li>)}
-    </ol>
-  );
+  if (items.length === 0) {
+    return <EmptyState text={empty} />;
+  }
+  return <ol className="numberedList">{items.map((item) => <li key={item}>{item}</li>)}</ol>;
 }
 
-export function Bullets({ items, empty }: { items: string[]; empty: string }) {
-  if (items.length === 0) return <EmptyState text={empty} />;
-  return (
-    <ul className="bullets">
-      {items.map((item, index) => <li key={index}>{item}</li>)}
-    </ul>
-  );
+export function Bullets({ items, empty = "No entries recorded." }: { items: string[]; empty?: string }) {
+  if (items.length === 0) {
+    return <EmptyState text={empty} />;
+  }
+  return <ul className="bullets">{items.map((item) => <li key={item}>{item}</li>)}</ul>;
 }

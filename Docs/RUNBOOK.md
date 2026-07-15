@@ -273,7 +273,7 @@ curl "http://localhost:8000/runs/$RUN_ID/artifacts" \
   -H "X-RepoPilot-Role: owner"
 ```
 
-The orchestration worker records queued, running, and completed evidence and stops at `WAIT_FOR_CI`. Manual `/start`, `/implement`, `/security-scan`, and `/open-draft-pr` endpoints remain recovery controls. Local Compose always uses the authenticated networkless Unix-socket runner; the API never receives the host Docker socket.
+The orchestration worker records queued, running, and completed evidence and stops at `WAIT_FOR_CI`. Celery Beat checks for attempts that remain queued/running beyond `REPOPILOT_RUN_ORCHESTRATION_STALE_SECONDS`, which must exceed the 900-second worker hard limit. It records the abandoned attempt as failed and either leaves a pre-start run safely requeueable or transitions an in-progress run to `FAILED` so the retry endpoint creates a fresh workspace. Manual `/start`, `/implement`, `/security-scan`, and `/open-draft-pr` endpoints remain recovery controls. Local Compose always uses the authenticated networkless Unix-socket runner; the API never receives the host Docker socket.
 
 Trusted GitHub `workflow_run`, `check_run`, or `check_suite` webhooks can promote current-patch evidence to `READY_FOR_REVIEW`. `POST /prs/{pr_id}/ci` is an admin-only simulation endpoint and never promotes a run.
 

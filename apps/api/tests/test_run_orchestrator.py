@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
 from repopilot_contracts import ImplementationPlan, ValidationStatus
 
-from app.db.models import AgentRun, AgentStep, Issue, Plan, RepositoryIndex
+from app.core.config import settings
+from app.db.models import AgentRun, AgentStep, Issue, Plan, RepositoryIndex, utc_now
 from app.services.run_orchestrator import RunOrchestrator
 from app.services.security_envelope import stable_json_hash
-from app.worker.tasks import execute_agent_run_task
+from app.worker.celery_app import celery_app
+from app.worker.tasks import execute_agent_run_task, reconcile_stale_agent_runs_task
 
 
 class FakeDb:
@@ -47,6 +50,39 @@ class FakeDb:
 class ModelPayload(SimpleNamespace):
     def model_dump(self, **_kwargs):
         return dict(self.payload)
+
+
+class FakeScalarRows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return list(self.rows)
+
+
+class FakeReconcileDb:
+    def __init__(self, *, run: AgentRun, candidate: AgentStep) -> None:
+        self.run = run
+        self.candidate = candidate
+        self.scalar_count = 0
+        self.added: list[object] = []
+        self.commits = 0
+
+    async def execute(self, _statement):
+        return FakeScalarRows([self.candidate])
+
+    async def scalar(self, _statement):
+        self.scalar_count += 1
+        return self.run if self.scalar_count == 1 else self.candidate
+
+    def add(self, item: object) -> None:
+        self.added.append(item)
+
+    async def commit(self) -> None:
+        self.commits += 1
 
 
 def test_run_orchestrator_executes_to_wait_for_ci(monkeypatch) -> None:
@@ -108,6 +144,12 @@ def test_run_orchestrator_executes_to_wait_for_ci(monkeypatch) -> None:
     assert [step.status for step in orchestration_steps] == ["running", "succeeded"]
     assert db.commits == 2
     assert execute_agent_run_task.name == "repopilot.run.execute"
+    assert reconcile_stale_agent_runs_task.name == "repopilot.run.reconcile_stale"
+    assert settings.run_orchestration_stale_seconds > celery_app.conf.task_time_limit
+    assert (
+        celery_app.conf.beat_schedule["repopilot.run.reconcile_stale"]["schedule"]
+        == settings.run_orchestration_reconcile_interval_seconds
+    )
 
 
 def test_run_orchestrator_creates_fresh_retry_for_blocked_attempt(monkeypatch) -> None:
@@ -149,3 +191,36 @@ def test_run_orchestrator_creates_fresh_retry_for_blocked_attempt(monkeypatch) -
     assert retry_run.state == "CREATE_BRANCH"
     retry_step = next(item for item in db.added if isinstance(item, AgentStep) and item.step_name == "RETRY_CREATED")
     assert retry_step.output_json["retry_of_run_id"] == str(run.id)
+
+
+def test_run_orchestrator_reconciles_abandoned_running_attempt() -> None:
+    run = AgentRun(id=uuid4(), state="IMPLEMENT_PATCH")
+    candidate = AgentStep(
+        id=uuid4(),
+        run_id=run.id,
+        step_name="ORCHESTRATE_RUN",
+        status="running",
+        output_json={"phase": "started"},
+        created_at=utc_now() - timedelta(minutes=20),
+    )
+    db = FakeReconcileDb(run=run, candidate=candidate)
+
+    result = asyncio.run(
+        RunOrchestrator().reconcile_stale_runs(
+            db,
+            stale_before=utc_now() - timedelta(minutes=16),
+        )
+    )
+
+    assert result == {"candidates": 1, "recovered": 1, "runs_failed": 1}
+    assert run.state == "FAILED"
+    reconciled = next(
+        item
+        for item in db.added
+        if isinstance(item, AgentStep)
+        and item.step_name == "ORCHESTRATE_RUN"
+        and item.output_json.get("phase") == "reconciled_stale"
+    )
+    assert reconciled.status == "failed"
+    assert reconciled.output_json["stale_step_id"] == str(candidate.id)
+    assert db.commits == 1

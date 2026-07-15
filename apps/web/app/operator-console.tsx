@@ -43,6 +43,25 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Badge } from "./components/ui/badge";
+import { Breadcrumb } from "./components/ui/breadcrumb";
+import { EmptyState } from "./components/ui/empty-state";
+import { Field } from "./components/ui/field";
+import { InfoLine } from "./components/ui/info-line";
+import { InfoPanel } from "./components/ui/info-panel";
+import { KeyValue } from "./components/ui/key-value";
+import { Bullets, NumberedList } from "./components/ui/lists";
+import { LogoMark } from "./components/ui/logo-mark";
+import { MetaCard } from "./components/ui/meta-card";
+import { PanelHeader } from "./components/ui/panel-header";
+import { PillList } from "./components/ui/pill-list";
+import { PolicyToggle } from "./components/ui/policy-toggle";
+import { ScreenHeader } from "./components/ui/screen-header";
+import { SecretInput } from "./components/ui/secret-input";
+import { Segment } from "./components/ui/segment";
+import { StatCard } from "./components/ui/stat-card";
+import { SummaryItem } from "./components/ui/summary-item";
+import { Threshold } from "./components/ui/threshold";
 import {
   SETTINGS_TABS,
   activityNavigationTarget,
@@ -4257,44 +4276,6 @@ function GitHubAppSecretForm({
   );
 }
 
-function SecretInput({
-  action,
-  label,
-  name,
-  onChange,
-  placeholder,
-  secret,
-  value
-}: {
-  action?: React.ReactNode;
-  label: string;
-  name: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  secret?: boolean;
-  value: string;
-}) {
-  return (
-    <label className="secretInput">
-      <span>{label}</span>
-      <div>
-        <input
-          autoCapitalize="none"
-          autoComplete="off"
-          autoCorrect="off"
-          name={name}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
-          spellCheck={false}
-          type={secret ? "password" : "text"}
-          value={value}
-        />
-        {action}
-      </div>
-    </label>
-  );
-}
-
 function ProfileScreen({ data, onLogout, onSettings }: { data: ConsoleState; onLogout: () => void; onSettings: () => void }) {
   const username = data.session?.username ?? "Platform Admin";
   const githubConnected = isGithubAccountConnected(data);
@@ -4335,144 +4316,6 @@ function ProfileScreen({ data, onLogout, onSettings }: { data: ConsoleState; onL
   );
 }
 
-function LogoMark() {
-  return (
-    <span className="logoMark" aria-hidden="true">
-      <Shield size={25} />
-    </span>
-  );
-}
-
-function ScreenHeader({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <div className="screenHeader">
-      <h1>{title}</h1>
-      {subtitle ? <p>{subtitle}</p> : null}
-    </div>
-  );
-}
-
-function PanelHeader({ title, icon: Icon }: { title: string; icon?: LucideIcon }) {
-  return (
-    <header className="panelHeader">
-      <h2>{Icon ? <Icon size={22} /> : null}{title}</h2>
-    </header>
-  );
-}
-
-function StatCard({ label, value, icon: Icon }: { label: string; value: string | number; icon?: LucideIcon }) {
-  return (
-    <article className="statCard">
-      {Icon ? <Icon size={28} /> : null}
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </article>
-  );
-}
-
-function MetaCard({ icon: Icon, label, value, mono, tone }: { icon: LucideIcon; label: string; value: string; mono?: boolean; tone?: string }) {
-  return (
-    <article className="metaCard">
-      <Icon size={22} />
-      <span>{label}</span>
-      {tone ? <Badge tone={tone}>{value}</Badge> : <strong className={mono ? "mono" : ""}>{value}</strong>}
-    </article>
-  );
-}
-
-function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: string }) {
-  return <span className={`badge ${tone}`}>{children}</span>;
-}
-
-function Segment({
-  active,
-  disabled,
-  label,
-  onClick
-}: {
-  active?: boolean;
-  disabled?: boolean;
-  label: string;
-  onClick?: () => void;
-}) {
-  return <button aria-pressed={Boolean(active)} className={active ? "segment active" : "segment"} disabled={disabled} onClick={onClick} type="button">{label}</button>;
-}
-
-function SummaryItem({ icon: Icon, label, onClick, value, tone }: { icon: LucideIcon; label: string; onClick?: () => void; value: string | number; tone: string }) {
-  const content = (
-    <>
-      <span className={`summaryIcon ${tone}`}><Icon size={24} /></span>
-      <span><small>{label}</small><strong>{value}</strong></span>
-      {onClick ? <ChevronRight size={18} aria-hidden="true" /> : null}
-    </>
-  );
-  return onClick
-    ? <button aria-label={`${label}: ${value}`} className="summaryItem" onClick={onClick} type="button">{content}</button>
-    : <div className="summaryItem">{content}</div>;
-}
-
-function Field({ label, value, tone, mono }: { label: string; value: string; tone?: string; mono?: boolean }) {
-  return (
-    <div className="field">
-      <small>{label}</small>
-      {tone ? <Badge tone={tone}>{value}</Badge> : <strong className={mono ? "mono" : ""}>{value}</strong>}
-    </div>
-  );
-}
-
-function InfoPanel({ number, title, children }: { number: string; title: string; children: React.ReactNode }) {
-  return (
-    <section className="panel infoPanel">
-      <h2><span>{number}.</span> {title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Breadcrumb({ trail }: { trail: Array<{ label: string; view?: View; entityId?: string }> }) {
-  return (
-    <nav aria-label="Breadcrumb" className="breadcrumb">
-      <ol>
-        {trail.map((item, index) => {
-          const current = index === trail.length - 1;
-          return (
-            <li key={`${item.label}-${index}`}>
-              {!current && item.view
-                ? <a href={`#${consoleHash(item.view, { entityId: item.entityId })}`}>{item.label}</a>
-                : <span aria-current={current ? "page" : undefined}>{item.label}</span>}
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
-  );
-}
-
-function PillList({ items, empty }: { items: string[]; empty: string }) {
-  if (items.length === 0) {
-    return <EmptyState text={empty} />;
-  }
-  return <div className="pillList">{items.map((item) => <code key={item}>{item}</code>)}</div>;
-}
-
-function NumberedList({ items, empty }: { items: string[]; empty: string }) {
-  if (items.length === 0) {
-    return <EmptyState text={empty} />;
-  }
-  return <ol className="numberedList">{items.map((item) => <li key={item}>{item}</li>)}</ol>;
-}
-
-function Bullets({ items, empty = "No entries recorded." }: { items: string[]; empty?: string }) {
-  if (items.length === 0) {
-    return <EmptyState text={empty} />;
-  }
-  return <ul className="bullets">{items.map((item) => <li key={item}>{item}</li>)}</ul>;
-}
-
-function EmptyState({ text }: { text: string }) {
-  return <p className="emptyState">{text}</p>;
-}
-
 function DetailRouteState({
   entityLabel,
   requestedId,
@@ -4506,41 +4349,6 @@ function SetupMini({ setup, onClick }: { setup: ReturnType<typeof setupState>; o
   );
 }
 
-function RiskRows({ risk, onSecurity }: { risk: ReturnType<typeof riskCounts>; onSecurity: () => void }) {
-  const total = Math.max(1, risk.low + risk.medium + risk.high + risk.blocked);
-  const rows = [
-    ["Low risk", risk.low, "success"],
-    ["Medium risk", risk.medium, "warning"],
-    ["High risk", risk.high, "danger"],
-    ["Blocked issue status", risk.blocked, "danger"]
-  ] as const;
-  return (
-    <div className="riskRows">
-      {rows.map(([label, value, tone]) => (
-        <div className="riskRow" key={label}>
-          <span><i className={tone} /> {label}</span>
-          <div className="miniBar"><span className={tone} style={{ width: `${(value / total) * 100}%` }} /></div>
-          <strong>{value}</strong>
-        </div>
-      ))}
-      <button className="panelLink" onClick={onSecurity} type="button">View full risk report <ChevronRight size={16} /></button>
-    </div>
-  );
-}
-
-function PolicyToggle({ label, enabled }: { label: string; enabled: boolean }) {
-  return (
-    <div className="policyToggle">
-      <span>{label}</span>
-      <Badge tone={enabled ? "success" : "neutral"}>{enabled ? "Enabled" : "Disabled"}</Badge>
-    </div>
-  );
-}
-
-function Threshold({ label, value, tone }: { label: string; value: string; tone: string }) {
-  return <div className="threshold"><span>{label}</span><Badge tone={tone}>{value}</Badge></div>;
-}
-
 function CommandList({ title, items, tone }: { title: string; items: string[]; tone: string }) {
   return (
     <div className={`commandList ${tone}`}>
@@ -4551,21 +4359,8 @@ function CommandList({ title, items, tone }: { title: string; items: string[]; t
   );
 }
 
-function KeyValue({ label, value, icon: Icon }: { label: string; value: string; icon?: LucideIcon }) {
-  return <div className="keyValue">{Icon ? <Icon size={20} /> : null}<span>{label}</span><strong>{value}</strong></div>;
-}
-
 function ReadOnlyMeta({ label, value }: { label: string; value: string }) {
   return <div className="reportMetaItem"><span>{label}</span><strong>{value}</strong></div>;
-}
-
-function InfoLine({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
-  return (
-    <div className="infoLine">
-      <Icon size={24} />
-      <span><strong>{label}</strong><small>{value}</small></span>
-    </div>
-  );
 }
 
 function TraceJson({ items }: { items: Array<Record<string, unknown>> }) {
