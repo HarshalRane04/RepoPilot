@@ -51,6 +51,72 @@ def test_scanner_snapshot_checks_dependency_audit_tools_for_manifest_types(tmp_p
     assert any(scanner.name == "dependency_audit" and scanner.status == "blocked" for scanner in snapshot.scanners)
 
 
+def test_scanner_snapshot_audits_declared_python_requirements_not_runner_environment(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    tmp_path.joinpath("requirements.txt").write_text("-r apps/api/requirements.txt\n", encoding="utf-8")
+    tmp_path.joinpath("apps/api").mkdir(parents=True)
+    tmp_path.joinpath("apps/api/requirements.txt").write_text(
+        "-e ./packages/shared_contracts\nfastapi>=0.111,<1.0\n",
+        encoding="utf-8",
+    )
+    tmp_path.joinpath("packages/shared_contracts").mkdir(parents=True)
+    tmp_path.joinpath("packages/shared_contracts/pyproject.toml").write_text(
+        """
+[project]
+name = "repopilot-contracts"
+version = "0.1.0"
+dependencies = ["pydantic>=2.7,<3.0"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    tmp_path.joinpath("packages/evals").mkdir(parents=True)
+    tmp_path.joinpath("packages/evals/pyproject.toml").write_text(
+        """
+[project]
+name = "repopilot-evals"
+version = "0.1.0"
+dependencies = ["repopilot-contracts==0.1.0"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        if command[0] == "pip-audit" and "--requirement" in command:
+            requirement_path = Path(command[command.index("--requirement") + 1])
+            captured["command"] = list(command)
+            captured["requirements"] = requirement_path.read_text(encoding="utf-8")
+        return subprocess.CompletedProcess(args=command, returncode=0, stdout=f"{command[0]} 1.0\n", stderr="")
+
+    monkeypatch.setattr("scripts.security_scanner_snapshot.shutil.which", lambda name: f"/usr/bin/{name}")
+    snapshot = collect_snapshot(
+        root=tmp_path,
+        env={"DEPENDENCY_AUDIT_ENABLED": "true"},
+        runner=fake_runner,
+    )
+
+    command = captured["command"]
+    assert isinstance(command, list)
+    assert "--requirement" in command
+    assert "--local" not in command
+    audit_requirements = str(captured["requirements"])
+    assert "fastapi>=0.111,<1.0" in audit_requirements
+    assert "pydantic>=2.7,<3.0" in audit_requirements
+    assert "setuptools>=69" in audit_requirements
+    assert "-e" not in audit_requirements
+    assert "repopilot-contracts" not in audit_requirements
+    assert any(scanner.name == "dependency_audit" and scanner.status == "ready" for scanner in snapshot.scanners)
+
+
 def test_scanner_snapshot_writes_markdown_and_json(tmp_path: Path, monkeypatch) -> None:
     tmp_path.joinpath(".github/workflows").mkdir(parents=True)
     tmp_path.joinpath(".github/workflows/codeql.yml").write_text("name: CodeQL\n", encoding="utf-8")
