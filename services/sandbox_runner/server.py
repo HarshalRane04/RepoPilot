@@ -14,7 +14,7 @@ import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import UUID
 
@@ -152,16 +152,15 @@ def execute_request(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
 def exact_run_workspace(*, run_id: UUID, workspace_value: str) -> Path:
     root = WORKSPACE_ROOT.resolve(strict=True)
     expected = root / str(run_id)
-    supplied = Path(workspace_value).expanduser()
-    if supplied.is_symlink():
+    supplied = workspace_value.strip()
+    if supplied != str(expected):
+        raise ValueError(f"Sandbox workspace must exactly match {expected}.")
+    if expected.is_symlink():
         raise ValueError("Sandbox workspace must be an existing non-symlink directory.")
     try:
-        resolved = supplied.resolve(strict=True)
-        expected_resolved = expected.resolve(strict=True)
+        resolved = expected.resolve(strict=True)
     except OSError as exc:
         raise ValueError("Sandbox workspace must be an existing non-symlink directory.") from exc
-    if resolved != expected_resolved:
-        raise ValueError(f"Sandbox workspace must exactly match {expected}.")
     if not resolved.is_dir():
         raise ValueError("Sandbox workspace must be an existing non-symlink directory.")
     if resolved.parent != root or resolved.name != str(run_id):
@@ -170,15 +169,33 @@ def exact_run_workspace(*, run_id: UUID, workspace_value: str) -> Path:
 
 
 def exact_working_directory(*, workspace: Path, value: str) -> Path:
-    relative = Path(value.replace("\\", "/"))
-    if relative.is_absolute() or ".." in relative.parts:
+    raw = value.strip().replace("\\", "/")
+    relative = PurePosixPath(raw)
+    if not raw or relative.is_absolute() or ".." in relative.parts:
         raise ValueError("Sandbox working directory must be relative to the run workspace.")
-    candidate = (workspace / relative).resolve(strict=True)
-    if candidate != workspace and not candidate.is_relative_to(workspace):
-        raise ValueError("Sandbox working directory escaped the run workspace.")
-    if not candidate.is_dir() or candidate.is_symlink():
+    parts = tuple(part for part in relative.parts if part != ".")
+    # The path is built only from normalized relative segments and is checked
+    # for symlinks and containment again after strict resolution.
+    # codeql[py/path-injection]
+    # lgtm[py/path-injection]
+    candidate = workspace.joinpath(*parts) if parts else workspace
+    # codeql[py/path-injection]
+    # lgtm[py/path-injection]
+    if candidate != workspace and candidate.is_symlink():
         raise ValueError("Sandbox working directory must be an existing non-symlink directory.")
-    return candidate
+    try:
+        # codeql[py/path-injection]
+        # lgtm[py/path-injection]
+        resolved = candidate.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("Sandbox working directory must be an existing non-symlink directory.") from exc
+    if resolved != workspace and not resolved.is_relative_to(workspace):
+        raise ValueError("Sandbox working directory escaped the run workspace.")
+    # codeql[py/path-injection]
+    # lgtm[py/path-injection]
+    if not resolved.is_dir():
+        raise ValueError("Sandbox working directory must be an existing non-symlink directory.")
+    return resolved
 
 
 def run_process(

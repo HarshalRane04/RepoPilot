@@ -39,22 +39,6 @@ from app.services.state_machine import transition_run
 from app.services.validation import ValidationPlanner
 
 
-IGNORED_WORKSPACE_DIRS = {
-    ".git",
-    ".mypy_cache",
-    ".next",
-    ".pytest_cache",
-    ".ruff_cache",
-    "__pycache__",
-    "build",
-    "coverage",
-    "dist",
-    "htmlcov",
-    "node_modules",
-    "venv",
-    ".venv",
-}
-
 IMPLEMENTER_READ_TOOLS = {
     "repo.grep",
     "repo.list_files",

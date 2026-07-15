@@ -35,6 +35,7 @@ from app.services.runtime_secrets import effective_settings
 from app.services.security_envelope import redact_text, stable_json_hash
 from app.services.security_scanner import SecurityScanner
 from app.services.state_machine import transition_run
+from app.services.workspace_evidence import is_sensitive_workspace_path, isolated_workspace, workspace_diff_payload
 
 
 class DraftPullRequestService:
@@ -346,10 +347,8 @@ class DraftPullRequestService:
         *,
         run_id: UUID,
     ) -> list[dict[str, str | None]]:
-        from app.services.tools.registry import _is_sensitive_workspace_path, _isolated_workspace, _workspace_diff_payload
-
-        workspace = _isolated_workspace(run_id, str(patch_payload.get("working_workspace_path") or ""))
-        current_diff = _workspace_diff_payload(workspace)
+        workspace = isolated_workspace(run_id, str(patch_payload.get("working_workspace_path") or ""))
+        current_diff = workspace_diff_payload(workspace)
         expected_patch_hash = str(patch_payload.get("patch_hash") or "")
         if not expected_patch_hash or current_diff.get("patch_hash") != expected_patch_hash:
             raise ValueError("Run workspace changed after validation; generate and validate a fresh patch before GitHub writes.")
@@ -374,7 +373,7 @@ class DraftPullRequestService:
             if not path:
                 continue
             relative = PurePosixPath(path.replace("\\", "/"))
-            if relative.is_absolute() or ".." in relative.parts or _is_sensitive_workspace_path(relative.as_posix()):
+            if relative.is_absolute() or ".." in relative.parts or is_sensitive_workspace_path(relative.as_posix()):
                 raise ValueError(f"Validated patch contains an unsafe GitHub write path: {path}")
             unresolved = workspace / relative.as_posix()
             if unresolved.is_symlink():

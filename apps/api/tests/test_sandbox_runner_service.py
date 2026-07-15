@@ -36,6 +36,49 @@ def test_runner_rejects_workspace_escape_before_execution(monkeypatch, tmp_path:
     assert "exactly match" in result["blocked_reason"]
 
 
+def test_runner_rejects_noncanonical_workspace_spelling(monkeypatch, tmp_path: Path) -> None:
+    run_id = uuid4()
+    workspace_root = tmp_path / "workspaces"
+    workspace = workspace_root / str(run_id)
+    workspace.mkdir(parents=True)
+    monkeypatch.setattr(runner_server, "WORKSPACE_ROOT", workspace_root)
+
+    status_code, result = runner_server.execute_request(
+        {
+            "run_id": str(run_id),
+            "workspace_path": str(workspace / ".." / str(run_id)),
+            "command": "python -m pytest",
+            "timeout_seconds": 10,
+        }
+    )
+
+    assert status_code == 403
+    assert "exactly match" in result["blocked_reason"]
+
+
+def test_runner_rejects_symlinked_workspace(monkeypatch, tmp_path: Path) -> None:
+    run_id = uuid4()
+    workspace_root = tmp_path / "workspaces"
+    workspace_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    workspace = workspace_root / str(run_id)
+    workspace.symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(runner_server, "WORKSPACE_ROOT", workspace_root)
+
+    status_code, result = runner_server.execute_request(
+        {
+            "run_id": str(run_id),
+            "workspace_path": str(workspace),
+            "command": "python -m pytest",
+            "timeout_seconds": 10,
+        }
+    )
+
+    assert status_code == 403
+    assert "non-symlink" in result["blocked_reason"]
+
+
 def test_runner_rechecks_command_policy(monkeypatch, tmp_path: Path) -> None:
     run_id = uuid4()
     workspace_root = tmp_path / "workspaces"
@@ -128,6 +171,29 @@ def test_runner_rejects_working_directory_escape(monkeypatch, tmp_path: Path) ->
     assert status_code == 403
     assert result["status"] == "blocked"
     assert "relative" in result["blocked_reason"]
+
+
+def test_runner_rejects_symlinked_working_directory(monkeypatch, tmp_path: Path) -> None:
+    run_id = uuid4()
+    workspace_root = tmp_path / "workspaces"
+    workspace = workspace_root / str(run_id)
+    target = workspace / "target"
+    target.mkdir(parents=True)
+    (workspace / "linked").symlink_to(target, target_is_directory=True)
+    monkeypatch.setattr(runner_server, "WORKSPACE_ROOT", workspace_root)
+
+    status_code, result = runner_server.execute_request(
+        {
+            "run_id": str(run_id),
+            "workspace_path": str(workspace),
+            "working_directory": "linked",
+            "command": "python -m pytest",
+            "timeout_seconds": 10,
+        }
+    )
+
+    assert status_code == 403
+    assert "non-symlink" in result["blocked_reason"]
 
 
 class FakeRunnerClient:

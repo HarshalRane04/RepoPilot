@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import difflib
 import fnmatch
-import hashlib
-import json
 import re
 import shutil
 import subprocess
@@ -43,25 +40,27 @@ from app.services.ci_analyzer import CIAnalyzer
 from app.services.draft_pr import DraftPullRequestService
 from app.services.eval_runner import EvalRunner
 from app.services.github_app import GitHubApiClient, GitHubIntegrationError
-from app.services.implementation_agent import IGNORED_WORKSPACE_DIRS
 from app.services.observability import ObservabilityService
 from app.services.planning import PlanningService, approved_plan_hash_matches, implementation_plan_from_db
 from app.services.policy import PolicyEngine
-from app.services.repo_indexer import IGNORED_DIRS, SENSITIVE_FILE_NAMES, SENSITIVE_SUFFIXES, TEXT_EXTENSIONS, RepositoryIndexer
+from app.services.repo_indexer import RepositoryIndexer
 from app.services.runtime_secrets import effective_settings
 from app.services.sandbox import SandboxRunner
 from app.services.security_envelope import redact_data, redact_text, stable_json_hash
 from app.services.security_scanner import SecurityScanner
 from app.services.state_machine import next_states, transition_run
 from app.services.triage import TriageService
-
-
-WORKSPACE_ROOT = Path("/tmp/repopilot-agent-workspaces")
-INTERNAL_DIR = ".repopilot"
-MAX_READ_BYTES = 200_000
-MAX_DIFF_BYTES = 40_000
-IGNORED_TOOL_DIRS = set(IGNORED_DIRS) | set(IGNORED_WORKSPACE_DIRS) | {INTERNAL_DIR}
-SENSITIVE_TOOL_DIR_NAMES = {"secrets", ".secrets"}
+from app.services.workspace_evidence import (
+    IGNORED_TOOL_DIRS,
+    MAX_READ_BYTES,
+    WORKSPACE_ROOT,
+    WorkspaceBoundaryError,
+    is_sensitive_workspace_path as _is_sensitive_workspace_path,
+    isolated_workspace as _bounded_isolated_workspace,
+    iter_workspace_files as _iter_workspace_files,
+    workspace_diff_payload as _workspace_diff_payload,
+    write_baseline as _write_baseline,
+)
 
 
 class ToolBlocked(ValueError):
@@ -1230,11 +1229,10 @@ def _repository_workspace(workspace_path: str) -> Path:
 
 
 def _isolated_workspace(run_id: UUID, workspace_path: str) -> Path:
-    workspace = _workspace(workspace_path)
-    expected = (WORKSPACE_ROOT / str(run_id)).resolve()
-    if workspace != expected:
-        raise ToolBlocked(f"Workspace write tools may only target isolated run workspace: {expected}")
-    return workspace
+    try:
+        return _bounded_isolated_workspace(run_id, workspace_path)
+    except WorkspaceBoundaryError as exc:
+        raise ToolBlocked(str(exc)) from exc
 
 
 def _child_path(workspace: Path, relative_path: str) -> Path:
@@ -1291,36 +1289,9 @@ def _copy_ignore(_directory: str, names: list[str]) -> set[str]:
     return {name for name in names if name in IGNORED_TOOL_DIRS or _is_sensitive_workspace_path(name)}
 
 
-def _iter_workspace_files(workspace: Path) -> list[Path]:
-    files: list[Path] = []
-    for path in workspace.rglob("*"):
-        if not path.is_file():
-            continue
-        relative = path.relative_to(workspace)
-        if any(part in IGNORED_TOOL_DIRS for part in relative.parts):
-            continue
-        if _is_sensitive_workspace_path(relative.as_posix()):
-            continue
-        files.append(path)
-    return sorted(files)
-
-
 def _is_test_file(path: str) -> bool:
     lowered = path.lower()
     return "/test" in lowered or lowered.startswith("test") or ".test." in lowered or ".spec." in lowered or lowered.endswith("_test.py")
-
-
-def _is_sensitive_workspace_path(relative_path: str) -> bool:
-    path = PurePosixPath(relative_path.replace("\\", "/"))
-    lowered_parts = {part.lower() for part in path.parts}
-    if lowered_parts.intersection(SENSITIVE_TOOL_DIR_NAMES):
-        return True
-    name = path.name.lower()
-    if name in SENSITIVE_FILE_NAMES:
-        return True
-    if any(name.startswith(prefix) for prefix in (".env.", "secret.", "secrets.")):
-        return True
-    return path.suffix.lower() in SENSITIVE_SUFFIXES
 
 
 def _framework_hints(corpus: str) -> list[str]:
@@ -1334,99 +1305,6 @@ def _framework_hints(corpus: str) -> list[str]:
     if "vitest" in corpus:
         frameworks.append("Vitest")
     return frameworks
-
-
-def _snapshot(workspace: Path) -> dict[str, dict[str, str]]:
-    snapshot: dict[str, dict[str, str]] = {}
-    for path in _iter_workspace_files(workspace):
-        relative = path.relative_to(workspace).as_posix()
-        digest = hashlib.sha256()
-        with path.open("rb") as source:
-            for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                digest.update(chunk)
-        entry = {"sha256": digest.hexdigest()}
-        if (path.suffix.lower() in TEXT_EXTENSIONS or not path.suffix) and path.stat().st_size <= MAX_READ_BYTES:
-            entry["content"] = path.read_text(encoding="utf-8", errors="ignore")
-        snapshot[relative] = entry
-    return snapshot
-
-
-def _baseline_path(workspace: Path) -> Path:
-    return workspace / INTERNAL_DIR / "baseline.json"
-
-
-def _write_baseline(workspace: Path) -> None:
-    metadata_dir = workspace / INTERNAL_DIR
-    metadata_dir.mkdir(parents=True, exist_ok=True)
-    _baseline_path(workspace).write_text(json.dumps(_snapshot(workspace), sort_keys=True), encoding="utf-8")
-
-
-def _load_baseline(workspace: Path) -> dict[str, dict[str, str]]:
-    path = _baseline_path(workspace)
-    if not path.is_file():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    if not isinstance(payload, dict):
-        return {}
-    return {str(key): value for key, value in payload.items() if isinstance(value, dict)}
-
-
-def _workspace_diff_payload(workspace: Path) -> dict[str, Any]:
-    baseline = _load_baseline(workspace)
-    current = _snapshot(workspace)
-    all_paths = sorted(set(baseline) | set(current))
-    changed_files: list[dict[str, Any]] = []
-    patch_evidence: list[dict[str, str | None]] = []
-    diff_parts: list[str] = []
-    truncated = False
-
-    for path in all_paths:
-        before = baseline.get(path, {})
-        after = current.get(path, {})
-        if before.get("sha256") == after.get("sha256"):
-            continue
-        old_text = str(before.get("content", ""))
-        new_text = str(after.get("content", ""))
-        if path not in baseline:
-            change_type = "create"
-        elif path not in current:
-            change_type = "delete"
-        else:
-            change_type = "modify"
-        diff_lines = list(
-            difflib.unified_diff(
-                old_text.splitlines(keepends=True),
-                new_text.splitlines(keepends=True),
-                fromfile=f"a/{path}",
-                tofile=f"b/{path}",
-            )
-        )
-        additions = sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++"))
-        deletions = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
-        changed_files.append({"path": path, "change_type": change_type, "additions": additions, "deletions": deletions})
-        patch_evidence.append(
-            {
-                "path": path,
-                "change_type": change_type,
-                "before_sha256": str(before.get("sha256")) if before.get("sha256") else None,
-                "after_sha256": str(after.get("sha256")) if after.get("sha256") else None,
-            }
-        )
-        if sum(len(part) for part in diff_parts) < MAX_DIFF_BYTES:
-            diff_parts.extend(diff_lines)
-        else:
-            truncated = True
-
-    return {
-        "workspace_path": str(workspace),
-        "changed_files": changed_files,
-        "patch_hash": stable_json_hash({"changes": patch_evidence}),
-        "diff": "".join(diff_parts),
-        "truncated": truncated,
-    }
 
 
 def _diff_paths(diff: str) -> set[str]:
