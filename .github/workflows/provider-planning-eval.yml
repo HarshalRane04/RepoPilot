@@ -81,7 +81,7 @@ jobs:
           fi
 
       - name: Upload provider eval reports
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: provider-planning-eval-${{ github.run_id }}
