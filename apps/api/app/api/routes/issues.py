@@ -29,12 +29,35 @@ async def list_issues(
     require_role(current_user, "viewer")
     result = await db.execute(select(Issue).order_by(Issue.created_at.desc()).limit(limit))
     issues = result.scalars().all()
+    if not issues:
+        return []
+    issue_ids = [issue.id for issue in issues]
+    repository_ids = {issue.repository_id for issue in issues}
+    repositories = await db.execute(select(Repository).where(Repository.id.in_(repository_ids)))
+    repositories_by_id = {repository.id: repository for repository in repositories.scalars().all()}
+    plans = await db.execute(
+        select(Plan).where(Plan.issue_id.in_(issue_ids)).order_by(Plan.issue_id, Plan.version.desc())
+    )
+    latest_plans: dict[UUID, Plan] = {}
+    for plan in plans.scalars().all():
+        latest_plans.setdefault(plan.issue_id, plan)
+    runs = await db.execute(
+        select(AgentRun).where(AgentRun.issue_id.in_(issue_ids)).order_by(AgentRun.issue_id, AgentRun.started_at.desc())
+    )
+    latest_runs: dict[UUID, AgentRun] = {}
+    for run in runs.scalars().all():
+        if run.issue_id is not None:
+            latest_runs.setdefault(run.issue_id, run)
     response: list[dict[str, object]] = []
     for issue in issues:
-        repository = await db.get(Repository, issue.repository_id)
-        plan = await _latest_plan_for_issue(db, issue)
-        run = await _latest_run_for_issue(db, issue)
-        response.append(_issue_response(issue, repository=repository, plan=plan, run=run))
+        response.append(
+            _issue_response(
+                issue,
+                repository=repositories_by_id.get(issue.repository_id),
+                plan=latest_plans.get(issue.id),
+                run=latest_runs.get(issue.id),
+            )
+        )
     return response
 
 
@@ -124,6 +147,7 @@ def _issue_response(
         "repository_id": str(issue.repository_id),
         "number": issue.number,
         "title": issue.title,
+        "body_text": issue.body_text,
         "issue_type": issue.issue_type,
         "complexity": issue.complexity,
         "risk_score": issue.risk_score,
@@ -152,6 +176,7 @@ def _issue_response(
             "state": run.state,
             "total_tokens": run.total_tokens,
             "total_cost": run.total_cost,
+            "cost_currency": "USD",
             "started_at": run.started_at,
             "completed_at": run.completed_at,
         }

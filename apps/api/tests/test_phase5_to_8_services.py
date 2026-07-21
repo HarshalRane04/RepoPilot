@@ -11,7 +11,7 @@ from repopilot_contracts import CodeContextChunk, CodeContextPack, EmbeddingResp
 from repopilot_policy_engine import PolicyEngine as PackagePolicyEngine
 
 from app.api.routes.plans import PlanDecisionRequest, PlanRevisionRequest, approve_plan, reject_plan, revise_plan
-from app.db.models import AgentRun, CodeChunk, Installation, Issue, Plan, Repository
+from app.db.models import AgentRun, CodeChunk, Installation, Issue, Plan, Repository, RepositoryIndex
 from app.services.auth import CurrentUser
 from app.services.model_gateway import ModelGateway
 from app.services.planning import PlanningPromptBuilder, PlanningService, implementation_plan_from_db
@@ -73,14 +73,17 @@ class FakeApprovalDb:
 class FakeContextDb:
     def __init__(self, chunks: list[CodeChunk]) -> None:
         self.chunks = chunks
+        self.execute_count = 0
 
     async def execute(self, _statement):
+        self.execute_count += 1
         return ScalarResult(self.chunks)
 
 
 class FakeIndexDb:
-    def __init__(self, repository: Repository) -> None:
+    def __init__(self, repository: Repository, latest_index: RepositoryIndex | None = None) -> None:
         self.repository = repository
+        self.latest_index = latest_index
         self.added: list[object] = []
         self.commits = 0
 
@@ -91,6 +94,9 @@ class FakeIndexDb:
 
     async def execute(self, _statement):
         return ScalarResult([])
+
+    async def scalar(self, _statement):
+        return self.latest_index
 
     def add(self, item: object) -> None:
         if getattr(item, "id", None) is None:
@@ -260,6 +266,60 @@ def test_index_repository_disables_live_embedding_source_transfer(monkeypatch, t
     assert index_record.metadata_json["embedding_source_transfer_enabled"] is False
 
 
+def test_index_repository_reuses_embeddings_when_content_is_unchanged(monkeypatch, tmp_path: Path) -> None:
+    workspace_root = tmp_path / "repositories"
+    source_root = workspace_root / "demo"
+    source_root.mkdir(parents=True)
+    source_root.joinpath("app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    monkeypatch.setattr("app.services.repo_indexer.settings.repository_workspace_root", str(workspace_root))
+    monkeypatch.setattr("app.services.repo_indexer.settings.embedding_provider", "mock")
+    monkeypatch.setattr("app.services.repo_indexer.settings.embedding_model", "mock-embedding")
+    monkeypatch.setattr("app.services.repo_indexer.settings.embedding_dimensions", 1536)
+    monkeypatch.setattr("app.services.repo_indexer.settings.embedding_source_transfer_enabled", False)
+    repository = Repository(id=uuid4(), installation_id=uuid4(), owner="acme", name="demo", default_branch="main")
+    indexer = RepositoryIndexer()
+    files = indexer._iter_indexable_files(source_root, max_files=20, max_file_bytes=10_000)
+    fingerprint = indexer._content_fingerprint(source_root, files)
+    previous = RepositoryIndex(
+        id=uuid4(),
+        repository_id=repository.id,
+        source_path=str(source_root),
+        commit_sha="a" * 40,
+        content_fingerprint=fingerprint,
+        files_indexed=1,
+        chunks_indexed=1,
+        skipped_files=0,
+        embedding_provider="mock",
+        embedding_model="mock-embedding",
+        embedding_dimensions=1536,
+        chunker_version="semantic-v1",
+        status="ready",
+        metadata_json={"language_counts": {".py": 1}},
+    )
+    db = FakeIndexDb(repository, latest_index=previous)
+
+    async def fail_embed(*_args, **_kwargs):
+        raise AssertionError("unchanged content must not be embedded again")
+
+    monkeypatch.setattr("app.services.repo_indexer.ModelGateway.embed", fail_embed)
+    result = asyncio.run(
+        indexer.index_repository(
+            db,
+            repository_id=repository.id,
+            request=type(
+                "Request",
+                (),
+                {"source_path": str(source_root), "max_files": 20, "max_file_bytes": 10_000, "commit_sha": "b" * 40},
+            )(),
+        )
+    )
+
+    assert result.chunks_indexed == 1
+    reused = next(item for item in db.added if isinstance(item, RepositoryIndex))
+    assert reused.metadata_json["reused_embeddings"] is True
+    assert repository.last_indexed_sha == "b" * 40
+
+
 def test_retrieve_context_includes_score_breakdown_and_freshness(monkeypatch) -> None:
     monkeypatch.setattr("app.services.repo_indexer.settings.embedding_provider", "mock")
     monkeypatch.setattr("app.services.repo_indexer.settings.embedding_model", "mock-embedding")
@@ -280,9 +340,10 @@ def test_retrieve_context_includes_score_breakdown_and_freshness(monkeypatch) ->
         commit_sha="abc123",
     )
 
+    db = FakeContextDb([chunk])
     context = asyncio.run(
         indexer.retrieve_context(
-            FakeContextDb([chunk]),
+            db,
             repository_id=repository_id,
             query="dashboard repositories",
             limit=1,
@@ -304,6 +365,7 @@ def test_retrieve_context_includes_score_breakdown_and_freshness(monkeypatch) ->
         "stale": False,
     }
     assert context.citations == ["apps/web/app/dashboard.tsx:10-12"]
+    assert db.execute_count == 2
 
 
 def test_indexer_detects_embedding_model_staleness(monkeypatch) -> None:
@@ -527,7 +589,18 @@ def test_plan_revise_creates_waiting_plan_version() -> None:
     installation = Installation(id=uuid4(), github_installation_id="1", account_name="octo")
     repository = Repository(id=uuid4(), installation_id=installation.id, owner="octo", name="demo")
     issue = Issue(id=issue_id, repository_id=repository.id, number=1, title="Fix routing")
-    plan = Plan(id=plan_id, issue_id=issue_id, version=2, plan_json={"plan_id": str(plan_id), "issue_id": str(issue_id), "rollback_plan": "Close the PR."})
+    plan = Plan(
+        id=plan_id,
+        issue_id=issue_id,
+        version=2,
+        plan_json={
+            "plan_id": str(plan_id),
+            "issue_id": str(issue_id),
+            "files_to_modify": ["app/router.py"],
+            "intended_changes": ["Fix routing."],
+            "rollback_plan": "Close the PR.",
+        },
+    )
     run = AgentRun(id=uuid4(), issue_id=issue_id, plan_id=plan_id, state="WAIT_FOR_APPROVAL")
     db = FakeApprovalDb(plan=plan, issue=issue, repository=repository, runs=[run])
 
@@ -548,7 +621,13 @@ def test_plan_revise_creates_waiting_plan_version() -> None:
     assert new_plan.approval_status == "waiting"
     assert new_plan.version == 3
     assert new_plan.plan_json["revision_parent_plan_id"] == str(plan.id)
-    assert run.plan_id == new_plan.id
+    assert new_plan.plan_json["intended_changes"][0] == "Apply the operator revision before implementation: Add regression test coverage first."
+    new_run = next(item for item in db.added if isinstance(item, AgentRun) and item is not run)
+    assert run.plan_id == plan.id
+    assert run.state == "CANCELLED"
+    assert new_run.plan_id == new_plan.id
+    assert new_run.state == "WAIT_FOR_APPROVAL"
+    assert response["run_id"] == str(new_run.id)
 
 
 def test_stable_json_hash_ignores_dictionary_order() -> None:

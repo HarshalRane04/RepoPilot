@@ -10,6 +10,7 @@ from .model_catalog import (
 from .provider_adapters import (
     ProviderCompletionRequest,
     build_completion_request,
+    extract_completion_cost,
     extract_completion_content,
     extract_completion_usage,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "provider_catalog",
     "ProviderCompletionRequest",
     "build_completion_request",
+    "extract_completion_cost",
     "extract_completion_content",
     "extract_completion_usage",
 ]

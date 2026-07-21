@@ -20,6 +20,9 @@ MAX_CHECK_OUTPUT_CHARS = 1200
 MAX_WORKFLOW_LOG_FILES = 12
 MAX_WORKFLOW_LOG_FAILURE_LINES = 20
 MAX_WORKFLOW_LOG_FILE_BYTES = 64_000
+CODE_SCANNING_STATES = {"open", "fixed", "dismissed"}
+CODE_SCANNING_TOOL_NAMES = {"CodeQL"}
+CODE_SCANNING_REF_PREFIXES = ("refs/heads/", "refs/tags/")
 
 
 class GitHubIntegrationError(RuntimeError):
@@ -85,10 +88,25 @@ class GitHubAppTokenProvider:
         if self.config.github_private_key:
             return self.config.github_private_key.replace("\\n", "\n")
         if self.config.github_private_key_path:
-            path = Path(self.config.github_private_key_path).expanduser()
-            if path.is_file():
-                return path.read_text(encoding="utf-8")
+            for path in self._private_key_path_candidates(self.config.github_private_key_path):
+                if path.is_file():
+                    return path.read_text(encoding="utf-8")
         return None
+
+    def _private_key_path_candidates(self, configured_path: str) -> list[Path]:
+        path = Path(configured_path).expanduser()
+        candidates = [path]
+        if getattr(self.config, "environment", "") == "local":
+            for runtime_path_value in (
+                getattr(self.config, "runtime_secrets_store_path", None),
+                getattr(self.config, "runtime_secrets_key_path", None),
+            ):
+                if not runtime_path_value:
+                    continue
+                mounted_candidate = Path(str(runtime_path_value)).expanduser().parent / path.name
+                if mounted_candidate not in candidates:
+                    candidates.append(mounted_candidate)
+        return candidates
 
 
 class GitHubApiClient:
@@ -254,11 +272,14 @@ class GitHubApiClient:
         for file in changed_files:
             path = str(file["path"])
             content = file.get("content")
+            mode = str(file.get("mode") or "100644")
+            if mode not in {"100644", "100755"}:
+                raise GitHubIntegrationError(f"Unsupported Git tree mode for {path}: {mode}")
             if content is None:
-                tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
+                tree_items.append({"path": path, "mode": mode, "type": "blob", "sha": None})
                 continue
             blob_sha = await self.create_blob(installation_id=installation_id, owner=owner, repo=repo, content=content)
-            tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": blob_sha})
+            tree_items.append({"path": path, "mode": mode, "type": "blob", "sha": blob_sha})
 
         tree_sha = await self.create_tree(
             installation_id=installation_id,
@@ -334,19 +355,39 @@ class GitHubApiClient:
         url = self._api_url(
             f"/repos/{path_segment(owner)}/{path_segment(repo)}/actions/runs/{path_segment(str(run_id))}/logs"
         )
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            response = await client.get(
+        max_bytes = self.config.github_workflow_log_max_bytes
+        chunks: list[bytes] = []
+        received = 0
+        content_type = "application/octet-stream"
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=20), follow_redirects=True) as client:
+            async with client.stream(
+                "GET",
                 url,
                 headers={
                     "Accept": "application/vnd.github+json",
                     "Authorization": f"Bearer {token}",
                     "X-GitHub-Api-Version": "2022-11-28",
                 },
-            )
-        if response.status_code >= 400:
-            raise GitHubIntegrationError(f"GitHub workflow logs request failed: {response.status_code} {response.text[:300]}")
-        content = response.content or b""
-        content_type = response.headers.get("content-type", "application/octet-stream")
+            ) as response:
+                if response.status_code >= 400:
+                    error_body = (await response.aread())[:300].decode("utf-8", errors="replace")
+                    raise GitHubIntegrationError(
+                        f"GitHub workflow logs request failed: {response.status_code} {error_body}"
+                    )
+                declared = response.headers.get("content-length")
+                if declared:
+                    try:
+                        if int(declared) > max_bytes:
+                            raise GitHubIntegrationError("GitHub workflow log archive exceeds the configured size limit.")
+                    except ValueError as exc:
+                        raise GitHubIntegrationError("GitHub workflow logs returned an invalid content length.") from exc
+                content_type = response.headers.get("content-type", content_type)
+                async for chunk in response.aiter_bytes(chunk_size=1024 * 1024):
+                    received += len(chunk)
+                    if received > max_bytes:
+                        raise GitHubIntegrationError("GitHub workflow log archive exceeds the configured size limit.")
+                    chunks.append(chunk)
+        content = b"".join(chunks)
         log_summary = self.summarize_workflow_log_archive(content, content_type=content_type)
         return {
             "run_id": run_id,
@@ -614,18 +655,22 @@ class GitHubApiClient:
     ) -> list[dict[str, Any]]:
         if not self.token_provider.is_configured():
             raise GitHubCredentialsMissing("GitHub App credentials are required for CodeQL alert fetches.")
-        query: dict[str, str | int] = {"state": state, "per_page": min(max(per_page, 1), 100)}
-        if ref:
-            query["ref"] = ref
-        if tool_name:
-            query["tool_name"] = tool_name
+        query: dict[str, str | int] = {
+            "state": self._code_scanning_state(state),
+            "per_page": min(max(per_page, 1), 100),
+        }
+        safe_ref = self._code_scanning_ref(ref)
+        if safe_ref:
+            query["ref"] = safe_ref
+        safe_tool_name = self._code_scanning_tool_name(tool_name)
+        if safe_tool_name:
+            query["tool_name"] = safe_tool_name
         token = await self.token_provider.create_installation_access_token(installation_id)
-        url = self._api_url(
-            f"/repos/{path_segment(owner)}/{path_segment(repo)}/code-scanning/alerts?{query_string(query)}"
-        )
-        async with httpx.AsyncClient(timeout=30) as client:
+        alerts_path = f"/repos/{path_segment(owner)}/{path_segment(repo)}/code-scanning/alerts"
+        async with httpx.AsyncClient(timeout=30, base_url=github_api_base_url(self.config.github_api_base_url)) as client:
             response = await client.get(
-                url,
+                alerts_path,
+                params=query,
                 headers={
                     "Accept": "application/vnd.github+json",
                     "Authorization": f"Bearer {token}",
@@ -638,6 +683,34 @@ class GitHubApiClient:
         if not isinstance(payload, list):
             raise GitHubIntegrationError("GitHub code-scanning alerts response was not an array.")
         return [dict(item) for item in payload if isinstance(item, dict)]
+
+    def _code_scanning_state(self, value: str) -> str:
+        state = value.strip().lower()
+        if state not in CODE_SCANNING_STATES:
+            raise GitHubIntegrationError("Unsupported code-scanning alert state.")
+        return state
+
+    def _code_scanning_ref(self, value: str | None) -> str | None:
+        if value is None:
+            return None
+        ref = value.strip()
+        if not ref:
+            return None
+        if len(ref) > 255 or any(char in ref for char in "\r\n\t"):
+            raise GitHubIntegrationError("Invalid code-scanning alert ref.")
+        if not ref.startswith(CODE_SCANNING_REF_PREFIXES):
+            raise GitHubIntegrationError("Code-scanning alert ref must be a branch or tag ref.")
+        return ref
+
+    def _code_scanning_tool_name(self, value: str | None) -> str | None:
+        if value is None:
+            return None
+        tool_name = value.strip()
+        if not tool_name:
+            return None
+        if tool_name not in CODE_SCANNING_TOOL_NAMES:
+            raise GitHubIntegrationError("Unsupported code-scanning tool name.")
+        return tool_name
 
     def _api_url(self, path: str) -> str:
         clean_path = path.strip()

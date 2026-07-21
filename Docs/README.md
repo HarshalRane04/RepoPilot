@@ -10,10 +10,11 @@ This folder contains the documentation intended for the public open-source relea
 - [GitHub App Setup](GITHUB_APP_SETUP.md): GitHub App permissions, webhook setup, and credential flow.
 - [Credential Handoff](CREDENTIAL_HANDOFF.md): exact secrets and live proof steps needed before write-mode testing.
 - [Runbook](RUNBOOK.md): operational checks and troubleshooting.
-- [Security](SECURITY.md): reporting, scanner posture, and safety guarantees.
+- [Security](SECURITY.md): reporting, executed scanner evidence, and safety guarantees.
 - [Evaluations](EVALS.md) and [Model Testing](MODEL_TESTING.md): local and provider-backed quality gates.
 - [Roadmap](ROADMAP.md): current release-candidate gaps before `v1.0.0`.
 - [Release Checklist](RELEASE_CHECKLIST.md) and [Release Notes](RELEASE_NOTES.md): public release criteria and RC notes.
+- [Codebase and Agentic Engineering Audit (2026-07-11)](CODEBASE_AGENTIC_ENGINEERING_AUDIT_2026-07-11.md): issue-by-issue findings, implemented remediation, verification evidence, tool strategy, and remaining limits.
 
 ## Generated Evidence
 

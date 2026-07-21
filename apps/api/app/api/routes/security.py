@@ -18,8 +18,9 @@ from app.db.models import AgentRun, AgentStep, Installation, Issue, PullRequest,
 from app.db.session import get_db
 from app.services.audit import record_audit
 from app.services.auth import CurrentUser, get_current_user
-from app.services.authorization import require_run_access, require_security_finding_access
+from app.services.authorization import require_role, require_run_access, require_security_finding_access
 from app.services.github_app import GitHubApiClient, GitHubIntegrationError
+from app.services.security_envelope import free_form_text_metadata
 from app.services.security_scanner import SecurityScanner
 
 router = APIRouter()
@@ -187,11 +188,10 @@ async def list_security_findings(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, object]]:
+    require_role(current_user, "viewer")
     result = await db.execute(select(SecurityFinding).limit(limit))
     findings = result.scalars().all()
-    for finding in findings:
-        await require_run_access(db, run_id=finding.run_id, current_user=current_user, action="read")
-    return [await _finding_response(finding, db) for finding in findings]
+    return await _finding_responses(findings, db)
 
 
 @router.get("/findings/{finding_id}", response_model=SecurityFindingDetailResponse)
@@ -232,7 +232,11 @@ async def update_security_finding_status(
         action="security.finding_status_changed",
         entity_type="security_finding",
         entity_id=str(finding.id),
-        metadata={"from_status": previous_status, "to_status": finding.status, "reason": request.reason},
+        metadata={
+            "from_status": previous_status,
+            "to_status": finding.status,
+            "reason": free_form_text_metadata(request.reason or ""),
+        },
     )
     await db.commit()
     return await _finding_response(finding, db)
@@ -248,6 +252,7 @@ async def _finding_response(finding: SecurityFinding, db: AsyncSession) -> dict[
     return {
         "id": str(finding.id),
         "run_id": str(finding.run_id),
+        "patch_hash": finding.patch_hash,
         "tool": finding.tool,
         "severity": finding.severity,
         "file_path": finding.file_path,
@@ -292,6 +297,98 @@ async def _finding_response(finding: SecurityFinding, db: AsyncSession) -> dict[
         if pr
         else None,
     }
+
+
+async def _finding_responses(findings: list[SecurityFinding], db: AsyncSession) -> list[dict[str, object]]:
+    if not findings:
+        return []
+    run_ids = {finding.run_id for finding in findings}
+    runs = (await db.execute(select(AgentRun).where(AgentRun.id.in_(run_ids)))).scalars().all()
+    runs_by_id = {run.id: run for run in runs}
+    issue_ids = {run.issue_id for run in runs if run.issue_id is not None}
+    issues = (await db.execute(select(Issue).where(Issue.id.in_(issue_ids)))).scalars().all() if issue_ids else []
+    issues_by_id = {issue.id: issue for issue in issues}
+    repository_ids = {issue.repository_id for issue in issues}
+    repositories = (
+        (await db.execute(select(Repository).where(Repository.id.in_(repository_ids)))).scalars().all()
+        if repository_ids
+        else []
+    )
+    repositories_by_id = {repository.id: repository for repository in repositories}
+    prs = (
+        await db.execute(
+            select(PullRequest)
+            .where(PullRequest.run_id.in_(run_ids))
+            .order_by(PullRequest.run_id, PullRequest.created_at.desc())
+        )
+    ).scalars().all()
+    prs_by_run: dict[UUID, PullRequest] = {}
+    for pr in prs:
+        prs_by_run.setdefault(pr.run_id, pr)
+    step_rows = await db.execute(
+        select(AgentStep)
+        .where(AgentStep.run_id.in_(run_ids), AgentStep.step_name == "OPEN_DRAFT_PR")
+        .order_by(AgentStep.run_id, AgentStep.created_at.desc())
+    )
+    mode_steps: dict[UUID, AgentStep] = {}
+    for step in step_rows.scalars().all():
+        mode_steps.setdefault(step.run_id, step)
+
+    responses: list[dict[str, object]] = []
+    for finding in findings:
+        run = runs_by_id.get(finding.run_id)
+        issue = issues_by_id.get(run.issue_id) if run and run.issue_id else None
+        repository = repositories_by_id.get(issue.repository_id) if issue else None
+        pr = prs_by_run.get(finding.run_id)
+        pr_mode = _pr_mode_from_step(pr, mode_steps.get(finding.run_id)) if pr else "local_record"
+        responses.append(_finding_payload(finding, run=run, issue=issue, repository=repository, pr=pr, pr_mode=pr_mode))
+    return responses
+
+
+def _finding_payload(
+    finding: SecurityFinding,
+    *,
+    run: AgentRun | None,
+    issue: Issue | None,
+    repository: Repository | None,
+    pr: PullRequest | None,
+    pr_mode: str,
+) -> dict[str, object]:
+    return {
+        "id": str(finding.id),
+        "run_id": str(finding.run_id),
+        "patch_hash": finding.patch_hash,
+        "tool": finding.tool,
+        "severity": finding.severity,
+        "file_path": finding.file_path,
+        "description": finding.description,
+        "status": finding.status,
+        "status_reason": finding.status_reason,
+        "status_actor": finding.status_actor,
+        "status_changed_at": finding.status_changed_at,
+        "run": {"id": str(run.id), "state": run.state, "started_at": run.started_at, "completed_at": run.completed_at} if run else None,
+        "issue": {"id": str(issue.id), "number": issue.number, "title": issue.title, "status": issue.status} if issue else None,
+        "repository": {"id": str(repository.id), "owner": repository.owner, "name": repository.name} if repository else None,
+        "pull_request": {
+            "id": str(pr.id),
+            "number": pr.pr_number,
+            "url": pr.url,
+            "pr_mode": pr_mode,
+            "is_local_record": pr_mode == "local_record",
+            "github_url": pr.url if pr_mode == "real_github" and pr.url.startswith(("https://", "http://")) else None,
+            "status": pr.status,
+            "ci_status": pr.ci_status,
+        } if pr else None,
+    }
+
+
+def _pr_mode_from_step(pr: PullRequest, step: AgentStep | None) -> str:
+    mode = step.output_json.get("mode") if step and isinstance(step.output_json, dict) else None
+    if mode == "real_github_write":
+        return "real_github"
+    if mode == "local_record" or pr.url.startswith("local://"):
+        return "local_record"
+    return "real_github" if pr.url.startswith(("https://", "http://")) else "local_record"
 
 
 async def _pr_mode(pr: PullRequest, db: AsyncSession) -> str:

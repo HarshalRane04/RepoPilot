@@ -2,31 +2,35 @@
 
 RepoPilot AI is organized around a deterministic control plane and auditable agent execution.
 
-## Implemented Architecture: Phases 1-13
+## Implemented Architecture
 
 - `apps/api`: FastAPI service for health, dashboard APIs, webhook intake, planning, policy review, and run control.
 - `apps/web`: Next.js dashboard shell.
 - `packages/shared_contracts`: Pydantic contracts shared by API, workers, and future agent modules.
 - `apps/api/alembic`: database migrations for the core lifecycle schema.
-- `docker-compose.yml`: local platform runtime with API, worker, web, Postgres/pgvector, and Redis.
+- `docker-compose.yml`: local platform runtime with API, worker, beat, web, Postgres/pgvector, Redis, a one-shot non-root volume initializer, and the isolated sandbox runner.
 - `app.services.github_webhooks`: HMAC verification and payload normalization.
-- `app.services.github_ingestion`: raw event storage, delivery dedupe, installation/repo/issue upserts, run creation, and worker processing.
-- `app.services.github_app`: GitHub App JWT/token-provider and API-client scaffolding. It remains gated until credentials are configured and `GITHUB_WRITES_ENABLED=true`.
+- `app.services.github_ingestion`: minimized event storage, delivery dedupe, row-locked idempotent processing, installation/repo/issue upserts, run creation, trusted CI ingestion, and worker processing.
+- `app.worker.tasks`: bounded event retries, broker-outage reconciliation, periodic cleanup, and asynchronous approved-run execution.
+- `app.services.github_app`: GitHub App JWT/token provider plus read/write API client. Reads require configured credentials; writes additionally require `GITHUB_WRITES_ENABLED=true` and downstream evidence gates.
 - `app.services.integration_readiness`: runtime readiness checks for GitHub App credentials, OAuth, model gateway, security tools, OTLP export, and secret placeholders.
 - `app.services.state_machine`: explicit state-transition guard for the canonical issue-to-PR flow.
-- `app.services.triage`: deterministic MVP triage until the model-backed agent arrives.
-- `app.services.repo_indexer`: local repository scanner, text chunker, deterministic mock embedding writer, commit fingerprint generator, and cited context retriever.
+- `app.services.triage`: prompt-injection-aware deterministic triage with structured model-gateway enrichment and evidence-constrained fallback.
+- `app.services.repository_workspace`: bounded GitHub archive acquisition, traversal/symlink rejection, atomic canonical-workspace replacement, and commit binding.
+- `app.services.repo_indexer`: repository scanner, semantic chunker, embedding writer, content-fingerprint reuse, HNSW/lexical candidate retrieval, and cited context packs.
 - `app.services.planning`: deterministic planning service that creates `plans`, links `agent_runs`, records context retrieval and policy review steps, and waits for approval.
 - `app.services.policy`: deny-by-default policy engine for command allowlists, high-risk path escalation, and plan-level decisions.
-- `app.services.sandbox`: allowlisted command runner with scrubbed environment. Local development uses the explicit local backend; production-style Docker mode adds network-disabled execution, resource limits, and the sandbox image.
-- `app.services.implementation_agent`: approved-run implementation lane that copies the source workspace, generates a scoped pytest evidence patch, guards patch paths, runs local validation through the sandbox runner, and records patch/validation evidence.
+- `app.services.sandbox`: client for the authenticated Unix-socket execution service; direct local execution exists only for controlled local tests.
+- `app.services.implementation_agent`: approved-run implementation lane with bounded iterative read-tool exploration, repeated-call suppression, scoped write tools, retry feedback, diff capture, and patch-bound sandbox validation.
+- `app.services.run_orchestrator`: asynchronous approved-plan execution through implementation, validation, security, and draft-PR stages, stopping at trusted CI.
 - `app.services.security_scanner`: deterministic scanner for secret-like text, prompt-injection phrases, and high-risk generated patch paths.
 - `app.services.draft_pr`: local branch/PR record creator that requires approved plans, passing validation, and clean blocking-security gates.
-- `app.services.ci_analyzer`: workflow conclusion ingestion, failure-log summarization, and ready-for-review promotion.
-- `app.services.observability`: run trace aggregation across steps, validation results, security findings, PRs, audit logs, and LLM traces.
+- `app.services.ci_analyzer`: trusted/simulated evidence separation, bounded failure-log summarization, patch-generation gate checks, and ready-for-review promotion.
+- `app.services.artifacts`: local evidence storage, SHA-256 verification, retention tombstones, and authorized list/download backing.
+- `app.services.observability`: run trace aggregation across steps, validation results, security findings, PRs, audit logs, LLM traces, and artifacts.
 - `app.services.eval_runner`: benchmark-style metric collection and `eval_runs` report creation.
 - `app.services.audit`: audit log writes for webhook and triage activity.
-- `services/sandbox_runner/Dockerfile`: local Python/Node sandbox image used by the default Docker sandbox backend.
+- `services/sandbox_runner`: non-root Unix-socket execution service with a networkless Compose boundary, read-only root filesystem, dropped capabilities, and resource/output limits.
 
 ## Control Plane
 
@@ -37,25 +41,23 @@ The control plane now publishes its allowed transitions through `GET /settings/s
 Canonical implemented flow:
 
 1. `VALIDATE_WEBHOOK`, `NORMALIZE_EVENT`, and `TRIAGE_ISSUE` are created from issue webhooks.
-2. `POST /repos/{repo_id}/index` populates `code_chunks` for retrieval.
+2. `POST /repos/{repo_id}/acquire` safely refreshes canonical source and populates `code_chunks`; the lower-level `/index` route remains for already staged server-managed source.
 3. `POST /issues/{issue_id}/plan` retrieves cited context, creates an implementation plan, evaluates policy, and leaves the run in `WAIT_FOR_APPROVAL`.
 4. `POST /plans/{plan_id}/approve` records the approving user and policy decision. Escalated plans require an `owner` or `maintainer` role.
-5. `POST /runs/{run_id}/start` moves an approved run to `CREATE_BRANCH`; `POST /runs/{run_id}/sandbox` and `POST /runs/{run_id}/implement` require an approved plan before any validation or generated patch can run.
-6. `POST /runs/{run_id}/implement` creates a disposable run workspace, writes a generated pytest evidence file, stores a patch hash and diff metadata in `agent_steps`, and records validation output in `validation_results`.
-7. `POST /runs/{run_id}/security-scan` persists security findings and records `RUN_SECURITY_CHECKS`.
-8. `POST /runs/{run_id}/open-draft-pr` creates a local branch/PR record only when validation passed and no open high/critical findings exist, then moves the run to `WAIT_FOR_CI`.
-9. `POST /prs/{pr_id}/ci` summarizes CI evidence and moves clean successful PRs to `READY_FOR_REVIEW`.
-10. `GET /runs/{run_id}/trace`, `/metrics/overview`, and `/evals/reports` provide the observability and release-evidence surfaces.
-11. `issue_comment` events normalize `/repopilot approve`, `/repopilot reject`, `/repopilot revise`, and `/repopilot stop` commands into audited control-plane actions. Sender permission checks are still placeholders until the credentialed GitHub client is enabled.
-12. `workflow_run` events normalize PR-linked CI conclusions and can feed the same CI analyzer used by `POST /prs/{pr_id}/ci`.
+5. `POST /runs/{run_id}/execute` queues the approved run and persists queued/running/completed orchestration steps. The worker executes the bounded implementation agent, patch-bound validation, security scan, and draft-PR creation before stopping at `WAIT_FOR_CI`. Celery Beat reconciles only queued/running attempts older than the worker hard limit, records failure evidence, and unlocks a safe requeue or fresh isolated retry.
+6. Manual `/start`, `/implement`, `/security-scan`, and `/open-draft-pr` routes remain recovery/debug controls, with the same state and evidence gates.
+7. Trusted `workflow_run`, `check_run`, and `check_suite` webhooks can qualify a clean run for `READY_FOR_REVIEW`; the admin-only `/prs/{pr_id}/ci` route records non-promoting simulation evidence.
+8. `GET /runs/{run_id}/trace`, `/metrics/overview`, and `/evals/reports` provide the observability and release-evidence surfaces.
+9. `issue_comment` events normalize `/repopilot approve`, `/repopilot reject`, `/repopilot revise`, and `/repopilot stop` commands into audited control-plane actions after credentialed collaborator-permission checks.
+10. Failed trusted workflow events retain the GitHub run ID and may fetch a size-bounded, redacted log archive before CI diagnosis.
 
 ## Data Plane
 
-PostgreSQL stores lifecycle state, minimized/redacted webhook processing envelopes with original payload hashes, installations, repositories, issues, approvals, validation results, security findings, traces, and evaluations. The Phase 5 indexer stores lexical chunks plus deterministic mock embeddings in `code_chunks.embedding`; a real embedding provider can replace that function without changing the storage contract.
+PostgreSQL stores lifecycle state, minimized/redacted webhook envelopes with original payload hashes, retry metadata, installations, repositories, issues, approvals, patch-bound validation/security evidence, artifact provenance, traces, and evaluations. `code_chunks.embedding` is fixed at 1536 dimensions and indexed with pgvector HNSW; external source transfer remains opt-in.
 
 ## Sandbox Boundary
 
-The default sandbox backend runs allowlisted commands through Docker with `--network none`, CPU and memory limits, a pids limit, a scrubbed environment, and only the requested workspace mounted at `/workspace`. Generated pytest evidence patches are applied only in a copied run workspace under `/tmp/repopilot-agent-workspaces`; the platform creates local branch/PR database records for Phase 10, not real GitHub branches or commits.
+API and worker send authenticated bounded requests over a read-only shared Unix-socket mount. The runner itself has no network, a read-only root filesystem, dropped Linux capabilities, CPU/memory/pid limits, a scrubbed environment, exact UUID workspace containment, and a bounded nested working directory for monorepos. Generated patches are applied only in copied run workspaces under `/tmp/repopilot-agent-workspaces`. Patch identity is derived from the complete changed-file SHA-256 manifest, and the draft-PR path recomputes it immediately before any write. Real GitHub writes remain behind credentials, write mode, current-patch validation/security evidence, and permission checks.
 
 ## Production Readiness Boundary
 

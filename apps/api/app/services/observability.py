@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AgentRun, AgentStep, AuditLog, LLMTrace, PullRequest, SecurityFinding, ValidationResult
+from app.db.models import AgentRun, AgentStep, ArtifactRecord, AuditLog, LLMTrace, PullRequest, SecurityFinding, ValidationResult
 
 
 class ObservabilityService:
@@ -28,6 +28,13 @@ class ObservabilityService:
             )
         ).scalars().all()
         llm_traces = (await db.execute(select(LLMTrace).where(LLMTrace.agent_run_id == run.id))).scalars().all()
+        artifacts = (
+            await db.execute(
+                select(ArtifactRecord)
+                .where(ArtifactRecord.run_id == run.id)
+                .order_by(ArtifactRecord.created_at.asc())
+            )
+        ).scalars().all()
         pr_modes = self._pr_modes_from_steps(steps)
 
         return {
@@ -56,6 +63,9 @@ class ObservabilityService:
                     "status": validation.status,
                     "duration_ms": validation.duration_ms,
                     "parsed_summary": validation.parsed_summary,
+                    "patch_hash": validation.patch_hash,
+                    "sandbox_backend": validation.sandbox_backend,
+                    "created_at": validation.created_at,
                 }
                 for validation in validations
             ],
@@ -66,6 +76,8 @@ class ObservabilityService:
                     "file_path": finding.file_path,
                     "description": finding.description,
                     "status": finding.status,
+                    "patch_hash": finding.patch_hash,
+                    "created_at": finding.created_at,
                 }
                 for finding in findings
             ],
@@ -108,6 +120,22 @@ class ObservabilityService:
                     "metadata": trace.metadata_json,
                 }
                 for trace in llm_traces
+            ],
+            "artifacts": [
+                {
+                    "id": str(artifact.id),
+                    "artifact_type": artifact.artifact_type,
+                    "storage_backend": artifact.storage_backend,
+                    "sha256": artifact.sha256,
+                    "byte_size": artifact.byte_size,
+                    "content_type": artifact.content_type,
+                    "metadata": artifact.metadata_json,
+                    "created_at": artifact.created_at,
+                    "deleted_at": artifact.deleted_at,
+                    "available": artifact.deleted_at is None,
+                    "download_url": f"/runs/{run.id}/artifacts/{artifact.id}",
+                }
+                for artifact in artifacts
             ],
         }
 

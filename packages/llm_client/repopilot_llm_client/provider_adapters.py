@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any
 
 
@@ -98,10 +99,57 @@ def extract_completion_usage(*, provider_id: str, payload: Any) -> dict[str, int
     usage = payload.get("usageMetadata") if provider_id.strip().lower() == "google" else payload.get("usage")
     if not isinstance(usage, dict):
         return {"prompt": 0, "completion": 0, "total": 0}
-    prompt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or usage.get("promptTokenCount") or 0)
-    completion = int(usage.get("completion_tokens") or usage.get("output_tokens") or usage.get("candidatesTokenCount") or 0)
-    total = int(usage.get("total_tokens") or usage.get("totalTokenCount") or prompt + completion)
+    prompt = _non_negative_int(usage.get("prompt_tokens") or usage.get("input_tokens") or usage.get("promptTokenCount"))
+    completion = _non_negative_int(
+        usage.get("completion_tokens") or usage.get("output_tokens") or usage.get("candidatesTokenCount")
+    )
+    total = max(_non_negative_int(usage.get("total_tokens") or usage.get("totalTokenCount")), prompt + completion)
     return {"prompt": prompt, "completion": completion, "total": total}
+
+
+def extract_completion_cost(*, provider_id: str, payload: Any) -> float:
+    """Return only an explicit, finite provider-reported request cost.
+
+    RepoPilot deliberately does not estimate price from token counts here because
+    pricing and cached-token rules vary by provider and model. OpenAI-compatible
+    gateways such as OpenRouter commonly return the charged amount in
+    ``usage.cost`` or ``usage.total_cost``. Providers that do not report a cost
+    safely fall back to zero.
+    """
+
+    if not isinstance(payload, dict):
+        return 0.0
+    usage_key = "usageMetadata" if provider_id.strip().lower() == "google" else "usage"
+    usage = payload.get(usage_key)
+    if not isinstance(usage, dict):
+        return 0.0
+    for key in ("cost", "total_cost"):
+        cost = _non_negative_float(usage.get(key))
+        if cost is not None:
+            return cost
+    return 0.0
+
+
+def _non_negative_int(value: Any) -> int:
+    if isinstance(value, bool) or value is None:
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return max(parsed, 0)
+
+
+def _non_negative_float(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not isfinite(parsed) or parsed < 0:
+        return None
+    return parsed
 
 
 def _extract_openai_compatible_content(payload: Any) -> str:

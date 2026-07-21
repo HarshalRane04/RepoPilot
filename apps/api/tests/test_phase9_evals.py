@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import io
 import json
 import subprocess
 import sys
+import urllib.error
 
+import pytest
 from app.db.models import EvalRun
 from app.services.eval_runner import EvalRunner
 from cryptography.fernet import Fernet
@@ -25,7 +28,9 @@ from repopilot_evals import (
     ProviderRetrievalEvalRunner,
     resolve_provider_credentials,
 )
+from repopilot_evals.provider_credentials import redact_for_output
 from repopilot_evals.provider_harness import default_provider_api_key_env, default_provider_base_url
+from repopilot_evals.provider_retrieval_harness import ProviderEmbeddingClient
 
 
 class ScalarResult:
@@ -161,6 +166,28 @@ def test_plan_quality_scorer_grades_plan_and_context_precision() -> None:
     assert failed.context_precision == 0.0
     assert "Observed plan does not require human approval." in failed.failure_reasons
     assert "Observed plan targets disallowed files: app/db/models.py." in failed.failure_reasons
+
+
+def test_plan_quality_scorer_accepts_concrete_docs_link_check_commands() -> None:
+    benchmark = EvalRunner().load_benchmark()
+    task = next(task for task in benchmark["tasks"] if task.id == "docs-002")
+    scorer = PlanQualityScorer()
+
+    result = scorer.score(
+        task,
+        PlanQualityEvidence(
+            task_id=task.id,
+            summary="Add Redis connection refused troubleshooting entry.",
+            files_to_modify=["Docs/RUNBOOK.md"],
+            tests_to_add=[],
+            commands_to_run=["markdown-link-check Docs/RUNBOOK.md"],
+            context_citations=["Docs/RUNBOOK.md:1-40"],
+            requires_human_approval=True,
+        ),
+    )
+
+    assert result.status == "passed"
+    assert result.score == 1.0
 
 
 def test_patch_quality_scorer_grades_observed_patch_evidence() -> None:
@@ -418,6 +445,8 @@ def test_provider_planning_eval_runner_writes_observed_evidence_without_network(
             prompt = "\n".join(message["content"] for message in messages)
             assert "expected_changed_files" not in prompt
             assert "Task ID: docs-001" in prompt
+            assert "requires_human_approval must be true" in prompt
+            assert "docs link check" in prompt
             return {
                 "summary": "Replace DB_URL references with DATABASE_URL and add migration note.",
                 "files_to_modify": ["README.md"],
@@ -794,11 +823,53 @@ def test_provider_chat_client_uses_gemini_generate_content_adapter(monkeypatch) 
     assert calls[0]["timeout"] == 9
 
 
+def test_provider_chat_client_retries_transient_rate_limit(monkeypatch) -> None:
+    calls = 0
+
+    def fake_urlopen(request, timeout):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise urllib.error.HTTPError(
+                request.full_url,
+                429,
+                "rate limited",
+                {"Retry-After": "0"},
+                io.BytesIO(b'{"error":{"message":"temporarily rate limited"}}'),
+            )
+        return FakeUrlopenResponse({"choices": [{"message": {"content": '{"summary":"retry ok"}'}}]})
+
+    monkeypatch.setattr("repopilot_evals.provider_harness.urllib.request.urlopen", fake_urlopen)
+
+    payload = ProviderChatClient(
+        provider="openrouter",
+        base_url="https://openrouter.example/api/v1",
+        api_key="openrouter-test",
+        max_retries=1,
+        retry_backoff_seconds=0,
+    ).complete_json(
+        model="example/free",
+        messages=[{"role": "system", "content": "Return JSON."}, {"role": "user", "content": "Plan."}],
+        timeout_seconds=5,
+    )
+
+    assert payload == {"summary": "retry ok"}
+    assert calls == 2
+
+
 def test_provider_harness_defaults_provider_key_env_and_base_url() -> None:
     assert default_provider_api_key_env("openrouter") == "OPENROUTER_API_KEY"
     assert default_provider_api_key_env("anthropic") == "ANTHROPIC_API_KEY"
     assert default_provider_api_key_env("google") == "GEMINI_API_KEY"
     assert default_provider_base_url("google") == "https://generativelanguage.googleapis.com"
+
+
+def test_provider_clients_reject_non_https_urls() -> None:
+    with pytest.raises(ValueError, match="must use HTTPS"):
+        ProviderChatClient(provider="openrouter", base_url="file:///tmp/provider", api_key="test")
+
+    with pytest.raises(ValueError, match="must use HTTPS"):
+        ProviderEmbeddingClient(base_url="http://127.0.0.1:8080", api_key="test")
 
 
 def test_provider_credentials_use_runtime_secret_store(tmp_path, monkeypatch) -> None:
@@ -841,7 +912,8 @@ def test_provider_credentials_keep_environment_override(tmp_path, monkeypatch) -
         json.dumps(
             {
                 "values": {
-                    "MODEL_PROVIDER": fernet.encrypt(b"openrouter").decode(),
+                    "MODEL_PROVIDER": fernet.encrypt(b"anthropic").decode(),
+                    "MODEL_API_KEY_PROVIDER": fernet.encrypt(b"openrouter").decode(),
                     "MODEL_API_KEY": fernet.encrypt(b"runtime-key").decode(),
                 }
             }
@@ -883,6 +955,19 @@ def test_provider_credentials_ignore_runtime_secret_for_other_provider(tmp_path,
 
     assert credentials.api_key is None
     assert credentials.source == "missing"
+
+    openrouter_credentials = resolve_provider_credentials(provider="openrouter")
+    assert openrouter_credentials.api_key == "runtime-key"
+    assert openrouter_credentials.source == "runtime_secret_store"
+
+
+def test_provider_error_redaction_handles_json_identifiers() -> None:
+    provider_error = '{"user_id":"user_3AsccjfPvC4EnpvUc3yXCZsb2qC","token":"secret-token-value"}'
+
+    redacted = redact_for_output(provider_error)
+
+    assert "user_3Ascc" not in redacted
+    assert "secret-token-value" not in redacted
 
 
 def test_eval_fixture_repositories_are_executable() -> None:

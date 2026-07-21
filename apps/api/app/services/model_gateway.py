@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from collections.abc import Callable
 from typing import Any, TypeVar
@@ -10,7 +11,12 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel, ValidationError
 from repopilot_contracts import EmbeddingResponse, LLMCallMode, LLMResponse, TokenUsage
-from repopilot_llm_client import build_completion_request, extract_completion_content, extract_completion_usage
+from repopilot_llm_client import (
+    build_completion_request,
+    extract_completion_content,
+    extract_completion_cost,
+    extract_completion_usage,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -39,6 +45,7 @@ class ModelGateway:
         temperature: float = 0.0,
         max_tokens: int = 2048,
         context_citations: list[str] | None = None,
+        json_mode: bool = False,
     ) -> LLMResponse:
         config = effective_settings(settings)
         started = time.perf_counter()
@@ -84,8 +91,12 @@ class ModelGateway:
                 max_retries=config.model_request_max_retries,
                 retry_backoff_seconds=config.model_request_retry_backoff_seconds,
                 allow_fallback=_model_fallback_allowed(config),
+                json_mode=json_mode,
             )
 
+        trace_metadata: dict[str, Any] = {"context_citations": context_citations or []}
+        if json_mode:
+            trace_metadata["json_mode"] = True
         await self._record_trace(
             db,
             run_id=run_id,
@@ -93,7 +104,7 @@ class ModelGateway:
             prompt_hash=prompt_hash,
             response=response,
             provider_id=config.model_provider,
-            metadata={"context_citations": context_citations or []},
+            metadata=trace_metadata,
         )
         return response
 
@@ -109,13 +120,19 @@ class ModelGateway:
         fallback: Callable[[], StructuredModel] | None = None,
         context_citations: list[str] | None = None,
     ) -> StructuredModel:
+        schema_json = json.dumps(response_model.model_json_schema(), sort_keys=True, separators=(",", ":"))
+        schema_instruction = (
+            "\n\nRequired output JSON Schema (return one JSON object only; do not add markdown):\n"
+            f"{schema_json}"
+        )
         response = await self.complete(
             db,
             run_id=run_id,
             agent_name=agent_name,
-            system_prompt=system_prompt,
+            system_prompt=f"{system_prompt.rstrip()}{schema_instruction}",
             user_prompt=user_prompt,
             context_citations=context_citations,
+            json_mode=True,
         )
         parsed = self._parse_json_response(response.content, response_model=response_model)
         if parsed is not None:
@@ -125,9 +142,19 @@ class ModelGateway:
             db,
             run_id=run_id,
             agent_name=f"{agent_name}.repair",
-            system_prompt="Return only valid JSON matching the requested schema.",
-            user_prompt=f"Repair this invalid response into schema-valid JSON:\n{response.content}",
+            system_prompt=(
+                "Repair the candidate into one valid JSON object matching the supplied schema. "
+                "Preserve supported intent, omit unsupported fields, and add no markdown."
+                f"{schema_instruction}"
+            ),
+            user_prompt=(
+                "Original request:\n"
+                f"{user_prompt}\n\n"
+                "Candidate response to repair:\n"
+                f"{response.content}"
+            ),
             context_citations=context_citations,
+            json_mode=True,
         )
         repaired = self._parse_json_response(repair_response.content, response_model=response_model)
         if repaired is not None:
@@ -336,6 +363,7 @@ class ModelGateway:
         max_retries: int,
         retry_backoff_seconds: float,
         allow_fallback: bool = True,
+        json_mode: bool = False,
     ) -> LLMResponse:
         if provider_id == "cohere":
             if not allow_fallback:
@@ -351,6 +379,7 @@ class ModelGateway:
                 user_prompt=user_prompt,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                json_mode=json_mode,
             )
             async with httpx.AsyncClient(timeout=min(max(timeout_seconds, 5), 60)) as client:
                 response = await _post_json_with_retries(
@@ -370,11 +399,12 @@ class ModelGateway:
         content = _extract_provider_completion_content(provider_id=provider_id, payload=payload)
         usage = extract_completion_usage(provider_id=provider_id, payload=payload)
         tokens = TokenUsage(prompt=usage["prompt"], completion=usage["completion"], total=usage["total"])
+        cost = extract_completion_cost(provider_id=provider_id, payload=payload)
         return LLMResponse(
             content=content,
             model=model,
             tokens=tokens,
-            cost=0.0,
+            cost=cost,
             latency_ms=_elapsed_ms(started),
             mode=LLMCallMode.LIVE,
             prompt_hash=prompt_hash,
@@ -395,14 +425,31 @@ class ModelGateway:
         )
 
     def _parse_json_response(self, content: str, *, response_model: type[StructuredModel]) -> StructuredModel | None:
-        try:
-            payload = json.loads(content)
-        except json.JSONDecodeError:
-            return None
-        try:
-            return response_model.model_validate(payload)
-        except ValidationError:
-            return None
+        stripped = content.strip()
+        candidates = [stripped]
+        fenced = re.findall(r"```(?:json)?\s*(.*?)```", stripped, flags=re.IGNORECASE | re.DOTALL)
+        candidates.extend(item.strip() for item in fenced if item.strip())
+
+        decoder = json.JSONDecoder()
+        for start, character in enumerate(stripped):
+            if character not in "[{":
+                continue
+            try:
+                payload, _end = decoder.raw_decode(stripped[start:])
+            except json.JSONDecodeError:
+                continue
+            try:
+                return response_model.model_validate(payload)
+            except ValidationError:
+                continue
+
+        for candidate in candidates:
+            try:
+                payload = json.loads(candidate)
+                return response_model.model_validate(payload)
+            except (json.JSONDecodeError, ValidationError):
+                continue
+        return None
 
     def _mock_embedding(self, text: str, *, dimensions: int) -> list[float]:
         vector = [0.0] * dimensions
@@ -527,6 +574,7 @@ def _completion_request(
     user_prompt: str,
     temperature: float,
     max_tokens: int,
+    json_mode: bool = False,
 ) -> dict[str, Any]:
     request = build_completion_request(
         provider_id=provider_id,
@@ -537,6 +585,7 @@ def _completion_request(
         user_prompt=user_prompt,
         temperature=temperature,
         max_tokens=max_tokens,
+        json_mode=json_mode,
     )
     return {"url": request.url, "headers": request.headers, "json_payload": request.json_payload}
 

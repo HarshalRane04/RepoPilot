@@ -76,6 +76,7 @@ class NormalizedWorkflowRunEvent:
     pull_request_number: int | None
     log_excerpt: str
     sender_login: str
+    workflow_run_id: int | None = None
 
 
 class GitHubEventNormalizer:
@@ -195,6 +196,7 @@ class GitHubEventNormalizer:
             pull_request_number=pr_number,
             log_excerpt=str(workflow_run.get("display_title") or workflow_run.get("html_url") or ""),
             sender_login=str(sender.get("login") or "unknown"),
+            workflow_run_id=int(workflow_run["id"]) if workflow_run.get("id") is not None else None,
         )
 
     def normalize_check_run_event(self, payload: dict[str, Any]) -> NormalizedWorkflowRunEvent:
@@ -247,6 +249,7 @@ class GitHubEventNormalizer:
             pull_request_number=pr_number,
             log_excerpt=str(output.get("summary") or check_payload.get("html_url") or ""),
             sender_login=str(sender.get("login") or "unknown"),
+            workflow_run_id=None,
         )
 
     def normalize(

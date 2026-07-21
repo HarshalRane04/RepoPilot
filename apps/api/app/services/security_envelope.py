@@ -33,6 +33,16 @@ def stable_json_hash(value: Any) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def free_form_text_metadata(value: str) -> dict[str, object]:
+    """Keep free-form text out of broad audit metadata while retaining correlation evidence."""
+    stripped = value.strip()
+    return {
+        "present": bool(stripped),
+        "sha256": hashlib.sha256(stripped.encode("utf-8")).hexdigest() if stripped else None,
+        "length": len(stripped),
+    }
+
+
 def redact_text(value: str) -> str:
     redacted = value
     for pattern in SECRET_VALUE_PATTERNS:
@@ -86,9 +96,16 @@ class BudgetGuard:
         run = await db.get(AgentRun, run_id)
         if run is None:
             raise ValueError(f"Agent run not found: {run_id}")
-        llm_calls = await db.scalar(select(func.count()).select_from(LLMTrace).where(LLMTrace.agent_run_id == run_id)) or 0
-        trace_tokens = await db.scalar(select(func.coalesce(func.sum(LLMTrace.tokens), 0)).where(LLMTrace.agent_run_id == run_id)) or 0
-        trace_cost = await db.scalar(select(func.coalesce(func.sum(LLMTrace.cost), 0.0)).where(LLMTrace.agent_run_id == run_id)) or 0.0
+        aggregate = await db.execute(
+            select(
+                func.count(),
+                func.coalesce(func.sum(LLMTrace.tokens), 0),
+                func.coalesce(func.sum(LLMTrace.cost), 0.0),
+            )
+            .select_from(LLMTrace)
+            .where(LLMTrace.agent_run_id == run_id)
+        )
+        llm_calls, trace_tokens, trace_cost = aggregate.one()
         return BudgetSnapshot(
             run_id=run_id,
             llm_call_count=int(llm_calls),

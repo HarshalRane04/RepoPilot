@@ -237,6 +237,8 @@ async def fetch_openrouter_models(*, timeout_seconds: int = 10, base_url: str | 
                 "reasoning_levels": (),
                 "is_free": _is_free_openrouter_model(model_id=model_id, pricing=pricing),
                 "pricing": _normalized_pricing(pricing),
+                "pricing_currency": "USD",
+                "pricing_unit": "token",
             }
         )
 
@@ -260,7 +262,7 @@ async def _provider_catalog_entry(
     if models:
         return {
             "id": provider.id,
-            "models": models,
+            "models": [_with_pricing_metadata(model) for model in models],
             "source": "dynamic_live",
             "fetched_at": fetched_at,
             "error": error,
@@ -272,6 +274,14 @@ async def _provider_catalog_entry(
         "fetched_at": fetched_at,
         "error": error,
     }
+
+
+def _with_pricing_metadata(model: dict[str, object]) -> dict[str, object]:
+    normalized = dict(model)
+    if isinstance(normalized.get("pricing"), dict) and normalized["pricing"]:
+        normalized.setdefault("pricing_currency", "USD")
+        normalized.setdefault("pricing_unit", "token")
+    return normalized
 
 
 def _provider_request_auth(*, provider_id: str, api_key: str | None) -> tuple[dict[str, str], dict[str, str] | None]:

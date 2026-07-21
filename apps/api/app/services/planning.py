@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from uuid import UUID
 
 from repopilot_contracts import AgentRunState, CodeContextPack, ImplementationPlan, PlanApprovalStatus
@@ -25,7 +26,7 @@ class PlanningService:
         context = await RepositoryIndexer().retrieve_context(
             db,
             repository_id=issue.repository_id,
-            query=issue.title,
+            query="\n".join(part for part in (issue.title, issue.body_text or "") if part),
             limit=context_limit,
         )
         deterministic_plan = self._build_plan(issue=issue, context_citations=context.citations)
@@ -110,7 +111,41 @@ class PlanningService:
 
     def _build_plan(self, *, issue: Issue, context_citations: list[str]) -> ImplementationPlan:
         inspected = [citation.split(":", 1)[0] for citation in context_citations]
-        files_to_inspect = list(dict.fromkeys(inspected))[:6]
+        explicit_targets = self._explicit_change_targets(self._issue_text(issue))
+        files_to_inspect = list(dict.fromkeys([*explicit_targets, *inspected]))[:6]
+        explicit_commands = self._explicit_validation_commands(self._issue_text(issue))
+        exact_targets = self._exact_scope_targets(self._issue_text(issue), explicit_targets)
+        if exact_targets:
+            filtered_citations = [
+                citation for citation in context_citations if citation.split(":", 1)[0] in exact_targets
+            ]
+            risk_notes = []
+            if not filtered_citations:
+                risk_notes.append(
+                    "The operator named an exact file scope, but retrieval did not return that file; implementation must verify it exists before writing."
+                )
+            return ImplementationPlan(
+                plan_id="pending-db-id",
+                issue_id=str(issue.id),
+                summary=f"Implement the exact operator-approved scope for issue #{issue.number}: {issue.title}",
+                files_to_inspect=exact_targets,
+                files_to_modify=exact_targets,
+                tests_to_add=[],
+                commands_to_run=explicit_commands,
+                intended_changes=[f"Update only {path}, as explicitly requested by the operator." for path in exact_targets],
+                validation_strategy=(
+                    [f"Run `{command}` and store the resulting validation evidence." for command in explicit_commands]
+                    or ["Review the scoped diff and confirm that no file outside the exact operator-approved scope changed."]
+                ),
+                assumptions=[
+                    "The named repository-relative paths are the authoritative write scope.",
+                    "Any file outside the exact scope requires a revised plan and fresh approval.",
+                ],
+                context_citations=filtered_citations,
+                risk_notes=risk_notes,
+                rollback_plan="Revert the scoped RepoPilot commit or close the draft PR without merging.",
+                requires_human_approval=True,
+            )
         if self._is_documentation_only(issue):
             docs_to_inspect = [path for path in files_to_inspect if self._looks_like_doc(path)]
             docs_to_modify = docs_to_inspect[:3]
@@ -124,14 +159,15 @@ class PlanningService:
                 files_to_inspect=docs_to_inspect,
                 files_to_modify=docs_to_modify,
                 tests_to_add=[],
-                commands_to_run=[],
+                commands_to_run=explicit_commands,
                 intended_changes=(
                     [f"Update documentation in {path}; do not modify source code or tests." for path in docs_to_modify]
                     or ["Request more documentation context before proposing file edits."]
                 ),
-                validation_strategy=[
-                    "Review the documentation diff for accuracy and confirm no source or test files changed.",
-                ],
+                validation_strategy=(
+                    [f"Run `{command}` and store the resulting validation evidence." for command in explicit_commands]
+                    or ["Review the documentation diff for accuracy and confirm no source or test files changed."]
+                ),
                 assumptions=[
                     "The issue is explicitly documentation-only.",
                     "Any source-code, test, workflow, or runtime-config change requires a revised plan and fresh approval.",
@@ -150,7 +186,7 @@ class PlanningService:
         if not tests_to_add:
             tests_to_add = ["tests/"]
 
-        commands = self._commands_for_files(files_to_inspect)
+        commands = explicit_commands or self._commands_for_files(files_to_inspect)
         risk_notes = []
         if issue.risk_score >= 70:
             risk_notes.append("Issue triage indicates elevated risk; require careful human review before implementation.")
@@ -201,6 +237,8 @@ class PlanningService:
         plan: ImplementationPlan,
         deterministic_plan: ImplementationPlan,
     ) -> ImplementationPlan:
+        if self._exact_scope_targets(self._issue_text(issue), self._explicit_change_targets(self._issue_text(issue))):
+            return deterministic_plan
         if not self._is_documentation_only(issue):
             return plan
         docs_to_modify = [path for path in plan.files_to_modify if self._looks_like_doc(path)]
@@ -228,6 +266,117 @@ class PlanningService:
                 ],
             }
         )
+
+    def revise_plan(
+        self,
+        *,
+        issue: Issue,
+        parent_plan: ImplementationPlan,
+        instructions: str,
+    ) -> ImplementationPlan:
+        combined_text = "\n".join(part for part in (self._issue_text(issue), instructions) if part)
+        explicit_targets = self._explicit_change_targets(combined_text)
+        exact_targets = self._exact_scope_targets(combined_text, explicit_targets)
+        commands = self._explicit_validation_commands(combined_text)
+        if exact_targets:
+            citations = [
+                citation for citation in parent_plan.context_citations if citation.split(":", 1)[0] in exact_targets
+            ]
+            risk_notes = list(parent_plan.risk_notes)
+            if not citations:
+                risk_notes.append(
+                    "The operator revised the plan to an exact file scope that was not in the prior retrieved context; verify the path before writing."
+                )
+            return parent_plan.model_copy(
+                update={
+                    "summary": f"Revise issue #{issue.number} to the exact operator-approved scope: {issue.title}",
+                    "files_to_inspect": exact_targets,
+                    "files_to_modify": exact_targets,
+                    "tests_to_add": [],
+                    "commands_to_run": commands,
+                    "intended_changes": [
+                        f"Update only {path}, as required by the operator's revision instructions."
+                        for path in exact_targets
+                    ],
+                    "validation_strategy": (
+                        [f"Run `{command}` and store the resulting validation evidence." for command in commands]
+                        or ["Review the scoped diff and confirm no file outside the revised scope changed."]
+                    ),
+                    "assumptions": [
+                        *parent_plan.assumptions,
+                        "The latest human revision instructions supersede broader file suggestions in the parent plan.",
+                    ],
+                    "context_citations": citations,
+                    "risk_notes": list(dict.fromkeys(risk_notes)),
+                    "requires_human_approval": True,
+                }
+            )
+
+        instruction_note = f"Apply the operator revision before implementation: {instructions.strip()}"
+        return parent_plan.model_copy(
+            update={
+                "intended_changes": list(dict.fromkeys([instruction_note, *parent_plan.intended_changes])),
+                "commands_to_run": commands or parent_plan.commands_to_run,
+                "validation_strategy": (
+                    [f"Run `{command}` and store the resulting validation evidence." for command in commands]
+                    if commands
+                    else parent_plan.validation_strategy
+                ),
+                "risk_notes": list(
+                    dict.fromkeys(
+                        [
+                            *parent_plan.risk_notes,
+                            "This plan includes human revision instructions and requires fresh approval.",
+                        ]
+                    )
+                ),
+                "requires_human_approval": True,
+            }
+        )
+
+    def _issue_text(self, issue: Issue) -> str:
+        return "\n".join(part for part in (issue.title, issue.body_text or "", issue.issue_type or "") if part)
+
+    def _explicit_change_targets(self, text: str) -> list[str]:
+        pattern = re.compile(
+            r"(?ix)\b(?:update|modify|edit|change|create|touch)\s+"
+            r"(?:the\s+)?(?:file\s+)?[`\"']?"
+            r"(?P<path>(?:[a-z0-9_.-]+/)+[a-z0-9_.-]+\.[a-z0-9_.-]+|[a-z0-9_.-]+\.[a-z0-9_.-]+)"
+        )
+        return list(dict.fromkeys(match.group("path") for match in pattern.finditer(text)))[:6]
+
+    def _exact_scope_targets(self, text: str, targets: list[str]) -> list[str]:
+        if not targets:
+            return []
+        lowered = text.lower()
+        exact_scope = any(
+            marker in lowered
+            for marker in (
+                "do not modify any other file",
+                "don't modify any other file",
+                "no other files",
+                "exactly as",
+            )
+        )
+        if not exact_scope:
+            exact_scope = any(
+                re.search(rf"{re.escape(path.lower())}[`\"']?\s+only\b", lowered)
+                for path in targets
+            )
+        return targets if exact_scope else []
+
+    def _explicit_validation_commands(self, text: str) -> list[str]:
+        commands: list[str] = []
+        pattern = re.compile(
+            r"(?im)\b(?:validate(?:\s+it)?\s+with|validation\s+command(?:\s+is|\s*:)?|run\s+for\s+validation\s*:)\s*"
+            r"(?P<command>[^\n]+)"
+        )
+        policy = PolicyEngine()
+        for match in pattern.finditer(text):
+            command = match.group("command").strip().strip("`").rstrip(".").strip()
+            if command and policy.is_command_allowed(command) and command not in commands:
+                commands.append(command)
+        return commands[:6]
 
     def _commands_for_files(self, paths: list[str]) -> list[str]:
         if any(path.endswith(".py") for path in paths):
@@ -308,6 +457,7 @@ def implementation_plan_from_db(plan: Plan) -> ImplementationPlan:
     payload.pop("rejection_reason", None)
     payload.pop("revision_parent_plan_id", None)
     payload.pop("revision_instructions", None)
+    payload.pop("revision_run_id", None)
     return ImplementationPlan.model_validate(payload)
 
 

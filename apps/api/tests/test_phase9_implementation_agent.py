@@ -12,7 +12,11 @@ from app.core.config import settings
 from app.db.models import AgentRun, ArtifactRecord, Issue, Plan
 from app.services.implementation_agent import (
     ImplementationAgent,
+    ImplementationExplorationPlan,
     ImplementationToolPlan,
+    MAX_EXPLORATION_HISTORY_CHARS,
+    MAX_PROMPT_SNIPPETS_CHARS,
+    ProposedImplementationReadToolCall,
     ProposedImplementationToolCall,
 )
 from app.services.security_envelope import stable_json_hash
@@ -21,13 +25,15 @@ from app.services.tools.registry import WORKSPACE_ROOT
 
 class FakeGateway:
     async def complete_json(self, *_args, **_kwargs):
+        if _kwargs.get("response_model") is ImplementationExplorationPlan:
+            return ImplementationExplorationPlan(summary="Initial plan context is sufficient.", ready_to_write=True)
         return ImplementationToolPlan(
             summary="Rename repository issue count field and add a regression test.",
             tool_calls=[
                 ProposedImplementationToolCall(
                     tool_name="workspace.replace_text",
                     arguments={
-                        "path": "app/api/routes/repos.py",
+                        "path": "apps/api/app/api/routes/repos.py",
                         "old_text": "return {'issue_count': 1}",
                         "new_text": "return {'open_issue_count': 1}",
                     },
@@ -35,7 +41,7 @@ class FakeGateway:
                 ProposedImplementationToolCall(
                     tool_name="workspace.write_file",
                     arguments={
-                        "path": "tests/test_repositories.py",
+                        "path": "apps/api/tests/test_repositories.py",
                         "content": (
                             "from app.api.routes.repos import list_repositories\n\n\n"
                             "def test_repository_count_field_is_open_issue_count():\n"
@@ -81,10 +87,11 @@ def _approved_plan_payload(plan: ImplementationPlan) -> dict[str, object]:
 def test_implementation_agent_uses_tool_executor_for_source_and_test_patch(monkeypatch, tmp_path: Path) -> None:
     repository_root = tmp_path / "repositories"
     source = repository_root / "demo"
-    route = source / "app" / "api" / "routes" / "repos.py"
+    route = source / "apps" / "api" / "app" / "api" / "routes" / "repos.py"
     route.parent.mkdir(parents=True)
     route.write_text("def list_repositories():\n    return {'issue_count': 1}\n", encoding="utf-8")
-    (source / "tests").mkdir()
+    (source / "apps" / "api" / "tests").mkdir()
+    (source / "apps" / "api" / "requirements.txt").write_text("pytest\n", encoding="utf-8")
 
     monkeypatch.setattr(settings, "repository_workspace_root", str(repository_root))
     monkeypatch.setattr(settings, "sandbox_backend", "local")
@@ -139,8 +146,8 @@ def test_implementation_agent_uses_tool_executor_for_source_and_test_patch(monke
     assert result.patch.diff_uri and result.patch.diff_uri.startswith(f"local://artifacts/{run.id}/")
     assert result.patch.diff_artifact is not None
     assert {change.path for change in result.patch.changed_files} == {
-        "app/api/routes/repos.py",
-        "tests/test_repositories.py",
+        "apps/api/app/api/routes/repos.py",
+        "apps/api/tests/test_repositories.py",
     }
     assert "open_issue_count" in result.patch.diff
     assert any(isinstance(item, ArtifactRecord) and item.artifact_type == "patch.diff" for item in db.added)
@@ -151,6 +158,8 @@ def test_implementation_agent_uses_tool_executor_for_source_and_test_patch(monke
 def test_implementation_agent_blocks_when_model_returns_no_tool_calls(monkeypatch, tmp_path: Path) -> None:
     class EmptyGateway:
         async def complete_json(self, *_args, **_kwargs):
+            if _kwargs.get("response_model") is ImplementationExplorationPlan:
+                return ImplementationExplorationPlan(summary="No additional reads needed.", ready_to_write=True)
             return ImplementationToolPlan(
                 summary="No patch.",
                 tool_calls=[],
@@ -210,6 +219,8 @@ def test_implementation_agent_blocks_when_model_returns_no_tool_calls(monkeypatc
 def test_implementation_agent_uses_explicit_issue_body_fallback(monkeypatch, tmp_path: Path) -> None:
     class EmptyGateway:
         async def complete_json(self, *_args, **_kwargs):
+            if _kwargs.get("response_model") is ImplementationExplorationPlan:
+                return ImplementationExplorationPlan(summary="No additional reads needed.", ready_to_write=True)
             return ImplementationToolPlan(
                 summary="No patch.",
                 tool_calls=[],
@@ -289,6 +300,47 @@ def test_implementation_agent_uses_explicit_issue_body_fallback(monkeypatch, tmp
     assert source.joinpath("smoke_app.py").read_text(encoding="utf-8").count("pending") == 1
 
 
+def test_implementation_agent_builds_scoped_markdown_section_note_fallback() -> None:
+    issue = Issue(
+        id=uuid4(),
+        repository_id=uuid4(),
+        number=25,
+        title="Document isolated production web build",
+        body_text=(
+            "Update Docs/RUNBOOK.md only. In the Local Stack section, add a concise note that "
+            "make web-build builds the production runner image without replacing the live development server's .next volume. "
+            "Do not modify any other file."
+        ),
+    )
+    plan = ImplementationPlan(
+        plan_id=str(uuid4()),
+        issue_id=str(issue.id),
+        files_to_inspect=["Docs/RUNBOOK.md"],
+        files_to_modify=["Docs/RUNBOOK.md"],
+        commands_to_run=["python -m pytest -q apps/api/tests/test_release_targets.py"],
+        rollback_plan="Close the generated branch.",
+    )
+
+    tool_plan = ImplementationAgent(model_gateway=FakeGateway())._deterministic_tool_plan(
+        issue=issue,
+        implementation_plan=plan,
+        snippets=[
+            {
+                "path": "Docs/RUNBOOK.md",
+                "content": "# Runbook\n\n## Local Stack\n\nRun `make start-local`.\n",
+            }
+        ],
+    )
+
+    assert tool_plan.summary == "Inserted an explicit documentation note in the requested approved section."
+    assert len(tool_plan.tool_calls) == 1
+    call = tool_plan.tool_calls[0]
+    assert call.tool_name == "workspace.replace_text"
+    assert call.arguments["path"] == "Docs/RUNBOOK.md"
+    assert call.arguments["old_text"] == "## Local Stack"
+    assert "make web-build builds the production runner image" in call.arguments["new_text"]
+
+
 def test_implementation_agent_skips_apply_patch_diff_payload() -> None:
     captured: list[dict[str, object]] = []
     agent = ImplementationAgent(model_gateway=FakeGateway())
@@ -352,7 +404,7 @@ def test_implementation_agent_reads_context_with_batched_tool() -> None:
             status=ToolCallStatus.SUCCEEDED,
             output={
                 "files": [
-                    {"path": "app/demo.py", "start_line": 1, "end_line": 1, "line_count": 1, "content": "VALUE = 1"}
+                    {"path": "apps/api/app/demo.py", "start_line": 1, "end_line": 1, "line_count": 1, "content": "VALUE = 1"}
                 ],
                 "errors": [],
             },
@@ -369,19 +421,74 @@ def test_implementation_agent_reads_context_with_batched_tool() -> None:
         )
     )
 
-    assert snippets == [{"path": "app/demo.py", "start_line": 1, "end_line": 1, "line_count": 1, "content": "VALUE = 1"}]
+    assert snippets == [{"path": "apps/api/app/demo.py", "start_line": 1, "end_line": 1, "line_count": 1, "content": "VALUE = 1"}]
     assert captured == [
         {
             "tool_name": "repo.read_files",
             "arguments": {
                 "workspace_path": "/tmp/repopilot-agent-workspaces/demo",
                 "files": [
-                    {"path": "app/demo.py", "start_line": 1, "end_line": 220},
-                    {"path": "tests/test_demo.py", "start_line": 1, "end_line": 220},
+                    {"path": "apps/api/app/demo.py", "start_line": 1, "end_line": 220},
+                    {"path": "apps/api/tests/test_demo.py", "start_line": 1, "end_line": 220},
                 ],
             },
         }
     ]
+
+
+def test_implementation_agent_coalesces_single_file_reads_in_one_exploration_round() -> None:
+    agent = ImplementationAgent(model_gateway=FakeGateway())
+    calls = [
+        ProposedImplementationReadToolCall(
+            tool_name="repo.read_file",
+            arguments={"path": "app/api.py", "start_line": 1, "end_line": 80},
+        ),
+        ProposedImplementationReadToolCall(
+            tool_name="repo.grep",
+            arguments={"query": "build_response", "max_results": 5},
+        ),
+        ProposedImplementationReadToolCall(
+            tool_name="repo.read_file",
+            arguments={"path": "tests/test_api.py", "start_line": 1, "end_line": 120},
+        ),
+    ]
+
+    normalized = agent._coalesce_read_file_calls(calls)
+
+    assert [call.tool_name for call in normalized] == ["repo.read_files", "repo.grep"]
+    assert normalized[0].arguments == {
+        "files": [
+            {"path": "app/api.py", "start_line": 1, "end_line": 80},
+            {"path": "tests/test_api.py", "start_line": 1, "end_line": 120},
+        ]
+    }
+
+
+def test_implementation_agent_bounds_model_prompt_evidence_cumulatively() -> None:
+    agent = ImplementationAgent(model_gateway=FakeGateway())
+    snippets = [
+        {"path": f"app/module_{index}.py", "content": str(index) * 20_000}
+        for index in range(12)
+    ]
+    observations = [
+        {
+            "tool_name": "repo.grep",
+            "status": "succeeded",
+            "call_hash": str(index),
+            "output": {"excerpt": str(index) * 12_000},
+        }
+        for index in range(8)
+    ]
+
+    bounded_snippets = agent._bounded_prompt_snippets(snippets)
+    bounded_observations = agent._bounded_observation_history(observations)
+
+    assert len(json.dumps(bounded_snippets, sort_keys=True)) <= MAX_PROMPT_SNIPPETS_CHARS
+    assert bounded_snippets[0]["content_truncated"] is True
+    assert any(item.get("snippets_truncated") is True for item in bounded_snippets)
+    assert len(json.dumps(bounded_observations, sort_keys=True)) <= MAX_EXPLORATION_HISTORY_CHARS
+    assert bounded_observations[0]["history_truncated"] is True
+    assert bounded_observations[-1]["call_hash"] == "7"
 
 
 def test_implementation_agent_includes_retry_workspace_state_in_prompt() -> None:
@@ -413,6 +520,7 @@ def test_implementation_agent_includes_retry_workspace_state_in_prompt() -> None
             implementation_plan=implementation_plan,
             workspace_path="/tmp/repopilot-agent-workspaces/demo",
             snippets=[{"path": "app/demo.py", "content": "VALUE = 1"}],
+            exploration_observations=[],
             workspace_state={
                 "diff_available": True,
                 "changed_files": [{"path": "app/demo.py", "change_type": "modify", "additions": 1, "deletions": 1}],
@@ -422,13 +530,88 @@ def test_implementation_agent_includes_retry_workspace_state_in_prompt() -> None
             },
             attempt=2,
             previous_validation=None,
+            previous_tool_errors=[
+                {
+                    "tool_name": "workspace.apply_patch",
+                    "status": "blocked",
+                    "reason": "git apply failed: No valid patches in input",
+                }
+            ],
         )
     )
 
     prompt = json.loads(gateway.user_prompt)
     assert prompt["attempt"] == 2
+    assert prompt["previous_tool_errors"][0]["tool_name"] == "workspace.apply_patch"
+    assert "No valid patches" in prompt["previous_tool_errors"][0]["reason"]
     assert prompt["workspace_state"]["changed_files"][0]["path"] == "app/demo.py"
     assert "VALUE = 2" in prompt["workspace_state"]["diff_excerpt"]
+
+
+def test_implementation_explorer_suppresses_repeated_read_calls(monkeypatch) -> None:
+    class ExplorationGateway:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def complete_json(self, *_args, **_kwargs):
+            self.calls += 1
+            return ImplementationExplorationPlan(
+                summary="Find the target symbol.",
+                ready_to_write=self.calls > 1,
+                tool_calls=[
+                    ProposedImplementationReadToolCall(
+                        tool_name="repo.grep",
+                        arguments={"query": "target_symbol", "max_results": 5},
+                    )
+                ],
+            )
+
+    gateway = ExplorationGateway()
+    agent = ImplementationAgent(model_gateway=gateway)
+    run = AgentRun(id=uuid4(), state=AgentRunState.IMPLEMENT_PATCH.value)
+    issue = Issue(id=uuid4(), repository_id=uuid4(), number=25, title="Update target symbol")
+    implementation_plan = ImplementationPlan(
+        plan_id=str(uuid4()),
+        issue_id=str(issue.id),
+        files_to_modify=["app/demo.py"],
+        commands_to_run=["python -m pytest"],
+        rollback_plan="Close the generated branch.",
+    )
+    executed: list[str] = []
+
+    async def fake_execute_tool(*_args, **kwargs):
+        executed.append(kwargs["tool_name"])
+        return ToolCallResult(
+            tool_name=kwargs["tool_name"],
+            status=ToolCallStatus.SUCCEEDED,
+            output={"query": "target_symbol", "matches": [{"path": "app/demo.py", "line": 3, "text": "target_symbol = 1"}]},
+        )
+
+    agent._execute_tool = fake_execute_tool  # type: ignore[method-assign]
+    monkeypatch.setattr(settings, "implementation_exploration_max_rounds", 3)
+    db = FakeDb(
+        run=run,
+        plan=Plan(id=uuid4(), issue_id=issue.id, plan_json={}),
+        issue=issue,
+    )
+
+    observations, snippets = asyncio.run(
+        agent._explore_context(
+            db,
+            run=run,
+            issue=issue,
+            implementation_plan=implementation_plan,
+            workspace_path="/tmp/repopilot-agent-workspaces/demo",
+            initial_snippets=[],
+            attempt=1,
+            previous_validation=None,
+        )
+    )
+
+    assert gateway.calls == 2
+    assert executed == ["repo.grep"]
+    assert any(item["status"] == "blocked" for item in observations)
+    assert snippets == []
 
 
 def test_phase9_normalizes_pytest_validation_command() -> None:

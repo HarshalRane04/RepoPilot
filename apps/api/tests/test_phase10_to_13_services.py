@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 from uuid import uuid4
 
+import pytest
 from repopilot_contracts import DraftPullRequestRequest, SecuritySeverity
 
+from app.core.config import settings
 from app.db.models import AgentRun, AgentStep, Branch, Installation, Issue, LLMTrace, Plan, PullRequest, Repository, SecurityFinding, ValidationResult
 from app.services.ci_analyzer import CIAnalyzer, CISummarySuggestion
 from app.services.draft_pr import DraftPullRequestService
@@ -13,6 +16,7 @@ from app.services.eval_runner import EvalRunner
 from app.services.integration_readiness import IntegrationReadinessService
 from app.services.security_scanner import SecurityScanner
 from app.services.state_machine import can_transition, next_states
+from app.services.tools.registry import WORKSPACE_ROOT, _workspace_diff_payload, _write_baseline
 
 
 class FakeCIGateway:
@@ -207,6 +211,37 @@ def test_draft_pr_base_sha_guard_rejects_synthetic_index_markers() -> None:
     assert service._looks_like_commit_sha(None) is False
 
 
+def test_github_write_rechecks_workspace_patch_and_preserves_executable_mode() -> None:
+    run_id = uuid4()
+    workspace = WORKSPACE_ROOT / str(run_id)
+    shutil.rmtree(workspace, ignore_errors=True)
+    script = workspace / "scripts" / "check.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/sh\necho before\n", encoding="utf-8")
+    script.chmod(0o755)
+    _write_baseline(workspace)
+    script.write_text("#!/bin/sh\necho after\n", encoding="utf-8")
+    patch = _workspace_diff_payload(workspace)
+    payload = {
+        "working_workspace_path": str(workspace),
+        "patch_hash": patch["patch_hash"],
+        "changed_files": patch["changed_files"],
+    }
+    service = DraftPullRequestService()
+
+    try:
+        contents = service._changed_file_contents(payload, run_id=run_id)
+        assert contents == [
+            {"path": "scripts/check.sh", "content": "#!/bin/sh\necho after\n", "mode": "100755"}
+        ]
+
+        script.write_text("#!/bin/sh\necho mutated after validation\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="changed after validation"):
+            service._changed_file_contents(payload, run_id=run_id)
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
 def test_real_github_write_rejects_oauth_synced_repository() -> None:
     service = DraftPullRequestService()
     run = AgentRun(id=uuid4(), issue_id=uuid4(), state="RUN_SECURITY_CHECKS")
@@ -332,7 +367,9 @@ def test_eval_runner_ratio_handles_empty_denominator() -> None:
     assert runner._ratio(1, 4) == 0.25
 
 
-def test_readiness_reports_placeholder_gates() -> None:
+def test_readiness_reports_placeholder_gates(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "github_writes_enabled", False)
+    monkeypatch.setattr(settings, "github_write_smoke_verified_at", None)
     readiness = IntegrationReadinessService().readiness()
 
     assert readiness.production_ready is False

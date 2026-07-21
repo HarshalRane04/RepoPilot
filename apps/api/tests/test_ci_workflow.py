@@ -6,6 +6,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 
 
+def test_ci_workflow_runs_feature_branch_matrix_once_and_cancels_stale_runs() -> None:
+    workflow = ROOT.joinpath(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "on:\n  push:\n    branches:\n      - main\n  pull_request:" in workflow
+    assert "concurrency:" in workflow
+    assert "github.event.pull_request.number || github.ref" in workflow
+    assert "cancel-in-progress: true" in workflow
+    assert workflow.count("timeout-minutes:") == 6
+
+
 def test_ci_workflow_uploads_scanner_posture_evidence() -> None:
     workflow = ROOT.joinpath(".github/workflows/ci.yml").read_text(encoding="utf-8")
 

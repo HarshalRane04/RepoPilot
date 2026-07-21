@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     github_app_slug: str | None = Field(default=None, alias="GITHUB_APP_SLUG")
     github_client_id: str | None = Field(default=None, alias="GITHUB_CLIENT_ID")
     github_client_secret: str | None = Field(default=None, alias="GITHUB_CLIENT_SECRET")
+    github_owner_login: str | None = Field(default=None, alias="REPOPILOT_GITHUB_OWNER_LOGIN")
     github_private_key: str | None = Field(
         default=None,
         validation_alias=AliasChoices("GITHUB_APP_PRIVATE_KEY", "GITHUB_PRIVATE_KEY"),
@@ -43,8 +44,11 @@ class Settings(BaseSettings):
     github_api_base_url: str = Field(default="https://api.github.com", alias="GITHUB_API_BASE_URL")
     github_web_base_url: str = Field(default="https://github.com", alias="GITHUB_WEB_BASE_URL")
     github_writes_enabled: bool = Field(default=False, alias="GITHUB_WRITES_ENABLED")
+    github_workflow_log_max_bytes: int = Field(default=25_000_000, alias="GITHUB_WORKFLOW_LOG_MAX_BYTES")
 
     enable_queue_dispatch: bool = Field(default=True, alias="ENABLE_QUEUE_DISPATCH")
+    webhook_dispatch_retry_interval_seconds: int = Field(default=30, alias="WEBHOOK_DISPATCH_RETRY_INTERVAL_SECONDS")
+    webhook_dispatch_max_retries: int = Field(default=8, alias="WEBHOOK_DISPATCH_MAX_RETRIES")
     dev_header_auth_enabled: bool = Field(default=False, alias="DEV_HEADER_AUTH_ENABLED")
     dev_auth_username: str = Field(default="local-owner", alias="DEV_AUTH_USERNAME")
     dev_auth_role: str = Field(default="owner", alias="DEV_AUTH_ROLE")
@@ -62,6 +66,7 @@ class Settings(BaseSettings):
     model_provider: str = Field(default="mock", alias="MODEL_PROVIDER")
     model_name: str = Field(default="mock-planner", alias="MODEL_NAME")
     model_api_key: str | None = Field(default=None, alias="MODEL_API_KEY")
+    model_api_key_provider: str | None = Field(default=None, alias="MODEL_API_KEY_PROVIDER")
     model_base_url: str | None = Field(default=None, alias="MODEL_BASE_URL")
     model_reasoning_level: str | None = Field(default=None, alias="MODEL_REASONING_LEVEL")
     model_provider_verified_at: str | None = Field(default=None, alias="MODEL_PROVIDER_VERIFIED_AT")
@@ -72,19 +77,45 @@ class Settings(BaseSettings):
     allow_model_fallback: bool = Field(default=False, alias="ALLOW_MODEL_FALLBACK")
     embedding_provider: str = Field(default="mock", alias="EMBEDDING_PROVIDER")
     embedding_model: str = Field(default="mock-embedding", alias="EMBEDDING_MODEL")
-    embedding_dimensions: int = Field(default=1536, alias="EMBEDDING_DIMENSIONS")
+    embedding_dimensions: int = Field(default=1536, ge=1536, le=1536, alias="EMBEDDING_DIMENSIONS")
     embedding_source_transfer_enabled: bool = Field(default=False, alias="EMBEDDING_SOURCE_TRANSFER_ENABLED")
     max_cost_per_run: float = Field(default=5.0, alias="REPOPILOT_MAX_COST_PER_RUN")
     max_tokens_per_run: int = Field(default=250_000, alias="REPOPILOT_MAX_TOKENS_PER_RUN")
     max_llm_calls_per_run: int = Field(default=40, alias="REPOPILOT_MAX_LLM_CALLS_PER_RUN")
     max_agent_retries: int = Field(default=3, alias="REPOPILOT_MAX_AGENT_RETRIES")
+    implementation_exploration_max_rounds: int = Field(
+        default=3,
+        alias="REPOPILOT_IMPLEMENTATION_EXPLORATION_MAX_ROUNDS",
+    )
+    run_orchestration_reconcile_interval_seconds: int = Field(
+        default=60,
+        ge=10,
+        le=3600,
+        alias="REPOPILOT_RUN_ORCHESTRATION_RECONCILE_INTERVAL_SECONDS",
+    )
+    run_orchestration_stale_seconds: int = Field(
+        default=960,
+        gt=900,
+        le=86_400,
+        alias="REPOPILOT_RUN_ORCHESTRATION_STALE_SECONDS",
+    )
     rate_limit_window_seconds: int = Field(default=60, alias="REPOPILOT_RATE_LIMIT_WINDOW_SECONDS")
     rate_limit_state_changes_per_minute: int = Field(default=60, alias="REPOPILOT_RATE_LIMIT_STATE_CHANGES_PER_MINUTE")
     rate_limit_expensive_per_minute: int = Field(default=20, alias="REPOPILOT_RATE_LIMIT_EXPENSIVE_PER_MINUTE")
 
     repository_workspace_root: str = Field(default="/tmp/repopilot-repositories", alias="REPOPILOT_REPOSITORY_WORKSPACE_ROOT")
-    sandbox_backend: str = Field(default="docker", alias="SANDBOX_BACKEND")
-    sandbox_docker_image: str = Field(default="repopilot-sandbox:local", alias="SANDBOX_DOCKER_IMAGE")
+    repository_archive_max_bytes: int = Field(default=100_000_000, alias="REPOPILOT_REPOSITORY_ARCHIVE_MAX_BYTES")
+    repository_archive_max_unpacked_bytes: int = Field(
+        default=500_000_000,
+        alias="REPOPILOT_REPOSITORY_ARCHIVE_MAX_UNPACKED_BYTES",
+    )
+    repository_archive_max_entries: int = Field(default=20_000, alias="REPOPILOT_REPOSITORY_ARCHIVE_MAX_ENTRIES")
+    sandbox_backend: str = Field(default="remote", alias="SANDBOX_BACKEND")
+    sandbox_runner_socket: str = Field(
+        default="/run/repopilot-sandbox/runner.sock",
+        alias="SANDBOX_RUNNER_SOCKET",
+    )
+    sandbox_runner_token: str | None = Field(default=None, alias="SANDBOX_RUNNER_TOKEN")
     sandbox_memory_limit: str = Field(default="1g", alias="SANDBOX_MEMORY_LIMIT")
     sandbox_cpus: str = Field(default="1.0", alias="SANDBOX_CPUS")
     sandbox_pids_limit: int = Field(default=256, alias="SANDBOX_PIDS_LIMIT")
@@ -101,6 +132,11 @@ class Settings(BaseSettings):
     semgrep_enabled: bool = Field(default=False, alias="SEMGREP_ENABLED")
     codeql_enabled: bool = Field(default=False, alias="CODEQL_ENABLED")
     dependency_audit_enabled: bool = Field(default=False, alias="DEPENDENCY_AUDIT_ENABLED")
+    security_scanner_evidence_path: str = Field(
+        default="/app/release-artifacts/security-scanner-snapshot.json",
+        alias="REPOPILOT_SECURITY_SCANNER_EVIDENCE_PATH",
+    )
+    release_source_fingerprint: str | None = Field(default=None, alias="REPOPILOT_RELEASE_SOURCE_FINGERPRINT")
 
 
 @lru_cache

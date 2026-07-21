@@ -1,9 +1,5 @@
-export function KeyValue({ icon: Icon, label, value }: { icon?: React.ElementType; label: string; value: string }) {
-  return (
-    <div className="keyValue">
-      {Icon ? <Icon size={18} /> : null}
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
+import type { LucideIcon } from "lucide-react";
+
+export function KeyValue({ label, value, icon: Icon }: { label: string; value: string; icon?: LucideIcon }) {
+  return <div className="keyValue">{Icon ? <Icon size={20} /> : null}<span>{label}</span><strong>{value}</strong></div>;
 }

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import AgentRun, AgentStep, Plan, PullRequest
 from app.services.audit import record_audit
 from app.services.planning import implementation_plan_from_db
+from app.services.security_envelope import free_form_text_metadata
 
 
 class RevisionPlanner:
@@ -59,8 +60,20 @@ class RevisionPlanner:
         )
         db.add(revision)
         await db.flush()
-        revision.plan_json = {**revision.plan_json, "plan_id": str(revision.id)}
-        run.plan_id = revision.id
+        revision_run = AgentRun(
+            issue_id=parent.issue_id,
+            plan_id=revision.id,
+            state="WAIT_FOR_APPROVAL",
+            model_used=run.model_used,
+        )
+        db.add(revision_run)
+        await db.flush()
+        revision.plan_json = {
+            **revision.plan_json,
+            "plan_id": str(revision.id),
+            "revision_parent_run_id": str(run.id),
+            "revision_run_id": str(revision_run.id),
+        }
         await record_audit(
             db,
             actor_type="user" if actor_id else "system",
@@ -68,7 +81,13 @@ class RevisionPlanner:
             action="plan.revision_created_from_ci",
             entity_type="plan",
             entity_id=str(revision.id),
-            metadata={"parent_plan_id": str(parent.id), "pr_id": str(pr.id), "instructions": instructions},
+            metadata={
+                "parent_plan_id": str(parent.id),
+                "parent_run_id": str(run.id),
+                "revision_run_id": str(revision_run.id),
+                "pr_id": str(pr.id),
+                "instructions": free_form_text_metadata(instructions),
+            },
         )
         await db.commit()
         return revision

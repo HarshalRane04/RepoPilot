@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api.routes import activity, auth, evals, health, installations, issues, metrics, plans, prompts, prs, repos, runs, security, settings, tools, webhooks
+from app.api.routes import activity, artifacts, auth, evals, health, installations, issues, metrics, plans, prompts, prs, repos, runs, security, settings, tools, webhooks
 from app.services.auth import get_current_user
 
 api_router = APIRouter()
@@ -17,6 +17,7 @@ protected_router.include_router(repos.router, prefix="/repos", tags=["repositori
 protected_router.include_router(issues.router, prefix="/issues", tags=["issues"])
 protected_router.include_router(plans.router, prefix="/plans", tags=["plans"])
 protected_router.include_router(runs.router, prefix="/runs", tags=["runs"])
+protected_router.include_router(artifacts.router, prefix="/runs", tags=["artifacts"])
 protected_router.include_router(tools.router, prefix="/tools", tags=["tools"])
 protected_router.include_router(prs.router, prefix="/prs", tags=["pull requests"])
 protected_router.include_router(security.router, prefix="/security", tags=["security"])

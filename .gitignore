@@ -19,6 +19,7 @@ node_modules/
 .next/
 *.tsbuildinfo
 out/
+output/
 dist/
 build/
 

@@ -2,10 +2,12 @@
   "name": "@repopilot/web",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "node --test --experimental-strip-types app/lib/*.test.ts",
     "typecheck": "tsc --noEmit --incremental false"
   },
   "dependencies": {

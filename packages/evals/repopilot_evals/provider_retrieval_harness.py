@@ -12,14 +12,14 @@ from typing import Any, Protocol
 
 from repopilot_contracts import EvalTaskFixture
 
-from .provider_credentials import redact_for_output, resolve_provider_credentials
+from .provider_credentials import redact_for_output, resolve_provider_credentials, validated_provider_url
 from .provider_harness import default_provider_api_key_env
 from .report import BenchmarkReport, BenchmarkReportBuilder
 
 
 class EmbeddingClient(Protocol):
     def embed(self, *, model: str, texts: list[str], timeout_seconds: int) -> list[list[float]]:
-        ...
+        raise NotImplementedError
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,7 @@ class RetrievalCandidate:
 
 class ProviderEmbeddingClient:
     def __init__(self, *, base_url: str, api_key: str) -> None:
-        self.base_url = base_url.rstrip("/")
+        self.base_url = validated_provider_url(base_url)
         self.api_key = api_key
 
     def embed(self, *, model: str, texts: list[str], timeout_seconds: int) -> list[list[float]]:
@@ -53,11 +53,12 @@ class ProviderEmbeddingClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            # ProviderEmbeddingClient accepts only validated HTTPS base URLs.
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"embedding provider returned HTTP {exc.code}: {body[:500]}") from exc
+            raise RuntimeError(f"embedding provider returned HTTP {exc.code}: {redact_for_output(body, limit=500)}") from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"embedding provider request failed: {exc.reason}") from exc
         data = payload.get("data") if isinstance(payload, dict) else None
@@ -292,8 +293,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     if not credentials.api_key:
         print(
-            "Missing provider API key. "
-            f"Set {api_key_env} in the environment or save MODEL_API_KEY in RepoPilot's local runtime secret store."
+            "Missing provider API key. Set the provider-specific environment variable or save MODEL_API_KEY "
+            "in RepoPilot's local runtime secret store."
         )
         return 2
     runner = ProviderRetrievalEvalRunner(
@@ -301,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
         client=ProviderEmbeddingClient(base_url=credentials.base_url, api_key=credentials.api_key),
     )
     try:
-        result = runner.run(
+        runner.run(
             provider=args.provider,
             model=args.model,
             output_dir=args.out_dir,
@@ -311,12 +312,10 @@ def main(argv: list[str] | None = None) -> int:
             top_k=args.top_k,
             allow_failed_gates=args.allow_failed_gates,
         )
-    except RuntimeError as exc:
-        print(redact_for_output(exc))
+    except RuntimeError:
+        print("Provider retrieval eval failed; console output was redacted to avoid leaking provider response data.")
         return 2
-    print(f"Wrote {result.markdown_path}")
-    print(f"Wrote {result.json_path}")
-    print(f"Wrote {result.observed_evidence_path}")
+    print("Provider retrieval eval completed; redacted artifacts were written.")
     return 0
 
 

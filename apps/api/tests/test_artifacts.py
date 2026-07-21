@@ -6,8 +6,10 @@ import stat
 import time
 from uuid import uuid4
 
+import pytest
+
 from app.db.models import ArtifactRecord
-from app.services.artifacts import ArtifactStore, maybe_externalize_json
+from app.services.artifacts import ArtifactIntegrityError, ArtifactStore, ArtifactUnavailable, maybe_externalize_json
 from app.worker.tasks import cleanup_artifacts_retention_task
 
 
@@ -44,6 +46,43 @@ def test_artifact_store_writes_file_and_database_pointer(tmp_path) -> None:
     assert record.uri == artifact.uri
     assert record.metadata_json == {"command": "pytest"}
     assert stat.S_IMODE(stored_path.stat().st_mode) == 0o600
+
+
+def test_artifact_store_resolves_only_intact_local_records(tmp_path) -> None:
+    db = FakeDb()
+    artifact = ArtifactStore(root=tmp_path).write_text(
+        db,
+        run_id=uuid4(),
+        artifact_type="validation.log",
+        text="trusted evidence",
+    )
+    record = db.added[0]
+    assert isinstance(record, ArtifactRecord)
+
+    assert ArtifactStore(root=tmp_path).resolve_record(record).read_text(encoding="utf-8") == "trusted evidence"
+    (tmp_path / artifact.storage_key).write_text("tampered", encoding="utf-8")
+    with pytest.raises(ArtifactIntegrityError):
+        ArtifactStore(root=tmp_path).resolve_record(record)
+
+
+def test_artifact_store_rejects_storage_key_traversal(tmp_path) -> None:
+    outside = tmp_path.parent / "outside-artifact.txt"
+    outside.write_text("secret", encoding="utf-8")
+    record = ArtifactRecord(
+        run_id=uuid4(),
+        artifact_type="validation.log",
+        uri="local://artifacts/../outside-artifact.txt",
+        storage_backend="local",
+        storage_key="../outside-artifact.txt",
+        sha256=hashlib.sha256(b"secret").hexdigest(),
+        byte_size=6,
+        content_type="text/plain",
+    )
+    try:
+        with pytest.raises(ArtifactUnavailable):
+            ArtifactStore(root=tmp_path).resolve_record(record)
+    finally:
+        outside.unlink(missing_ok=True)
 
 
 def test_maybe_externalize_json_keeps_small_payload_inline(tmp_path, monkeypatch) -> None:

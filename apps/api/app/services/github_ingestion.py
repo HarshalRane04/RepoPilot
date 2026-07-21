@@ -5,9 +5,11 @@ import json
 from dataclasses import asdict
 from uuid import UUID
 
+import httpx
 from repopilot_contracts import AgentRunState, PlanApprovalStatus, PolicyDecisionType
 from repopilot_contracts import CIAnalysisRequest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -22,10 +24,11 @@ from app.services.github_webhooks import (
     UnsupportedGitHubEvent,
 )
 from app.services.github_permissions import GitHubPermissionService
+from app.services.github_app import GitHubApiClient, GitHubIntegrationError
 from app.services.planning import implementation_plan_from_db
 from app.services.policy import PolicyEngine
 from app.services.runtime_secrets import effective_settings
-from app.services.security_envelope import redact_text, stable_json_hash
+from app.services.security_envelope import free_form_text_metadata, redact_text, stable_json_hash
 from app.services.state_machine import InvalidStateTransition, transition_run
 from app.services.triage import TriageService
 
@@ -54,8 +57,18 @@ async def store_webhook_event(
         payload_json=stored_payload,
         status="received",
     )
-    db.add(event)
-    await db.flush()
+    try:
+        async with db.begin_nested():
+            db.add(event)
+            await db.flush()
+    except IntegrityError as exc:
+        # A concurrent request may insert the same GitHub delivery after the
+        # lookup above. Keep the outer request transaction usable and surface
+        # the committed row through the normal duplicate-delivery path.
+        existing = await db.scalar(select(GitHubEvent).where(GitHubEvent.delivery_id == delivery_id))
+        if existing is None:
+            raise
+        raise DuplicateDelivery(existing) from exc
     await record_audit(
         db,
         actor_type="github",
@@ -104,6 +117,7 @@ def _minimized_webhook_payload(*, event_type: str, payload: dict) -> dict[str, o
     if event_type == "workflow_run":
         workflow_run = payload.get("workflow_run") if isinstance(payload.get("workflow_run"), dict) else {}
         base["workflow_run"] = {
+            "id": workflow_run.get("id"),
             "name": workflow_run.get("name"),
             "conclusion": workflow_run.get("conclusion"),
             "pull_requests": _pull_request_numbers(workflow_run.get("pull_requests")),
@@ -147,18 +161,19 @@ def _pull_request_numbers(value: object) -> list[dict[str, int]]:
 
 
 def _free_form_audit_metadata(value: str) -> dict[str, object]:
-    stripped = value.strip()
-    return {
-        "present": bool(stripped),
-        "sha256": hashlib.sha256(stripped.encode("utf-8")).hexdigest() if stripped else None,
-        "length": len(stripped),
-    }
+    return free_form_text_metadata(value)
 
 
 async def process_github_event(db: AsyncSession, *, event_id: UUID) -> dict[str, str]:
-    event = await db.get(GitHubEvent, event_id)
+    event = await db.scalar(
+        select(GitHubEvent)
+        .where(GitHubEvent.id == event_id)
+        .with_for_update()
+    )
     if event is None:
         raise ValueError(f"GitHub event not found: {event_id}")
+    if event.status in {"processed", "ignored", "blocked"}:
+        return {"status": event.status, "event_id": str(event.id)}
 
     event.status = "processing"
     await db.flush()
@@ -386,9 +401,20 @@ async def _apply_authorized_command(
         )
         db.add(new_plan)
         await db.flush()
-        new_plan.plan_json = {**new_plan.plan_json, "plan_id": str(new_plan.id)}
-        if run is not None:
-            run.plan_id = new_plan.id
+        revision_run = AgentRun(
+            issue_id=plan.issue_id,
+            plan_id=new_plan.id,
+            state=AgentRunState.WAIT_FOR_APPROVAL.value,
+            model_used=run.model_used if run else effective_settings(settings).model_name,
+        )
+        db.add(revision_run)
+        await db.flush()
+        new_plan.plan_json = {
+            **new_plan.plan_json,
+            "plan_id": str(new_plan.id),
+            "revision_parent_run_id": str(run.id) if run else None,
+            "revision_run_id": str(revision_run.id),
+        }
         await record_audit(
             db,
             actor_type="github",
@@ -399,7 +425,8 @@ async def _apply_authorized_command(
             metadata={
                 "instructions": _free_form_audit_metadata(instructions),
                 "new_plan_id": str(new_plan.id),
-                "run_id": str(run.id) if run else None,
+                "parent_run_id": str(run.id) if run else None,
+                "revision_run_id": str(revision_run.id),
             },
         )
         return
@@ -433,10 +460,24 @@ async def _process_workflow_run_event(
         )
         return "ignored"
 
-    pr = await db.scalar(
-        select(PullRequest)
-        .where(PullRequest.pr_number == normalized.pull_request_number)
-        .order_by(PullRequest.created_at.desc())
+    repository = await db.scalar(
+        select(Repository)
+        .join(Installation, Installation.id == Repository.installation_id)
+        .where(
+            Installation.github_installation_id == normalized.installation_id,
+            Repository.owner == normalized.repository_owner,
+            Repository.name == normalized.repository_name,
+        )
+    )
+    pr = (
+        await db.scalar(
+            select(PullRequest).where(
+                PullRequest.repository_id == repository.id,
+                PullRequest.pr_number == normalized.pull_request_number,
+            )
+        )
+        if repository is not None
+        else None
     )
     if pr is None:
         event.status = "ignored"
@@ -447,18 +488,56 @@ async def _process_workflow_run_event(
             action="workflow_run.unmatched",
             entity_type="github_event",
             entity_id=str(event.id),
-            metadata={"pr_number": normalized.pull_request_number},
+            metadata={
+                "pr_number": normalized.pull_request_number,
+                "repository": f"{normalized.repository_owner}/{normalized.repository_name}",
+            },
         )
         return "ignored"
 
     conclusion = normalized.conclusion if normalized.conclusion in {"success", "failure", "cancelled", "skipped"} else "failure"
+    log_text = normalized.log_excerpt
+    if conclusion != "success" and normalized.workflow_run_id is not None:
+        try:
+            log_evidence = await GitHubApiClient().fetch_workflow_logs(
+                installation_id=normalized.installation_id,
+                owner=normalized.repository_owner,
+                repo=normalized.repository_name,
+                run_id=normalized.workflow_run_id,
+            )
+            log_text = str(log_evidence.get("redacted_text_excerpt") or log_text)
+            await record_audit(
+                db,
+                actor_type="github",
+                actor_id=normalized.sender_login,
+                action="ci.workflow_logs_fetched",
+                entity_type="pull_request",
+                entity_id=str(pr.id),
+                metadata={
+                    "workflow_run_id": normalized.workflow_run_id,
+                    "sha256": log_evidence.get("sha256"),
+                    "byte_size": log_evidence.get("byte_size"),
+                },
+            )
+        except (GitHubIntegrationError, httpx.HTTPError) as exc:
+            await record_audit(
+                db,
+                actor_type="system",
+                action="ci.workflow_logs_unavailable",
+                entity_type="pull_request",
+                entity_id=str(pr.id),
+                metadata={
+                    "workflow_run_id": normalized.workflow_run_id,
+                    "error": redact_text(str(exc))[:300],
+                },
+            )
     await CIAnalyzer().analyze_pr(
         db,
         pr_id=pr.id,
         request=CIAnalysisRequest(
             workflow_name=normalized.workflow_name,
             conclusion=conclusion,
-            log_text=normalized.log_excerpt,
+            log_text=log_text,
         ),
     )
     event.status = "processed"

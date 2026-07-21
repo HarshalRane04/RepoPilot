@@ -1,11 +1,13 @@
 x-api-env: &api-env
   DATABASE_URL: postgresql+asyncpg://repopilot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/repopilot
   ALEMBIC_DATABASE_URL: postgresql+psycopg://repopilot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/repopilot
-  PYTHONPATH: /app/apps/api:/app/packages/shared_contracts:/app/packages/evals:/app/packages/policy_engine:/app/packages/llm_client:/app/packages/github_client
+  PYTHONPATH: /app:/app/apps/api:/app/packages/shared_contracts:/app/packages/evals:/app/packages/policy_engine:/app/packages/llm_client:/app/packages/github_client
   REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
   CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/1
   CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/2
   ENABLE_QUEUE_DISPATCH: "true"
+  WEBHOOK_DISPATCH_RETRY_INTERVAL_SECONDS: ${WEBHOOK_DISPATCH_RETRY_INTERVAL_SECONDS:-30}
+  WEBHOOK_DISPATCH_MAX_RETRIES: ${WEBHOOK_DISPATCH_MAX_RETRIES:-8}
   REPOPILOT_ENV: ${REPOPILOT_ENV:-local}
   REPOPILOT_RELEASE_PROFILE: ${REPOPILOT_RELEASE_PROFILE:-oss-demo}
   GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?set GITHUB_WEBHOOK_SECRET}
@@ -14,6 +16,7 @@ x-api-env: &api-env
   GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:-}
   GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
   GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+  REPOPILOT_GITHUB_OWNER_LOGIN: ${REPOPILOT_GITHUB_OWNER_LOGIN:-}
   GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
   GITHUB_PRIVATE_KEY: ${GITHUB_PRIVATE_KEY:-}
   GITHUB_PRIVATE_KEY_PATH: ${GITHUB_PRIVATE_KEY_PATH:-}
@@ -25,9 +28,13 @@ x-api-env: &api-env
   GITHUB_API_BASE_URL: ${GITHUB_API_BASE_URL:-https://api.github.com}
   GITHUB_WEB_BASE_URL: ${GITHUB_WEB_BASE_URL:-https://github.com}
   GITHUB_WRITES_ENABLED: ${GITHUB_WRITES_ENABLED:-false}
+  GITHUB_WORKFLOW_LOG_MAX_BYTES: ${GITHUB_WORKFLOW_LOG_MAX_BYTES:-25000000}
   SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?set SESSION_SECRET_KEY}
   DEV_HEADER_AUTH_ENABLED: ${DEV_HEADER_AUTH_ENABLED:-false}
   REPOPILOT_REPOSITORY_WORKSPACE_ROOT: ${REPOPILOT_REPOSITORY_WORKSPACE_ROOT:-/tmp/repopilot-repositories}
+  REPOPILOT_REPOSITORY_ARCHIVE_MAX_BYTES: ${REPOPILOT_REPOSITORY_ARCHIVE_MAX_BYTES:-100000000}
+  REPOPILOT_REPOSITORY_ARCHIVE_MAX_UNPACKED_BYTES: ${REPOPILOT_REPOSITORY_ARCHIVE_MAX_UNPACKED_BYTES:-500000000}
+  REPOPILOT_REPOSITORY_ARCHIVE_MAX_ENTRIES: ${REPOPILOT_REPOSITORY_ARCHIVE_MAX_ENTRIES:-20000}
   MODEL_PROVIDER: ${MODEL_PROVIDER:-mock}
   MODEL_NAME: ${MODEL_NAME:-mock-planner}
   MODEL_API_KEY: ${MODEL_API_KEY:-}
@@ -46,16 +53,21 @@ x-api-env: &api-env
   OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
   REPOPILOT_RUNTIME_SECRETS_KEY_PATH: ${REPOPILOT_RUNTIME_SECRETS_KEY_PATH:-/home/appuser/.repopilot/runtime-secrets.key}
   REPOPILOT_RUNTIME_SECRETS_STORE_PATH: ${REPOPILOT_RUNTIME_SECRETS_STORE_PATH:-/home/appuser/.repopilot/runtime-secrets.json}
-  SANDBOX_BACKEND: ${SANDBOX_BACKEND:-docker}
-  SANDBOX_DOCKER_IMAGE: ${REPOPILOT_SANDBOX_IMAGE:-ghcr.io/harshalrane04/repopilot-sandbox:${REPOPILOT_IMAGE_TAG:-latest}}
+  SANDBOX_BACKEND: remote
+  SANDBOX_RUNNER_SOCKET: ${SANDBOX_RUNNER_SOCKET:-/run/repopilot-sandbox/runner.sock}
+  SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:?set SANDBOX_RUNNER_TOKEN}
   SANDBOX_MEMORY_LIMIT: ${SANDBOX_MEMORY_LIMIT:-1g}
   SANDBOX_CPUS: ${SANDBOX_CPUS:-1.0}
   SANDBOX_PIDS_LIMIT: ${SANDBOX_PIDS_LIMIT:-256}
   SEMGREP_ENABLED: ${SEMGREP_ENABLED:-false}
   CODEQL_ENABLED: ${CODEQL_ENABLED:-false}
   DEPENDENCY_AUDIT_ENABLED: ${DEPENDENCY_AUDIT_ENABLED:-false}
+  REPOPILOT_SECURITY_SCANNER_EVIDENCE_PATH: /app/release-artifacts/security-scanner-snapshot.json
+  REPOPILOT_RELEASE_SOURCE_FINGERPRINT: ${REPOPILOT_RELEASE_SOURCE_FINGERPRINT:-}
   WORKSPACE_CLEANUP_MAX_AGE_SECONDS: ${WORKSPACE_CLEANUP_MAX_AGE_SECONDS:-86400}
   WORKSPACE_CLEANUP_INTERVAL_SECONDS: ${WORKSPACE_CLEANUP_INTERVAL_SECONDS:-3600}
+  REPOPILOT_RUN_ORCHESTRATION_RECONCILE_INTERVAL_SECONDS: ${REPOPILOT_RUN_ORCHESTRATION_RECONCILE_INTERVAL_SECONDS:-60}
+  REPOPILOT_RUN_ORCHESTRATION_STALE_SECONDS: ${REPOPILOT_RUN_ORCHESTRATION_STALE_SECONDS:-960}
   REPOPILOT_ARTIFACT_STORE_ROOT: ${REPOPILOT_ARTIFACT_STORE_ROOT:-/tmp/repopilot-artifacts}
   REPOPILOT_ARTIFACT_INLINE_MAX_BYTES: ${REPOPILOT_ARTIFACT_INLINE_MAX_BYTES:-12000}
   REPOPILOT_ARTIFACT_RETENTION_MAX_AGE_SECONDS: ${REPOPILOT_ARTIFACT_RETENTION_MAX_AGE_SECONDS:-2592000}
@@ -86,20 +98,54 @@ services:
       timeout: 3s
       retries: 10
 
+  storage-init:
+    image: ${REPOPILOT_SANDBOX_IMAGE:-ghcr.io/harshalrane04/repopilot-sandbox:${REPOPILOT_IMAGE_TAG:-latest}}
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        chown -R 10001:10001
+        /tmp/repopilot-agent-workspaces
+        /tmp/repopilot-repositories
+        /tmp/repopilot-artifacts
+        /run/repopilot-sandbox
+        && chmod 0700
+        /tmp/repopilot-agent-workspaces
+        /tmp/repopilot-repositories
+        /tmp/repopilot-artifacts
+        /run/repopilot-sandbox
+    network_mode: none
+    restart: "no"
+    volumes:
+      - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - repository_workspaces:/tmp/repopilot-repositories
+      - agent_artifacts:/tmp/repopilot-artifacts
+      - sandbox_control:/run/repopilot-sandbox
+
   api:
     image: ${REPOPILOT_API_IMAGE:-ghcr.io/harshalrane04/repopilot-api:${REPOPILOT_IMAGE_TAG:-latest}}
     environment:
       <<: *api-env
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
     volumes:
       - ./.local/repopilot-secrets:/home/appuser/.repopilot
+      - ./Docs/release-artifacts:/app/release-artifacts:ro
       - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - repository_workspaces:/tmp/repopilot-repositories
       - agent_artifacts:/tmp/repopilot-artifacts
+      - sandbox_control:/run/repopilot-sandbox:ro
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      sandbox-runner:
         condition: service_healthy
 
   worker:
@@ -110,11 +156,15 @@ services:
     volumes:
       - ./.local/repopilot-secrets:/home/appuser/.repopilot
       - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - repository_workspaces:/tmp/repopilot-repositories
       - agent_artifacts:/tmp/repopilot-artifacts
+      - sandbox_control:/run/repopilot-sandbox:ro
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      sandbox-runner:
         condition: service_healthy
 
   beat:
@@ -123,8 +173,13 @@ services:
       PYTHONPATH: /app/apps/api:/app/packages/shared_contracts:/app/packages/evals:/app/packages/policy_engine:/app/packages/llm_client:/app/packages/github_client
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/2
+      ENABLE_QUEUE_DISPATCH: "true"
+      WEBHOOK_DISPATCH_RETRY_INTERVAL_SECONDS: ${WEBHOOK_DISPATCH_RETRY_INTERVAL_SECONDS:-30}
+      WEBHOOK_DISPATCH_MAX_RETRIES: ${WEBHOOK_DISPATCH_MAX_RETRIES:-8}
       WORKSPACE_CLEANUP_MAX_AGE_SECONDS: ${WORKSPACE_CLEANUP_MAX_AGE_SECONDS:-86400}
       WORKSPACE_CLEANUP_INTERVAL_SECONDS: ${WORKSPACE_CLEANUP_INTERVAL_SECONDS:-3600}
+      REPOPILOT_RUN_ORCHESTRATION_RECONCILE_INTERVAL_SECONDS: ${REPOPILOT_RUN_ORCHESTRATION_RECONCILE_INTERVAL_SECONDS:-60}
+      REPOPILOT_RUN_ORCHESTRATION_STALE_SECONDS: ${REPOPILOT_RUN_ORCHESTRATION_STALE_SECONDS:-960}
       REPOPILOT_ARTIFACT_STORE_ROOT: ${REPOPILOT_ARTIFACT_STORE_ROOT:-/tmp/repopilot-artifacts}
       REPOPILOT_ARTIFACT_RETENTION_MAX_AGE_SECONDS: ${REPOPILOT_ARTIFACT_RETENTION_MAX_AGE_SECONDS:-2592000}
       REPOPILOT_ARTIFACT_RETENTION_INTERVAL_SECONDS: ${REPOPILOT_ARTIFACT_RETENTION_INTERVAL_SECONDS:-86400}
@@ -139,6 +194,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
 
   web:
     image: ${REPOPILOT_WEB_IMAGE:-ghcr.io/harshalrane04/repopilot-web:${REPOPILOT_IMAGE_TAG:-latest}}
@@ -147,15 +204,36 @@ services:
     ports:
       - "3001:3000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
-  sandbox-image:
+  sandbox-runner:
     image: ${REPOPILOT_SANDBOX_IMAGE:-ghcr.io/harshalrane04/repopilot-sandbox:${REPOPILOT_IMAGE_TAG:-latest}}
-    profiles:
-      - tools
-    command: python --version
+    environment:
+      SANDBOX_RUNNER_SOCKET: ${SANDBOX_RUNNER_SOCKET:-/run/repopilot-sandbox/runner.sock}
+      SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:?set SANDBOX_RUNNER_TOKEN}
+      SANDBOX_RUNNER_MAX_CONCURRENCY: "1"
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: ${SANDBOX_PIDS_LIMIT:-256}
+    mem_limit: ${SANDBOX_MEMORY_LIMIT:-1g}
+    cpus: ${SANDBOX_CPUS:-1.0}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=10001,gid=10001,mode=1770
+    volumes:
+      - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - sandbox_control:/run/repopilot-sandbox
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:
   agent_workspaces:
+  repository_workspaces:
   agent_artifacts:
+  sandbox_control:

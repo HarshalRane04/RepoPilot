@@ -74,7 +74,9 @@ def create_database(target: MigrationVerificationTarget) -> None:
     engine = create_engine(target.admin_url, isolation_level="AUTOCOMMIT")
     try:
         with engine.connect() as connection:
-            connection.execute(text(f"CREATE DATABASE {quoted_database_name(target.database_name)}"))
+            # PostgreSQL identifiers cannot be bind parameters. quoted_database_name first enforces a strict
+            # identifier allowlist and then quotes the value, so this is not derived from free-form SQL input.
+            connection.execute(text(f"CREATE DATABASE {quoted_database_name(target.database_name)}"))  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     finally:
         engine.dispose()
 
@@ -91,7 +93,8 @@ def drop_database(target: MigrationVerificationTarget) -> None:
                 ),
                 {"database_name": target.database_name},
             )
-            connection.execute(text(f"DROP DATABASE IF EXISTS {quoted_database_name(target.database_name)}"))
+            # See create_database: the interpolated identifier is allowlisted and quoted, never free-form SQL.
+            connection.execute(text(f"DROP DATABASE IF EXISTS {quoted_database_name(target.database_name)}"))  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     finally:
         engine.dispose()
 

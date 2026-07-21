@@ -9,8 +9,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-REQUIRED_SERVICES = {"api", "web", "worker", "beat", "postgres", "redis"}
-REQUIRED_VOLUMES = {"postgres_data", "agent_workspaces", "agent_artifacts", "web_node_modules", "web_next"}
+REQUIRED_SERVICES = {"api", "web", "worker", "beat", "postgres", "redis", "storage-init", "sandbox-runner"}
+REQUIRED_VOLUMES = {
+    "postgres_data",
+    "agent_workspaces",
+    "repository_workspaces",
+    "agent_artifacts",
+    "sandbox_control",
+    "web_node_modules",
+    "web_next",
+}
 REQUIRED_ENV_KEYS = {
     "POSTGRES_PASSWORD",
     "REDIS_PASSWORD",
@@ -20,15 +28,26 @@ REQUIRED_ENV_KEYS = {
     "GITHUB_INSTALLATION_ID",
     "GITHUB_CLIENT_ID",
     "GITHUB_CLIENT_SECRET",
+    "REPOPILOT_GITHUB_OWNER_LOGIN",
     "REPOPILOT_IMAGE_TAG",
     "REPOPILOT_API_IMAGE",
     "REPOPILOT_WEB_IMAGE",
     "REPOPILOT_SANDBOX_IMAGE",
+    "SANDBOX_RUNNER_SOCKET",
+    "SANDBOX_RUNNER_TOKEN",
     "MODEL_PROVIDER",
     "MODEL_NAME",
     "MODEL_API_KEY",
     "EMBEDDING_SOURCE_TRANSFER_ENABLED",
     "GITHUB_WRITES_ENABLED",
+    "GITHUB_WORKFLOW_LOG_MAX_BYTES",
+    "WEBHOOK_DISPATCH_RETRY_INTERVAL_SECONDS",
+    "WEBHOOK_DISPATCH_MAX_RETRIES",
+    "REPOPILOT_RUN_ORCHESTRATION_RECONCILE_INTERVAL_SECONDS",
+    "REPOPILOT_RUN_ORCHESTRATION_STALE_SECONDS",
+    "REPOPILOT_REPOSITORY_ARCHIVE_MAX_BYTES",
+    "REPOPILOT_REPOSITORY_ARCHIVE_MAX_UNPACKED_BYTES",
+    "REPOPILOT_REPOSITORY_ARCHIVE_MAX_ENTRIES",
     "REPOPILOT_ARTIFACT_STORE_ROOT",
     "REPOPILOT_RUNTIME_SECRETS_KEY_PATH",
     "REPOPILOT_RUNTIME_SECRETS_STORE_PATH",
@@ -134,7 +153,7 @@ class DeploymentValidator:
             report.findings.append(DeploymentFinding(check="compose_service", status="failed", target=service, detail="Required Compose service is missing."))
         for volume in sorted(REQUIRED_VOLUMES.difference(volumes)):
             report.findings.append(DeploymentFinding(check="compose_volume", status="failed", target=volume, detail="Required Compose volume is missing."))
-        for service in ["postgres", "redis"]:
+        for service in ["postgres", "redis", "api"]:
             if not self.service_block(compose, service) or "healthcheck:" not in self.service_block(compose, service):
                 report.findings.append(DeploymentFinding(check="compose_healthcheck", status="failed", target=service, detail="Service needs a healthcheck."))
         for service in ["api", "worker", "beat"]:
@@ -152,6 +171,11 @@ class DeploymentValidator:
                         detail="Service must mount the repo-local encrypted runtime secret store.",
                     )
                 )
+            if service in {"api", "worker"}:
+                if "repository_workspaces:" not in block:
+                    report.findings.append(DeploymentFinding(check="compose_repository_volume", status="failed", target=service, detail="Service must mount canonical repository workspaces."))
+                if "sandbox_control:" not in block:
+                    report.findings.append(DeploymentFinding(check="compose_sandbox_control", status="failed", target=service, detail="Service must mount the sandbox Unix-socket control volume."))
             for env_key in ["REPOPILOT_RUNTIME_SECRETS_KEY_PATH", "REPOPILOT_RUNTIME_SECRETS_STORE_PATH"]:
                 if env_key not in block:
                     report.findings.append(
@@ -162,6 +186,38 @@ class DeploymentValidator:
                             detail="Service must use the mounted runtime secret store path.",
                         )
                     )
+
+        sandbox = self.service_block(compose, "sandbox-runner")
+        sandbox_requirements = {
+            "network_mode: none": "Sandbox runner must have no network namespace access.",
+            "read_only: true": "Sandbox runner root filesystem must be read-only.",
+            "cap_drop:": "Sandbox runner must drop Linux capabilities.",
+            "no-new-privileges:true": "Sandbox runner must disable privilege escalation.",
+            "pids_limit:": "Sandbox runner must enforce a process limit.",
+            "agent_workspaces:": "Sandbox runner must mount only bounded run workspaces.",
+            "sandbox_control:": "Sandbox runner must expose its Unix socket through the control volume.",
+        }
+        for phrase, detail in sandbox_requirements.items():
+            if phrase not in sandbox:
+                report.findings.append(DeploymentFinding(check="compose_sandbox_boundary", status="failed", target=phrase, detail=detail))
+        storage_init = self.service_block(compose, "storage-init")
+        for phrase in [
+            'user: "0:0"',
+            "network_mode: none",
+            "chown -R 10001:10001",
+            "repository_workspaces:",
+            "agent_artifacts:",
+            "sandbox_control:",
+        ]:
+            if phrase not in storage_init:
+                report.findings.append(
+                    DeploymentFinding(
+                        check="compose_storage_init",
+                        status="failed",
+                        target=phrase,
+                        detail="Storage initializer must prepare named volumes for the non-root runtime.",
+                    )
+                )
 
     def validate_ghcr_compose(self, report: DeploymentValidationReport) -> None:
         compose = self.read_file("docker-compose.ghcr.yml", report, check="ghcr_compose_file")
@@ -188,6 +244,28 @@ class DeploymentValidator:
         for phrase, detail in forbidden_phrases.items():
             if phrase in compose:
                 report.findings.append(DeploymentFinding(check="ghcr_compose_release_boundary", status="failed", target=phrase, detail=detail))
+        sandbox = self.service_block(compose, "sandbox-runner")
+        for phrase in ["network_mode: none", "read_only: true", "cap_drop:", "no-new-privileges:true", "sandbox_control:"]:
+            if phrase not in sandbox:
+                report.findings.append(
+                    DeploymentFinding(
+                        check="ghcr_sandbox_boundary",
+                        status="failed",
+                        target=phrase,
+                        detail="Released-image sandbox runner is missing a required isolation control.",
+                    )
+                )
+        storage_init = self.service_block(compose, "storage-init")
+        for phrase in ['user: "0:0"', "network_mode: none", "chown -R 10001:10001", "repository_workspaces:"]:
+            if phrase not in storage_init:
+                report.findings.append(
+                    DeploymentFinding(
+                        check="ghcr_storage_init",
+                        status="failed",
+                        target=phrase,
+                        detail="Released-image storage initializer must prepare non-root named volumes.",
+                    )
+                )
 
     def validate_env_example(self, report: DeploymentValidationReport) -> None:
         env_text = self.read_file(".env.example", report, check="env_example")
@@ -244,7 +322,7 @@ class DeploymentValidator:
                 )
 
     def validate_runtime(self, report: DeploymentValidationReport) -> None:
-        for name, url in {"api_health": "http://127.0.0.1:8000/health", "web": "http://127.0.0.1:3001/"}.items():
+        for name, url in {"api_ready": "http://127.0.0.1:8000/ready", "web": "http://127.0.0.1:3001/"}.items():
             try:
                 status = self.probe_http_status(url)
                 if status >= 400:

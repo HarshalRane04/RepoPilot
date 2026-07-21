@@ -1,10 +1,3 @@
-export type HealthResponse = {
-  status: string;
-  service: string;
-  environment: string;
-  timestamp: string;
-};
-
 export type SessionResponse = {
   username: string;
   role: string;
@@ -13,31 +6,15 @@ export type SessionResponse = {
   email?: string | null;
 };
 
-export type MetricsResponse = {
-  repositories: number;
-  agent_runs: number;
-  open_pull_requests: number;
-  security_findings: number;
-  blocking_security_findings: number;
-  passed_validations: number;
-  ready_for_review_prs: number;
-  eval_runs: number;
-  ci_total_prs: number;
-  ci_successful_prs: number;
-  ci_failed_prs: number;
-  ci_pass_rate: number;
-  ci_first_run_pass_count: number;
-  ci_first_run_ci_pass_rate: number;
-  ci_revision_fixup_attempts: number;
-  ci_revised_pr_count: number;
-  ci_pass_after_revision_count: number;
-  ci_pass_after_revision_rate: number;
-  ci_average_fixup_attempts_per_revised_pr: number;
-};
-
 export type RepositoryResponse = {
   id: string;
+  canonical_id?: string;
+  alias_ids?: string[];
   installation_id?: string;
+  installation_ids?: string[];
+  source_mode?: "github_app" | "oauth_discovery";
+  source_modes?: Array<"github_app" | "oauth_discovery">;
+  acquirable?: boolean;
   owner: string;
   name: string;
   default_branch: string;
@@ -69,6 +46,35 @@ export type ActivityItem = {
   metadata: Record<string, unknown>;
 };
 
+export type AuditLogItem = {
+  id: string;
+  actor_type: "user" | "agent" | "system" | "github";
+  actor_id: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  result: string;
+  risk_score: number | null;
+  created_at: string;
+  metadata: Record<string, unknown>;
+};
+
+export type AuditLogPage = {
+  items: AuditLogItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+  is_complete: boolean;
+};
+
+export type ActivitySummaryResponse = {
+  plans_approved: number;
+  pull_request_records: number;
+  agent_runs: number;
+  reviewed_security_findings: number;
+};
+
 export type RunSummary = {
   id: string;
   issue_id: string | null;
@@ -77,6 +83,7 @@ export type RunSummary = {
   model_used: string | null;
   total_tokens: number;
   total_cost: number;
+  cost_currency?: "USD";
   started_at: string;
   completed_at: string | null;
   latest_step: string | null;
@@ -84,11 +91,36 @@ export type RunSummary = {
   validation_statuses: string[];
 };
 
-export type WebhookEvent = {
+export type AgentRunDetailResponse = {
   id: string;
-  event_type: string;
-  status: string;
-  received_at: string;
+  issue_id: string | null;
+  plan_id: string | null;
+  state: string;
+  model_used: string | null;
+  total_tokens: number;
+  total_cost: number;
+  cost_currency?: "USD";
+  started_at: string;
+  completed_at: string | null;
+  steps: Array<{
+    id: string;
+    step_name: string;
+    status: string;
+    output_json: Record<string, unknown> | null;
+    error: string | null;
+    created_at: string;
+  }>;
+  validation_results: Array<{
+    id: string;
+    command: string;
+    status: string;
+    duration_ms: number | null;
+    parsed_summary: string | null;
+    log_uri?: string | null;
+    evidence_hash?: string | null;
+    patch_hash?: string | null;
+    sandbox_backend?: string | null;
+  }>;
 };
 
 export type EvalReport = {
@@ -123,10 +155,15 @@ export type ReadinessResponse = {
 
 export type InstallationResponse = {
   id: string;
+  canonical_id?: string;
+  alias_ids?: string[];
   github_installation_id: string;
+  github_installation_ids?: string[];
   account_name: string;
   repository_count: number;
   created_at: string;
+  source_mode?: "github_app" | "oauth_discovery";
+  source_modes?: Array<"github_app" | "oauth_discovery">;
 };
 
 export type IssueResponse = {
@@ -134,6 +171,7 @@ export type IssueResponse = {
   repository_id: string;
   number: number;
   title: string;
+  body_text?: string | null;
   issue_type: string | null;
   complexity: string | null;
   risk_score: number;
@@ -145,16 +183,65 @@ export type IssueResponse = {
     approval_status: string;
     version: number;
     approved_at: string | null;
-    plan: Record<string, unknown>;
+    plan: ImplementationPlanPayload;
   };
   run?: {
     id: string;
     state: string;
     total_tokens: number;
     total_cost: number;
+    cost_currency?: "USD";
     started_at: string;
     completed_at: string | null;
   };
+};
+
+export type ImplementationPlanPayload = {
+  summary?: string | null;
+  files_to_inspect?: string[];
+  files_to_modify?: string[];
+  tests_to_add?: string[];
+  commands_to_run?: string[];
+  intended_changes?: string[];
+  validation_strategy?: string[];
+  assumptions?: string[];
+  context_citations?: string[];
+  risk_notes?: string[];
+  rollback_plan?: string | null;
+  policy_decision?: unknown;
+  approval_policy_decision?: unknown;
+  requires_human_approval?: boolean;
+  plan_hash?: string | null;
+  approved_plan_hash?: string | null;
+  [key: string]: unknown;
+};
+
+export type PromptSubmitPayload = {
+  repository_id?: string;
+  title: string;
+  prompt: string;
+  auto_plan: boolean;
+};
+
+export type PromptSubmitResponse = {
+  status: string;
+  issue: {
+    id: string;
+    number: number;
+    title: string;
+    status: string;
+    risk_score: number;
+    issue_type: string | null;
+  };
+  run: {
+    id: string;
+    state: string;
+  };
+  plan: {
+    plan_id: string;
+    run_id: string;
+    plan: ImplementationPlanPayload;
+  } | null;
 };
 
 export type PullRequestSummary = {
@@ -190,7 +277,9 @@ export type PullRequestSummary = {
     tests_to_add: string[];
     risk_notes: string[];
   } | null;
+  current_patch_hash: string | null;
   changed_files: string[];
+  planned_files: string[];
   validation_results: Array<{
     command: string;
     status: string;
@@ -198,7 +287,18 @@ export type PullRequestSummary = {
     parsed_summary: string | null;
     log_uri?: string | null;
     evidence_hash?: string | null;
+    patch_hash?: string | null;
+    sandbox_backend?: string | null;
   }>;
+  validation_evidence?: {
+    status: "not_run" | "pending" | "passed" | "failed" | "incomplete" | "unknown";
+    patch_hash: string | null;
+    total: number;
+    passed: number;
+    failed: number;
+    pending: number;
+    incomplete: number;
+  };
   security_findings: Array<{
     tool: string;
     severity: string;
@@ -206,7 +306,17 @@ export type PullRequestSummary = {
     description: string;
     status: string;
     status_reason?: string | null;
+    patch_hash?: string | null;
   }>;
+  security_scan?: {
+    status: "not_run" | "pending" | "passed" | "failed" | "incomplete" | "unknown";
+    completed: boolean;
+    patch_hash: string | null;
+    finding_count: number;
+    scanned_files: number | null;
+    completed_at: string | null;
+    sources: string[];
+  };
 };
 
 export type SecurityFindingResponse = {
@@ -255,6 +365,8 @@ export type PolicyResponse = {
   high_risk_patterns: string[];
   allowed_commands: string[];
   blocked_command_fragments: string[];
+  max_cost_per_run: number;
+  cost_currency: "USD";
 };
 
 export type GitHubLoginResponse = {
@@ -299,6 +411,8 @@ export type ModelCatalogModel = {
   reasoning_levels: string[];
   is_free?: boolean;
   pricing?: Partial<Record<"prompt" | "completion" | "request" | "image" | "web_search", string>>;
+  pricing_currency?: "USD";
+  pricing_unit?: "token";
 };
 
 export type ModelCatalogProvider = {
@@ -321,6 +435,7 @@ export type ModelProviderConfigStatus = {
   model: string;
   model_configured: boolean;
   api_key_configured: boolean;
+  configured_api_key_providers: string[];
   base_url: string | null;
   reasoning_level: string | null;
   reasoning_levels: string[];
@@ -328,7 +443,8 @@ export type ModelProviderConfigStatus = {
   docs_url: string | null;
   verified: boolean;
   verified_at: string | null;
-  status: "configured" | "missing";
+  status: "configured" | "missing" | "unavailable";
+  catalog_available: boolean;
   summary: GitHubOAuthConfigStatus;
 };
 
@@ -341,21 +457,16 @@ export type ModelProviderVerificationResponse = {
   latency_ms: number;
 };
 
-export type HealthView = Partial<HealthResponse> & {
-  ok: boolean;
-};
-
 export type OperatorData = {
-  health: HealthView;
   session: SessionResponse | null;
-  metrics: MetricsResponse | null;
-  events: WebhookEvent[];
   repositories: RepositoryResponse[];
   installations: InstallationResponse[];
   issues: IssueResponse[];
   pullRequests: PullRequestSummary[];
   securityFindings: SecurityFindingResponse[];
   activities: ActivityItem[];
+  auditLogPage: AuditLogPage | null;
+  activitySummary: ActivitySummaryResponse | null;
   runs: RunSummary[];
   evalReports: EvalReport[];
   readiness: ReadinessResponse | null;
@@ -366,86 +477,90 @@ export type OperatorData = {
   modelConfig: ModelProviderConfigStatus | null;
 };
 
-export async function getDashboardData(): Promise<OperatorData> {
+export const INITIAL_DASHBOARD_REQUEST_PATHS = {
+  session: "/auth/session",
+  repositories: "/repos",
+  installations: "/installations",
+  issues: "/issues?limit=300",
+  pullRequests: "/prs?limit=200",
+  securityFindings: "/security/findings?limit=300",
+  activities: "/activity?limit=20",
+  activitySummary: "/activity/summary",
+  runs: "/runs?limit=80",
+  evalReports: "/evals/reports",
+  readiness: "/settings/readiness",
+  policy: "/settings/policy",
+  githubOAuthConfig: "/settings/github/oauth",
+  githubAppConfig: "/settings/github/app",
+  modelConfig: "/settings/models/config"
+} as const;
+
+export async function getDashboardData(cookieHeader?: string): Promise<OperatorData> {
   const [
-    health,
     session,
-    metrics,
-    events,
     repositories,
     installations,
     issues,
     pullRequests,
     securityFindings,
     activities,
+    activitySummary,
     runs,
     evals,
     readiness,
     policy,
     githubOAuthConfig,
     githubAppConfig,
-    modelCatalog,
     modelConfig
   ] = await Promise.all([
-    getApiHealth(),
-    safeFetch<SessionResponse>("/auth/session"),
-    safeFetch<MetricsResponse>("/metrics/overview"),
-    safeFetch<WebhookEvent[]>("/webhooks/events"),
-    safeFetch<RepositoryResponse[]>("/repos"),
-    safeFetch<InstallationResponse[]>("/installations"),
-    safeFetch<IssueResponse[]>("/issues?limit=300"),
-    safeFetch<PullRequestSummary[]>("/prs?limit=200"),
-    safeFetch<SecurityFindingResponse[]>("/security/findings?limit=300"),
-    safeFetch<ActivityItem[]>("/activity?limit=160"),
-    safeFetch<RunSummary[]>("/runs?limit=80"),
-    safeFetch<{ reports: EvalReport[] }>("/evals/reports"),
-    safeFetch<ReadinessResponse>("/settings/readiness"),
-    safeFetch<PolicyResponse>("/settings/policy"),
-    safeFetch<GitHubOAuthConfigStatus>("/settings/github/oauth"),
-    safeFetch<GitHubAppConfigStatus>("/settings/github/app"),
-    safeFetch<ModelCatalogResponse>("/settings/models/catalog"),
-    safeFetch<ModelProviderConfigStatus>("/settings/models/config")
+    safeFetch<SessionResponse>(INITIAL_DASHBOARD_REQUEST_PATHS.session, cookieHeader),
+    safeFetch<RepositoryResponse[]>(INITIAL_DASHBOARD_REQUEST_PATHS.repositories, cookieHeader),
+    safeFetch<InstallationResponse[]>(INITIAL_DASHBOARD_REQUEST_PATHS.installations, cookieHeader),
+    safeFetch<IssueResponse[]>(INITIAL_DASHBOARD_REQUEST_PATHS.issues, cookieHeader),
+    safeFetch<PullRequestSummary[]>(INITIAL_DASHBOARD_REQUEST_PATHS.pullRequests, cookieHeader),
+    safeFetch<SecurityFindingResponse[]>(INITIAL_DASHBOARD_REQUEST_PATHS.securityFindings, cookieHeader),
+    safeFetch<ActivityItem[]>(INITIAL_DASHBOARD_REQUEST_PATHS.activities, cookieHeader),
+    safeFetch<ActivitySummaryResponse>(INITIAL_DASHBOARD_REQUEST_PATHS.activitySummary, cookieHeader),
+    safeFetch<RunSummary[]>(INITIAL_DASHBOARD_REQUEST_PATHS.runs, cookieHeader),
+    safeFetch<{ reports: EvalReport[] }>(INITIAL_DASHBOARD_REQUEST_PATHS.evalReports, cookieHeader),
+    safeFetch<ReadinessResponse>(INITIAL_DASHBOARD_REQUEST_PATHS.readiness, cookieHeader),
+    safeFetch<PolicyResponse>(INITIAL_DASHBOARD_REQUEST_PATHS.policy, cookieHeader),
+    safeFetch<GitHubOAuthConfigStatus>(INITIAL_DASHBOARD_REQUEST_PATHS.githubOAuthConfig, cookieHeader),
+    safeFetch<GitHubAppConfigStatus>(INITIAL_DASHBOARD_REQUEST_PATHS.githubAppConfig, cookieHeader),
+    safeFetch<ModelProviderConfigStatus>(INITIAL_DASHBOARD_REQUEST_PATHS.modelConfig, cookieHeader)
   ]);
 
   return {
-    health,
     session,
-    metrics,
-    events: events ?? [],
     repositories: repositories ?? [],
     installations: installations ?? [],
     issues: issues ?? [],
     pullRequests: pullRequests ?? [],
     securityFindings: securityFindings ?? [],
     activities: activities ?? [],
+    auditLogPage: null,
+    activitySummary,
     runs: runs ?? [],
     evalReports: evals?.reports ?? [],
     readiness,
     policy,
     githubOAuthConfig,
     githubAppConfig,
-    modelCatalog,
+    modelCatalog: null,
     modelConfig
   };
-}
-
-async function getApiHealth(): Promise<HealthView> {
-  const data = await safeFetch<HealthResponse>("/health");
-  if (!data) {
-    return { ok: false };
-  }
-  return { ...data, ok: data.status === "ok" };
 }
 
 export function publicApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 }
 
-async function safeFetch<T>(path: string): Promise<T | null> {
+async function safeFetch<T>(path: string, cookieHeader?: string): Promise<T | null> {
   for (const baseUrl of apiBaseUrls()) {
     try {
       const response = await fetch(`${baseUrl}${path}`, {
         cache: "no-store",
+        headers: cookieHeader ? { cookie: cookieHeader } : undefined,
         next: { revalidate: 0 }
       });
 

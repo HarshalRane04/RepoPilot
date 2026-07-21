@@ -31,7 +31,7 @@ class User(Base, TimestampMixin):
     github_user_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     username: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str | None] = mapped_column(String(320))
-    role: Mapped[str] = mapped_column(String(64), default="owner", nullable=False)
+    role: Mapped[str] = mapped_column(String(64), default="viewer", nullable=False)
 
 
 class Installation(Base, TimestampMixin):
@@ -89,6 +89,10 @@ class GitHubEvent(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(64), default="received", nullable=False)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    enqueued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
 
 
 class Issue(Base, TimestampMixin):
@@ -176,9 +180,11 @@ class Branch(Base, TimestampMixin):
 
 class PullRequest(Base, TimestampMixin):
     __tablename__ = "pull_requests"
+    __table_args__ = (UniqueConstraint("repository_id", "pr_number", name="uq_pull_requests_repository_number"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pk)
     run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False)
+    repository_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("repositories.id", ondelete="CASCADE"))
     pr_number: Mapped[int] = mapped_column(Integer, nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(64), default="draft", nullable=False)
@@ -186,7 +192,7 @@ class PullRequest(Base, TimestampMixin):
     risk_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
-class ValidationResult(Base):
+class ValidationResult(Base, TimestampMixin):
     __tablename__ = "validation_results"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pk)
@@ -196,6 +202,8 @@ class ValidationResult(Base):
     duration_ms: Mapped[int | None] = mapped_column(Integer)
     log_uri: Mapped[str | None] = mapped_column(Text)
     evidence_hash: Mapped[str | None] = mapped_column(String(128))
+    patch_hash: Mapped[str | None] = mapped_column(String(64))
+    sandbox_backend: Mapped[str | None] = mapped_column(String(64))
     parsed_summary: Mapped[str | None] = mapped_column(Text)
 
 
@@ -212,13 +220,15 @@ class ArtifactRecord(Base, TimestampMixin):
     byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
     content_type: Mapped[str] = mapped_column(String(255), default="application/octet-stream", nullable=False)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class SecurityFinding(Base):
+class SecurityFinding(Base, TimestampMixin):
     __tablename__ = "security_findings"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pk)
     run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False)
+    patch_hash: Mapped[str | None] = mapped_column(String(64))
     tool: Mapped[str] = mapped_column(String(128), nullable=False)
     severity: Mapped[str] = mapped_column(String(64), nullable=False)
     file_path: Mapped[str | None] = mapped_column(Text)

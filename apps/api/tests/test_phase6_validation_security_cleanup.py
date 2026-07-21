@@ -16,7 +16,7 @@ from app.api.routes.security import (
     update_security_finding_status,
 )
 from app.core.config import settings
-from app.db.models import AgentRun, ArtifactRecord, Issue, Repository, SecurityFinding, ValidationResult
+from app.db.models import AgentRun, AgentStep, ArtifactRecord, Issue, Repository, SecurityFinding, ValidationResult
 from app.services.auth import CurrentUser
 from app.services.security_scanner import SecurityScanner
 from app.services.tools.registry import _persist_validation_result
@@ -45,15 +45,21 @@ class FakeDb:
         self.commits += 1
 
     async def execute(self, _statement):
+        entity = None
+        descriptions = getattr(_statement, "column_descriptions", None)
+        if descriptions:
+            entity = descriptions[0].get("entity")
+        selected = [item for item in self.items.values() if entity is not None and isinstance(item, entity)]
+
         class EmptyResult:
             def scalars(self):
                 return self
 
             def first(self):
-                return None
+                return selected[0] if selected else None
 
             def all(self):
-                return []
+                return selected
 
         return EmptyResult()
 
@@ -145,7 +151,14 @@ def test_codeql_sarif_ingestion_persists_high_finding() -> None:
     import asyncio
 
     run = AgentRun(id=uuid4(), issue_id=None, state="RUN_SECURITY_CHECKS")
-    db = FakeDb(run=run)
+    patch_hash = "a" * 64
+    patch_step = AgentStep(
+        run_id=run.id,
+        step_name="IMPLEMENT_PATCH",
+        output_json={"patch_hash": patch_hash, "diff": "diff --git a/app/routes/files.py b/app/routes/files.py"},
+        status="succeeded",
+    )
+    db = FakeDb(run=run, patch_step=patch_step)
     sarif = {
         "version": "2.1.0",
         "runs": [
@@ -186,6 +199,7 @@ def test_codeql_sarif_ingestion_persists_high_finding() -> None:
     assert result.scanned_files == 1
     finding = next(item for item in db.added if isinstance(item, SecurityFinding))
     assert finding.tool == "codeql"
+    assert finding.patch_hash == patch_hash
     assert finding.severity == "high"
     assert finding.file_path == "app/routes/files.py"
     assert "py/path-injection" in finding.description
@@ -196,7 +210,14 @@ def test_codeql_alert_ingestion_persists_critical_finding() -> None:
     import asyncio
 
     run = AgentRun(id=uuid4(), issue_id=None, state="RUN_SECURITY_CHECKS")
-    db = FakeDb(run=run)
+    patch_hash = "b" * 64
+    patch_step = AgentStep(
+        run_id=run.id,
+        step_name="IMPLEMENT_PATCH",
+        output_json={"patch_hash": patch_hash, "diff": "diff --git a/apps/web/app/page.tsx b/apps/web/app/page.tsx"},
+        status="succeeded",
+    )
+    db = FakeDb(run=run, patch_step=patch_step)
     alerts = [
         {
             "state": "open",
@@ -214,6 +235,7 @@ def test_codeql_alert_ingestion_persists_critical_finding() -> None:
     assert result.status == ValidationStatus.FAILED
     finding = next(item for item in db.added if isinstance(item, SecurityFinding))
     assert finding.tool == "codeql"
+    assert finding.patch_hash == patch_hash
     assert finding.severity == "critical"
     assert finding.file_path == "apps/web/app/page.tsx"
     assert any(getattr(item, "step_name", "") == "CODEQL_ALERT_FETCH" for item in db.added)

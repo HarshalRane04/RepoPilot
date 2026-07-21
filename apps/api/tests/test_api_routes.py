@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
+from app.services.model_provider_verification import ModelProviderVerificationResult
 from app.services.runtime_secrets import runtime_secret_store
 from app.services.security_envelope import rate_limiter
 
@@ -25,6 +26,8 @@ def isolate_runtime_secret_store(monkeypatch, tmp_path) -> None:
 def enable_dev_header_auth(monkeypatch) -> None:
     monkeypatch.setattr(settings, "dev_header_auth_enabled", True)
     monkeypatch.setattr(settings, "environment", "local")
+    monkeypatch.setattr(settings, "github_writes_enabled", False)
+    monkeypatch.setattr(settings, "github_write_smoke_verified_at", None)
 
 
 def authenticated(headers: dict[str, str] | None = None) -> dict[str, str]:
@@ -53,6 +56,18 @@ def test_protected_route_requires_authenticated_user(monkeypatch) -> None:
     assert response.status_code == 401
 
 
+def test_runtime_policy_exposes_cost_limit_with_explicit_currency(monkeypatch) -> None:
+    enable_dev_header_auth(monkeypatch)
+    monkeypatch.setattr(settings, "max_cost_per_run", 7.25)
+    client = TestClient(app)
+
+    response = client.get("/settings/policy", headers=authenticated())
+
+    assert response.status_code == 200
+    assert response.json()["max_cost_per_run"] == 7.25
+    assert response.json()["cost_currency"] == "USD"
+
+
 def test_operator_data_routes_require_authenticated_user(monkeypatch) -> None:
     monkeypatch.setattr(settings, "dev_header_auth_enabled", False)
     client = TestClient(app)
@@ -61,6 +76,8 @@ def test_operator_data_routes_require_authenticated_user(monkeypatch) -> None:
 
     requests = [
         ("get", "/repos", None),
+        ("get", "/installations", None),
+        ("get", f"/repos/{uuid4()}", None),
         ("get", f"/repos/{uuid4()}/issues", None),
         ("get", "/issues", None),
         ("get", f"/issues/{issue_id}", None),
@@ -69,6 +86,8 @@ def test_operator_data_routes_require_authenticated_user(monkeypatch) -> None:
         ("get", "/prs", None),
         ("get", f"/prs/{pr_id}/summary", None),
         ("get", "/evals/reports", None),
+        ("get", "/activity/audit", None),
+        ("get", "/activity/summary", None),
     ]
 
     for method, path, json_body in requests:
@@ -140,6 +159,7 @@ def test_github_oauth_config_save_is_encrypted_and_used(monkeypatch, tmp_path) -
     payload = {
         "github_client_id": "runtime-client",
         "github_client_secret": "runtime-secret-value",
+        "github_owner_login": "harshalrane",
         "session_secret_key": "runtime-session-secret-0123456789abcdef0123456789abcdef",
         "github_oauth_callback_url": "http://localhost:8000/auth/github/callback",
         "web_app_url": "http://127.0.0.1:3001",
@@ -169,6 +189,45 @@ def test_github_oauth_config_save_is_encrypted_and_used(monkeypatch, tmp_path) -
     assert params["redirect_uri"] == ["http://localhost:8000/auth/github/callback"]
 
 
+def test_github_oauth_config_partial_update_preserves_saved_secrets(monkeypatch, tmp_path) -> None:
+    isolate_runtime_secret_store(monkeypatch, tmp_path)
+    enable_dev_header_auth(monkeypatch)
+    runtime_secret_store().save_values(
+        {
+            "GITHUB_CLIENT_ID": "saved-client",
+            "GITHUB_CLIENT_SECRET": "saved-secret-value",
+            "SESSION_SECRET_KEY": "saved-session-secret-0123456789abcdef0123456789abcdef",
+            "GITHUB_OAUTH_CALLBACK_URL": "http://localhost:8000/auth/github/callback",
+            "WEB_APP_URL": "http://127.0.0.1:3001",
+            "GITHUB_API_BASE_URL": "https://api.github.com",
+            "GITHUB_WEB_BASE_URL": "https://github.com",
+        }
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/settings/github/oauth",
+        json={
+            "github_client_id": "",
+            "github_client_secret": "",
+            "github_owner_login": "HarshalRane04",
+            "session_secret_key": "",
+            "github_oauth_callback_url": "",
+            "web_app_url": "",
+            "github_api_base_url": "",
+            "github_web_base_url": "",
+        },
+        headers=authenticated({"X-RepoPilot-Intent": "save-oauth-secrets"}),
+    )
+
+    assert response.status_code == 200
+    saved = runtime_secret_store().load_values()
+    assert saved["GITHUB_CLIENT_ID"] == "saved-client"
+    assert saved["GITHUB_CLIENT_SECRET"] == "saved-secret-value"
+    assert saved["SESSION_SECRET_KEY"].startswith("saved-session-secret-")
+    assert saved["REPOPILOT_GITHUB_OWNER_LOGIN"] == "HarshalRane04"
+
+
 def test_github_oauth_config_save_requires_intent_header(monkeypatch, tmp_path) -> None:
     isolate_runtime_secret_store(monkeypatch, tmp_path)
     enable_dev_header_auth(monkeypatch)
@@ -179,6 +238,7 @@ def test_github_oauth_config_save_requires_intent_header(monkeypatch, tmp_path) 
         json={
             "github_client_id": "runtime-client",
             "github_client_secret": "runtime-secret-value",
+            "github_owner_login": "harshalrane",
             "session_secret_key": "runtime-session-secret-0123456789abcdef0123456789abcdef",
             "github_oauth_callback_url": "http://localhost:8000/auth/github/callback",
             "web_app_url": "http://127.0.0.1:3001",
@@ -340,6 +400,9 @@ def test_model_catalog_exposes_verified_provider_models(monkeypatch) -> None:
     assert any(model["id"] == "gpt-5.5" for model in providers["openai"]["models"])
     assert any(model["id"] == "claude-sonnet-4-6" for model in providers["anthropic"]["models"])
     assert any(model["id"] == "gemini-3-pro-preview" for model in providers["google"]["models"])
+    openrouter_models = {model["id"]: model for model in providers["openrouter"]["models"]}
+    assert openrouter_models["openrouter/auto"]["pricing_currency"] == "USD"
+    assert openrouter_models["openrouter/auto"]["pricing_unit"] == "token"
     assert any("high" in model["reasoning_levels"] for model in providers["openai"]["models"])
     assert any(model["id"] == "google/gemma-3-27b-it:free" and model["is_free"] for model in providers["openrouter"]["models"])
 
@@ -371,6 +434,7 @@ def test_model_config_save_is_encrypted_and_updates_readiness(monkeypatch, tmp_p
     assert body["model"] == "claude-sonnet-4-6"
     assert body["status"] == "configured"
     assert body["api_key_configured"] is True
+    assert body["configured_api_key_providers"] == ["anthropic"]
     assert body["reasoning_level"] == "high"
     assert "sk-ant-runtime-secret" not in response.text
     store_text = (tmp_path / "runtime-secrets.json").read_text(encoding="utf-8")
@@ -381,6 +445,65 @@ def test_model_config_save_is_encrypted_and_updates_readiness(monkeypatch, tmp_p
     assert model_gate["state"] == "unverified"
     assert model_gate["mode"] == "live_model_unverified"
     assert "claude-sonnet-4-6" in model_gate["detail"]
+
+
+def test_switching_model_provider_never_reuses_another_providers_key(monkeypatch, tmp_path) -> None:
+    isolate_runtime_secret_store(monkeypatch, tmp_path)
+    enable_dev_header_auth(monkeypatch)
+    runtime_secret_store().save_values(
+        {
+            "MODEL_PROVIDER": "openrouter",
+            "MODEL_NAME": "openrouter/free",
+            "MODEL_API_KEY": "sk-openrouter-runtime-secret",
+            "MODEL_BASE_URL": "https://openrouter.ai/api/v1",
+        }
+    )
+    observed_keys: list[tuple[str, str | None]] = []
+
+    async def available_models(*, provider_id, api_key=None, **_kwargs):
+        observed_keys.append((provider_id, api_key))
+        return {
+            "anthropic": {"claude-sonnet-4-6"},
+            "openrouter": {"openrouter/free"},
+        }[provider_id]
+
+    async def selected_model(*, provider_id, model_id, api_key=None, **_kwargs):
+        observed_keys.append((provider_id, api_key))
+        return {"id": model_id, "reasoning_levels": ()}
+
+    monkeypatch.setattr("app.api.routes.settings.dynamic_model_ids_for_provider", available_models)
+    monkeypatch.setattr("app.api.routes.settings.dynamic_model_by_id", selected_model)
+    client = TestClient(app)
+
+    switched = client.post(
+        "/settings/models/config",
+        json={"provider": "anthropic", "model": "claude-sonnet-4-6"},
+        headers=authenticated({"X-RepoPilot-Intent": "save-model-provider"}),
+    )
+
+    assert switched.status_code == 200
+    assert switched.json()["provider"] == "anthropic"
+    assert switched.json()["api_key_configured"] is False
+    assert switched.json()["configured_api_key_providers"] == ["openrouter"]
+    assert switched.json()["status"] == "missing"
+    assert any(provider == "anthropic" for provider, _key in observed_keys)
+    assert all(key is None for provider, key in observed_keys if provider == "anthropic")
+    stored = runtime_secret_store().load_values()
+    assert stored["MODEL_API_KEY_PROVIDER"] == "openrouter"
+    assert stored["MODEL_API_KEY"] == "sk-openrouter-runtime-secret"
+
+    observed_keys.clear()
+    restored = client.post(
+        "/settings/models/config",
+        json={"provider": "openrouter", "model": "openrouter/free"},
+        headers=authenticated({"X-RepoPilot-Intent": "save-model-provider"}),
+    )
+
+    assert restored.status_code == 200
+    assert restored.json()["api_key_configured"] is True
+    assert restored.json()["configured_api_key_providers"] == ["openrouter"]
+    assert any(provider == "openrouter" for provider, _key in observed_keys)
+    assert all(key == "sk-openrouter-runtime-secret" for provider, key in observed_keys if provider == "openrouter")
 
 
 def test_model_config_save_clears_stale_verification_markers(monkeypatch, tmp_path) -> None:
@@ -415,6 +538,46 @@ def test_model_config_save_clears_stale_verification_markers(monkeypatch, tmp_pa
     readiness = client.get("/settings/readiness", headers=authenticated()).json()
     model_gate = next(item for item in readiness["integrations"] if item["name"] == "LLM model gateway")
     assert model_gate["state"] == "unverified"
+
+
+def test_failed_model_verification_revokes_stale_success(monkeypatch, tmp_path) -> None:
+    isolate_runtime_secret_store(monkeypatch, tmp_path)
+    enable_dev_header_auth(monkeypatch)
+    runtime_secret_store().save_values(
+        {
+            "MODEL_PROVIDER": "openai",
+            "MODEL_NAME": "gpt-5.5",
+            "MODEL_API_KEY": "sk-runtime-secret",
+            "MODEL_BASE_URL": "https://api.openai.com/v1",
+            "MODEL_PROVIDER_VERIFIED_AT": "2026-06-11T00:00:00+00:00",
+            "MODEL_PROVIDER_VERIFIED_MODEL": "openai:gpt-5.5",
+        }
+    )
+
+    async def available_models(**_kwargs):
+        return {"gpt-5.5"}
+
+    async def failed_verification(**_kwargs):
+        return ModelProviderVerificationResult(
+            ok=False,
+            provider="openai",
+            model="gpt-5.5",
+            detail="Provider rejected the API key.",
+            checked_at="2026-07-12T08:30:00+00:00",
+            latency_ms=12,
+        )
+
+    monkeypatch.setattr("app.api.routes.settings.dynamic_model_ids_for_provider", available_models)
+    monkeypatch.setattr("app.api.routes.settings.verify_model_provider", failed_verification)
+    client = TestClient(app)
+
+    response = client.post("/settings/models/verify", headers=authenticated())
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    values = runtime_secret_store().load_values()
+    assert values["MODEL_PROVIDER_VERIFIED_AT"] == ""
+    assert values["MODEL_PROVIDER_VERIFIED_MODEL"] == ""
 
 
 def test_model_config_save_rejects_unsupported_reasoning_level(monkeypatch, tmp_path) -> None:

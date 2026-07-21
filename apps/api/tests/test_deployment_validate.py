@@ -77,15 +77,26 @@ Require eval and smoke proof.
                 "GITHUB_INSTALLATION_ID=",
                 "GITHUB_CLIENT_ID=",
                 "GITHUB_CLIENT_SECRET=",
+                "REPOPILOT_GITHUB_OWNER_LOGIN=octocat",
                 "REPOPILOT_IMAGE_TAG=latest",
                 "REPOPILOT_API_IMAGE=",
                 "REPOPILOT_WEB_IMAGE=",
                 "REPOPILOT_SANDBOX_IMAGE=",
+                "SANDBOX_RUNNER_SOCKET=/run/repopilot-sandbox/runner.sock",
+                "SANDBOX_RUNNER_TOKEN=test-sandbox-token-012345678901234567890123",
                 "MODEL_PROVIDER=mock",
                 "MODEL_NAME=mock-planner",
                 "MODEL_API_KEY=",
                 "EMBEDDING_SOURCE_TRANSFER_ENABLED=false",
                 "GITHUB_WRITES_ENABLED=false",
+                "GITHUB_WORKFLOW_LOG_MAX_BYTES=25000000",
+                "WEBHOOK_DISPATCH_RETRY_INTERVAL_SECONDS=30",
+                "WEBHOOK_DISPATCH_MAX_RETRIES=8",
+                "REPOPILOT_RUN_ORCHESTRATION_RECONCILE_INTERVAL_SECONDS=60",
+                "REPOPILOT_RUN_ORCHESTRATION_STALE_SECONDS=960",
+                "REPOPILOT_REPOSITORY_ARCHIVE_MAX_BYTES=100000000",
+                "REPOPILOT_REPOSITORY_ARCHIVE_MAX_UNPACKED_BYTES=500000000",
+                "REPOPILOT_REPOSITORY_ARCHIVE_MAX_ENTRIES=20000",
                 "REPOPILOT_ARTIFACT_STORE_ROOT=/tmp/repopilot-artifacts",
                 "REPOPILOT_RUNTIME_SECRETS_KEY_PATH=/home/appuser/.repopilot/runtime-secrets.key",
                 "REPOPILOT_RUNTIME_SECRETS_STORE_PATH=/home/appuser/.repopilot/runtime-secrets.json",
@@ -106,13 +117,17 @@ services:
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
   api:
+    healthcheck:
+      test: ["CMD", "curl", "http://localhost:8000/health"]
     environment:
       REPOPILOT_RUNTIME_SECRETS_KEY_PATH: /home/appuser/.repopilot/runtime-secrets.key
       REPOPILOT_RUNTIME_SECRETS_STORE_PATH: /home/appuser/.repopilot/runtime-secrets.json
     volumes:
       - ./.local/repopilot-secrets:/home/appuser/.repopilot
       - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - repository_workspaces:/tmp/repopilot-repositories
       - agent_artifacts:/tmp/repopilot-artifacts
+      - sandbox_control:/run/repopilot-sandbox:ro
   worker:
     environment:
       REPOPILOT_RUNTIME_SECRETS_KEY_PATH: /home/appuser/.repopilot/runtime-secrets.key
@@ -120,7 +135,19 @@ services:
     volumes:
       - ./.local/repopilot-secrets:/home/appuser/.repopilot
       - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - repository_workspaces:/tmp/repopilot-repositories
       - agent_artifacts:/tmp/repopilot-artifacts
+      - sandbox_control:/run/repopilot-sandbox:ro
+  storage-init:
+    image: repopilot-sandbox:local
+    user: "0:0"
+    network_mode: none
+    command: chown -R 10001:10001 /tmp/repopilot-agent-workspaces /tmp/repopilot-repositories /tmp/repopilot-artifacts /run/repopilot-sandbox
+    volumes:
+      - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - repository_workspaces:/tmp/repopilot-repositories
+      - agent_artifacts:/tmp/repopilot-artifacts
+      - sandbox_control:/run/repopilot-sandbox
   beat:
     environment:
       REPOPILOT_RUNTIME_SECRETS_KEY_PATH: /home/appuser/.repopilot/runtime-secrets.key
@@ -131,10 +158,22 @@ services:
       - agent_artifacts:/tmp/repopilot-artifacts
   web:
     image: demo
+  sandbox-runner:
+    image: repopilot-sandbox:local
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    volumes:
+      - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - sandbox_control:/run/repopilot-sandbox
 volumes:
   postgres_data:
   agent_workspaces:
+  repository_workspaces:
   agent_artifacts:
+  sandbox_control:
   web_node_modules:
   web_next:
 """,
@@ -159,6 +198,16 @@ services:
       - ./.local/repopilot-secrets:/home/appuser/.repopilot
       - agent_workspaces:/tmp/repopilot-agent-workspaces
       - agent_artifacts:/tmp/repopilot-artifacts
+  storage-init:
+    image: ghcr.io/harshalrane04/repopilot-sandbox:latest
+    user: "0:0"
+    network_mode: none
+    command: chown -R 10001:10001 /tmp/repopilot-agent-workspaces /tmp/repopilot-repositories /tmp/repopilot-artifacts /run/repopilot-sandbox
+    volumes:
+      - agent_workspaces:/tmp/repopilot-agent-workspaces
+      - repository_workspaces:/tmp/repopilot-repositories
+      - agent_artifacts:/tmp/repopilot-artifacts
+      - sandbox_control:/run/repopilot-sandbox
   beat:
     image: ghcr.io/harshalrane04/repopilot-api:latest
     volumes:
@@ -167,12 +216,19 @@ services:
       - agent_artifacts:/tmp/repopilot-artifacts
   web:
     image: ghcr.io/harshalrane04/repopilot-web:latest
-  sandbox-image:
+  sandbox-runner:
     image: ghcr.io/harshalrane04/repopilot-sandbox:latest
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - sandbox_control:/run/repopilot-sandbox
 volumes:
   postgres_data:
   agent_workspaces:
   agent_artifacts:
+  sandbox_control:
 """,
         encoding="utf-8",
     )
@@ -295,7 +351,7 @@ def test_deployment_validator_runtime_check_passes_when_local_urls_respond(tmp_p
     report = DeploymentValidator(root=tmp_path).validate(check_runtime=True)
 
     assert report.failed is False
-    assert "http://127.0.0.1:8000/health" in requested_urls
+    assert "http://127.0.0.1:8000/ready" in requested_urls
     assert "http://127.0.0.1:3001/" in requested_urls
 
 
@@ -311,7 +367,7 @@ def test_deployment_validator_runtime_check_reports_unreachable_local_url(tmp_pa
     report = DeploymentValidator(root=tmp_path).validate(check_runtime=True)
 
     assert report.failed is True
-    assert any(finding.check == "runtime_http" and finding.target == "api_health" for finding in report.findings)
+    assert any(finding.check == "runtime_http" and finding.target == "api_ready" for finding in report.findings)
 
 
 def test_deployment_validator_runtime_check_reports_curl_timeout(tmp_path: Path, monkeypatch) -> None:

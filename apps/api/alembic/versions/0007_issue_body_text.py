@@ -5,16 +5,16 @@ Revises: 0006_llm_trace_metadata
 Create Date: 2026-06-24 00:00:00.000000
 """
 
-from collections.abc import Sequence
-
 import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = "0007_issue_body_text"
-down_revision: str | None = "0006_llm_trace_metadata"
-branch_labels: str | Sequence[str] | None = None
-depends_on: str | Sequence[str] | None = None
+revision = "0007_issue_body_text"
+down_revision = "0006_llm_trace_metadata"
+branch_labels = None
+depends_on = None
+
+__all__ = ["branch_labels", "depends_on", "downgrade", "down_revision", "revision", "upgrade"]
 
 
 def upgrade() -> None:

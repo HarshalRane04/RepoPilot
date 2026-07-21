@@ -118,6 +118,8 @@ class AuditActorType(StrEnum):
 
 class ToolPermissionTier(StrEnum):
     READ = "read"
+    DB_MUTATION = "db_mutation"
+    EXTERNAL_READ = "external_read"
     WORKSPACE_WRITE = "workspace_write"
     SANDBOX_EXEC = "sandbox_exec"
     SECURITY_GATE = "security_gate"
@@ -347,6 +349,7 @@ class SandboxCommandRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     workspace_path: str
+    working_directory: str = Field(default=".", min_length=1, max_length=500)
     command: str
     timeout_seconds: int = Field(default=60, ge=1, le=600)
 
@@ -366,8 +369,9 @@ class SandboxCommandResult(BaseModel):
 class ImplementationRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    workspace_path: str
+    workspace_path: str | None = None
     validation_command: str | None = None
+    validation_working_directory: str | None = Field(default=None, min_length=1, max_length=500)
     timeout_seconds: int = Field(default=120, ge=1, le=900)
     max_changed_files: int = Field(default=5, ge=1, le=20)
 
@@ -424,8 +428,8 @@ class CodeQLAlertFetchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     state: str = Field(default="open", pattern="^(open|fixed|dismissed)$")
-    ref: str | None = Field(default=None, max_length=255)
-    tool_name: str = Field(default="CodeQL", min_length=1, max_length=255)
+    ref: str | None = Field(default=None, max_length=255, pattern=r"^refs/(heads|tags)/[^\r\n\t]+$")
+    tool_name: str = Field(default="CodeQL", pattern="^CodeQL$")
     per_page: int = Field(default=100, ge=1, le=100)
     fail_on_findings: bool = True
 
@@ -469,7 +473,7 @@ class CIAnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     workflow_name: str = "local-ci"
-    conclusion: str = Field(default="success", pattern="^(success|failure|cancelled|skipped)$")
+    conclusion: str = Field(default="success", pattern="^(success|failure|cancelled|skipped|pending|unknown)$")
     log_text: str = ""
 
 
@@ -549,6 +553,7 @@ class SecurityFinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     run_id: UUID
+    patch_hash: str | None = None
     tool: str
     severity: SecuritySeverity
     description: str
@@ -592,6 +597,7 @@ class LLMTrace(BaseModel):
     mode: str = "unknown"
     tokens: int = Field(ge=0)
     cost: float = Field(ge=0.0)
+    cost_currency: Literal["USD"] = "USD"
     latency_ms: int | None = Field(default=None, ge=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -648,6 +654,41 @@ class ActivityEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class AuditLogItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    actor_type: AuditActorType
+    actor_id: str | None = None
+    action: str
+    entity_type: str
+    entity_id: str | None = None
+    result: str = "recorded"
+    risk_score: int | None = Field(default=None, ge=0, le=100)
+    created_at: datetime
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditLogPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AuditLogItem] = Field(default_factory=list)
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    offset: int = Field(ge=0)
+    has_more: bool
+    is_complete: bool
+
+
+class ActivitySummaryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plans_approved: int = Field(ge=0)
+    pull_request_records: int = Field(ge=0)
+    agent_runs: int = Field(ge=0)
+    reviewed_security_findings: int = Field(ge=0)
+
+
 class AgentRunListItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -658,6 +699,7 @@ class AgentRunListItem(BaseModel):
     model_used: str | None = None
     total_tokens: int = Field(ge=0)
     total_cost: float = Field(ge=0.0)
+    cost_currency: Literal["USD"] = "USD"
     started_at: datetime
     completed_at: datetime | None = None
     latest_step: str | None = None
@@ -686,6 +728,8 @@ class AgentRunValidationDetail(BaseModel):
     parsed_summary: str = ""
     log_uri: str | None = None
     evidence_hash: str | None = None
+    patch_hash: str | None = None
+    sandbox_backend: str | None = None
     log_artifact: ArtifactReference | None = None
 
 
@@ -699,6 +743,7 @@ class AgentRunDetailResponse(BaseModel):
     model_used: str | None = None
     total_tokens: int = Field(ge=0)
     total_cost: float = Field(ge=0.0)
+    cost_currency: Literal["USD"] = "USD"
     started_at: datetime
     completed_at: datetime | None = None
     steps: list[AgentRunStepDetail] = Field(default_factory=list)
@@ -713,6 +758,7 @@ class RunTraceRunSummary(BaseModel):
     model_used: str | None = None
     total_tokens: int = Field(ge=0)
     total_cost: float = Field(ge=0.0)
+    cost_currency: Literal["USD"] = "USD"
     started_at: datetime
     completed_at: datetime | None = None
 
@@ -734,6 +780,9 @@ class RunTraceValidation(BaseModel):
     status: str
     duration_ms: int = Field(ge=0)
     parsed_summary: str = ""
+    patch_hash: str | None = None
+    sandbox_backend: str | None = None
+    created_at: datetime | None = None
 
 
 class RunTraceSecurityFinding(BaseModel):
@@ -744,6 +793,8 @@ class RunTraceSecurityFinding(BaseModel):
     file_path: str | None = None
     description: str
     status: str
+    patch_hash: str | None = None
+    created_at: datetime | None = None
 
 
 class RunTracePullRequest(BaseModel):
@@ -779,8 +830,25 @@ class RunTraceLLMTrace(BaseModel):
     mode: str = "unknown"
     tokens: int = Field(ge=0)
     cost: float = Field(ge=0.0)
+    cost_currency: Literal["USD"] = "USD"
     latency_ms: int | None = Field(default=None, ge=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunTraceArtifact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    artifact_type: str
+    storage_backend: str
+    sha256: str
+    byte_size: int = Field(ge=0)
+    content_type: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    deleted_at: datetime | None = None
+    available: bool = True
+    download_url: str
 
 
 class RunTraceResponse(BaseModel):
@@ -793,6 +861,7 @@ class RunTraceResponse(BaseModel):
     pull_requests: list[RunTracePullRequest] = Field(default_factory=list)
     audit_events: list[RunTraceAuditEvent] = Field(default_factory=list)
     llm_traces: list[RunTraceLLMTrace] = Field(default_factory=list)
+    artifacts: list[RunTraceArtifact] = Field(default_factory=list)
 
 
 class PlanDetailResponse(BaseModel):
@@ -843,10 +912,12 @@ class PullRequestValidationEvidence(BaseModel):
 
     command: str
     status: str
-    duration_ms: int = Field(ge=0)
-    parsed_summary: str = ""
+    duration_ms: int | None = Field(default=None, ge=0)
+    parsed_summary: str | None = None
     log_uri: str | None = None
     evidence_hash: str | None = None
+    patch_hash: str | None = None
+    sandbox_backend: str | None = None
     log_artifact: ArtifactReference | None = None
 
 
@@ -859,6 +930,31 @@ class PullRequestSecurityFindingEvidence(BaseModel):
     description: str
     status: str
     status_reason: str | None = None
+    patch_hash: str | None = None
+
+
+class PullRequestValidationEvidenceSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["not_run", "pending", "passed", "failed", "incomplete", "unknown"]
+    patch_hash: str | None = None
+    total: int = Field(default=0, ge=0)
+    passed: int = Field(default=0, ge=0)
+    failed: int = Field(default=0, ge=0)
+    pending: int = Field(default=0, ge=0)
+    incomplete: int = Field(default=0, ge=0)
+
+
+class PullRequestSecurityScanEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["not_run", "pending", "passed", "failed", "incomplete", "unknown"]
+    completed: bool = False
+    patch_hash: str | None = None
+    finding_count: int = Field(default=0, ge=0)
+    scanned_files: int | None = Field(default=None, ge=0)
+    completed_at: datetime | None = None
+    sources: list[str] = Field(default_factory=list)
 
 
 class PullRequestSummaryResponse(BaseModel):
@@ -878,9 +974,17 @@ class PullRequestSummaryResponse(BaseModel):
     issue: IssueSummaryResponse | None = None
     repository: RepositorySummaryResponse | None = None
     plan: PlanSummaryResponse | None = None
+    current_patch_hash: str | None = None
     changed_files: list[str] = Field(default_factory=list)
+    planned_files: list[str] = Field(default_factory=list)
     validation_results: list[PullRequestValidationEvidence] = Field(default_factory=list)
     security_findings: list[PullRequestSecurityFindingEvidence] = Field(default_factory=list)
+    validation_evidence: PullRequestValidationEvidenceSummary = Field(
+        default_factory=lambda: PullRequestValidationEvidenceSummary(status="unknown")
+    )
+    security_scan: PullRequestSecurityScanEvidence = Field(
+        default_factory=lambda: PullRequestSecurityScanEvidence(status="unknown")
+    )
 
 
 class SecurityFindingRunSummary(BaseModel):
@@ -910,6 +1014,7 @@ class SecurityFindingDetailResponse(BaseModel):
 
     id: str
     run_id: str
+    patch_hash: str | None = None
     tool: str
     severity: str
     file_path: str | None = None

@@ -59,8 +59,8 @@ Provide these through the dashboard Settings screen or runtime secret store, not
 
 | Setting | Purpose |
 |---|---|
-| `SEMGREP_ENABLED=true` | Enables command-backed Semgrep scans. The API/worker image installs Semgrep, and `make security-scanner-snapshot` provisions it on demand for local evidence capture. |
-| `DEPENDENCY_AUDIT_ENABLED=true` | Enables npm/pip dependency audit adapters. The API/worker image installs pip-audit, and the web runtime already includes npm. |
+| `SEMGREP_ENABLED=true` | Enables command-backed Semgrep in the owned CI/release evidence environment. `make security-scanner-snapshot` provisions it on demand; it is not exposed to runtime agents. |
+| `DEPENDENCY_AUDIT_ENABLED=true` | Enables release-boundary dependency evidence. Python declarations are resolved with `uv` for CPython 3.12/Linux and audited as a pinned transitive set with `pip-audit`; the npm production lockfile is audited separately. |
 | `CODEQL_ENABLED=true` | Enables credential-gated CodeQL alert fetch and SARIF ingestion flows. |
 | GitHub repository variable `CODEQL_ENABLED=true` | Allows `.github/workflows/codeql.yml` to run on private repositories after GitHub code scanning/Advanced Security is enabled. Public repositories run the workflow automatically. |
 

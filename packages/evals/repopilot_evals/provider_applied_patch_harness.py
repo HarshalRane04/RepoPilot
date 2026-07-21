@@ -9,7 +9,6 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from repopilot_contracts import EvalTaskFixture
 
@@ -365,8 +364,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     if not credentials.api_key:
         print(
-            "Missing provider API key. "
-            f"Set {api_key_env} in the environment or save MODEL_API_KEY in RepoPilot's local runtime secret store."
+            "Missing provider API key. Set the provider-specific environment variable or save MODEL_API_KEY "
+            "in RepoPilot's local runtime secret store."
         )
         return 2
     runner = ProviderAppliedPatchEvalRunner(
@@ -378,7 +377,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     try:
-        result = runner.run(
+        runner.run(
             provider=args.provider,
             model=args.model,
             output_dir=args.out_dir,
@@ -387,12 +386,10 @@ def main(argv: list[str] | None = None) -> int:
             timeout_seconds=args.timeout_seconds,
             allow_failed_gates=args.allow_failed_gates,
         )
-    except RuntimeError as exc:
-        print(redact_for_output(exc))
+    except RuntimeError:
+        print("Provider applied-patch eval failed; console output was redacted to avoid leaking provider response data.")
         return 2
-    print(f"Wrote {result.markdown_path}")
-    print(f"Wrote {result.json_path}")
-    print(f"Wrote {result.observed_evidence_path}")
+    print("Provider applied-patch eval completed; redacted artifacts were written.")
     return 0
 
 

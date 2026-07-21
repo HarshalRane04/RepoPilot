@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
 import pytest
 from pydantic import BaseModel
-from repopilot_contracts import LLMCallMode, TokenUsage
-from repopilot_llm_client import provider_catalog as package_provider_catalog
+from repopilot_contracts import LLMCallMode, LLMResponse, TokenUsage
+from repopilot_llm_client import extract_completion_cost, provider_catalog as package_provider_catalog
 
 from app.core.config import settings
 from app.db.models import AgentRun, LLMTrace
@@ -33,6 +34,7 @@ class FakeGatewayDb:
         self.run = run
         self.added: list[object] = []
         self.flushes = 0
+        self.execute_calls = 0
 
     async def get(self, model, item_id):
         if model is AgentRun and item_id == self.run.id:
@@ -41,6 +43,10 @@ class FakeGatewayDb:
 
     async def scalar(self, _statement):
         return 0
+
+    async def execute(self, _statement):
+        self.execute_calls += 1
+        return SimpleNamespace(one=lambda: (0, 0, 0.0))
 
     def add(self, item: object) -> None:
         self.added.append(item)
@@ -125,6 +131,7 @@ def test_model_gateway_mock_completion_records_trace(monkeypatch) -> None:
     assert trace.response_hash == response.response_hash
     assert trace.metadata_json == {"context_citations": []}
     assert db.flushes == 1
+    assert db.execute_calls == 1
 
 
 def test_model_gateway_complete_json_validates_schema(monkeypatch) -> None:
@@ -145,6 +152,73 @@ def test_model_gateway_complete_json_validates_schema(monkeypatch) -> None:
 
     assert result.summary == "Mock model response."
     assert result.items == []
+    traces = [item for item in db.added if isinstance(item, LLMTrace)]
+    assert traces
+    assert all(trace.metadata_json["json_mode"] is True for trace in traces)
+
+
+def test_model_gateway_complete_json_supplies_schema_and_accepts_fenced_json(monkeypatch) -> None:
+    gateway = ModelGateway()
+    calls: list[dict[str, object]] = []
+
+    async def scripted_complete(_db, **kwargs) -> LLMResponse:
+        calls.append(kwargs)
+        return LLMResponse(
+            content='```json\n{"summary":"Focused","items":["edit"]}\n```',
+            model="scripted",
+        )
+
+    monkeypatch.setattr(gateway, "complete", scripted_complete)
+    result = asyncio.run(
+        gateway.complete_json(
+            object(),
+            run_id=None,
+            agent_name="implementation_agent",
+            system_prompt="Return a tool plan.",
+            user_prompt="Make the smallest change.",
+            response_model=GatewayPayload,
+        )
+    )
+
+    assert result == GatewayPayload(summary="Focused", items=["edit"])
+    assert len(calls) == 1
+    assert "Required output JSON Schema" in str(calls[0]["system_prompt"])
+    assert '"summary"' in str(calls[0]["system_prompt"])
+    assert calls[0]["json_mode"] is True
+
+
+def test_model_gateway_repair_receives_schema_and_recovers_embedded_json(monkeypatch) -> None:
+    gateway = ModelGateway()
+    calls: list[dict[str, object]] = []
+    responses = iter(
+        [
+            LLMResponse(content="I cannot format that yet.", model="scripted"),
+            LLMResponse(content='Repaired: {"summary":"Recovered","items":[]}', model="scripted"),
+        ]
+    )
+
+    async def scripted_complete(_db, **kwargs) -> LLMResponse:
+        calls.append(kwargs)
+        return next(responses)
+
+    monkeypatch.setattr(gateway, "complete", scripted_complete)
+    result = asyncio.run(
+        gateway.complete_json(
+            object(),
+            run_id=None,
+            agent_name="implementation_agent",
+            system_prompt="Return a tool plan.",
+            user_prompt="Make the smallest change.",
+            response_model=GatewayPayload,
+        )
+    )
+
+    assert result.summary == "Recovered"
+    assert len(calls) == 2
+    assert "Required output JSON Schema" in str(calls[1]["system_prompt"])
+    assert "Original request" in str(calls[1]["user_prompt"])
+    assert "Make the smallest change." in str(calls[1]["user_prompt"])
+    assert "Candidate response to repair" in str(calls[1]["user_prompt"])
 
 
 def test_model_gateway_mock_embeddings_are_deterministic(monkeypatch) -> None:
@@ -240,6 +314,40 @@ def test_model_gateway_builds_gemini_generate_content_request() -> None:
     assert request["json_payload"]["systemInstruction"] == {"parts": [{"text": "Return JSON."}]}
     assert request["json_payload"]["contents"] == [{"role": "user", "parts": [{"text": "Plan a focused patch."}]}]
     assert request["json_payload"]["generationConfig"] == {"temperature": 0.2, "maxOutputTokens": 768}
+
+
+def test_model_gateway_requests_native_json_modes() -> None:
+    openai_request = _completion_request(
+        provider_id="openai",
+        model="gpt-5.5",
+        api_key="sk-test",
+        base_url="https://api.openai.com/v1",
+        system_prompt="Return JSON.",
+        user_prompt="Plan a patch.",
+        temperature=0.0,
+        max_tokens=512,
+        json_mode=True,
+    )
+    google_request = _completion_request(
+        provider_id="google",
+        model="gemini-2.5-pro",
+        api_key="gemini-test",
+        base_url="https://generativelanguage.googleapis.com",
+        system_prompt="Return JSON.",
+        user_prompt="Plan a patch.",
+        temperature=0.0,
+        max_tokens=512,
+        json_mode=True,
+    )
+
+    assert openai_request["json_payload"]["response_format"] == {"type": "json_object"}
+    assert google_request["json_payload"]["generationConfig"]["responseMimeType"] == "application/json"
+
+
+def test_provider_reported_cost_is_bounded_and_explicit() -> None:
+    assert extract_completion_cost(provider_id="openrouter", payload={"usage": {"cost": "0.0125"}}) == 0.0125
+    assert extract_completion_cost(provider_id="openrouter", payload={"usage": {"cost": -1}}) == 0.0
+    assert extract_completion_cost(provider_id="openrouter", payload={"usage": {"cost": "nan"}}) == 0.0
 
 
 def test_model_gateway_extracts_anthropic_and_gemini_content() -> None:
