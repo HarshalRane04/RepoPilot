@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -14,6 +15,32 @@ def test_ci_workflow_runs_feature_branch_matrix_once_and_cancels_stale_runs() ->
     assert "github.event.pull_request.number || github.ref" in workflow
     assert "cancel-in-progress: true" in workflow
     assert workflow.count("timeout-minutes:") == 6
+
+
+def test_dependabot_docker_updates_cover_every_runtime_dockerfile_directory() -> None:
+    config = ROOT.joinpath(".github/dependabot.yml").read_text(encoding="utf-8")
+    update_blocks = config.split("\n  - package-ecosystem: ")
+    docker_block = next(block for block in update_blocks if block.startswith('"docker"'))
+    directories_match = re.search(
+        r'(?m)^    directories:\n(?P<items>(?:      - "[^"]+"\n?)+)',
+        docker_block,
+    )
+
+    assert directories_match is not None
+    configured_directories = re.findall(
+        r'^      - "([^"]+)"$',
+        directories_match.group("items"),
+        flags=re.MULTILINE,
+    )
+    generated_path_parts = {".git", ".next", "node_modules", "output"}
+    dockerfile_directories = {
+        f"/{path.parent.relative_to(ROOT).as_posix()}"
+        for path in ROOT.rglob("Dockerfile")
+        if not generated_path_parts.intersection(path.relative_to(ROOT).parts)
+    }
+
+    assert len(configured_directories) == len(set(configured_directories))
+    assert set(configured_directories) == dockerfile_directories
 
 
 def test_ci_workflow_uploads_scanner_posture_evidence() -> None:

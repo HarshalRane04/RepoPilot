@@ -34,7 +34,10 @@ updates:
       - "javascript"
 
   - package-ecosystem: "docker"
-    directory: "/"
+    directories:
+      - "/apps/api"
+      - "/apps/web"
+      - "/services/sandbox_runner"
     schedule:
       interval: "weekly"
       day: "monday"
